@@ -15,6 +15,9 @@ from pathlib import Path
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+MEDIA_ROOT = '%s/joblink/static/' % BASE_DIR
+
+CKEDITOR_UPLOAD_PATH = "images/ckeditors/"
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
@@ -28,6 +31,13 @@ DEBUG = True
 ALLOWED_HOSTS = []
 
 
+import cloudinary.api
+
+cloudinary.config(
+    cloud_name="dblaqnihz",
+    api_key="819237389474199",
+    api_secret="mkl7Uy7CBI3LcAT5lsZNAX-_JGg"
+)
 # Application definition
 
 INSTALLED_APPS = [
@@ -37,7 +47,22 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'apps.jobs.apps.JobsConfig',
+    'apps.applications.apps.ApplicationsConfig',
+    'rest_framework',
+    'drf_yasg',
+    'oauth2_provider',
+    'ckeditor',
+    'ckeditor_uploader',
 ]
+
+
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'oauth2_provider.contrib.rest_framework.OAuth2Authentication',
+    )
+}
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -73,12 +98,17 @@ WSGI_APPLICATION = 'joblink.wsgi.application'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+'default': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'joblinkdb',
+        'USER': 'root',
+        'PASSWORD': 'root',
+        'HOST': ''  # mặc định localhost
     }
 }
+import pymysql
 
+pymysql.install_as_MySQLdb()
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
