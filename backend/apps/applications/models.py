@@ -1,16 +1,9 @@
 from django.db import models
-from django.contrib.auth import get_user_model
+from apps.core.models import BaseModel
 from apps.jobs.models import Job
+from django.contrib.auth import get_user_model
 
 User = get_user_model()
-
-class BaseModel(models.Model):
-    active = models.BooleanField(default=True)
-    created_date = models.DateTimeField(auto_now_add=True)
-    updated_date = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        abstract = True
 
 class ApplicationStatus(models.TextChoices):
     SUBMITTED = "SUBMITTED", "Submitted"

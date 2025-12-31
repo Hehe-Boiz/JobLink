@@ -2,19 +2,11 @@ from django.db import models
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from ckeditor.fields import RichTextField
-from django.contrib.auth import get_user_model
 from django.db.models import Q, F
-
+from apps.core.models import BaseModel
+from django.contrib.auth import get_user_model
 
 User = get_user_model()
-
-class BaseModel(models.Model):
-    active = models.BooleanField(default=True)
-    created_date = models.DateTimeField(auto_now_add=True, null=True)
-    updated_date = models.DateTimeField(auto_now=True, null=True)
-
-    class Meta:
-        abstract = True
 
 
 class JobCategory(models.Model):
@@ -102,7 +94,6 @@ class Job(BaseModel):
 class BookmarkJob(BaseModel):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     job = models.ForeignKey(Job, on_delete=models.CASCADE)
-    timestamp = models.DateTimeField(auto_now=True, auto_now_add=False)
 
     class Meta:
         constraints = [
