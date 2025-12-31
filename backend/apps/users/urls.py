@@ -1,8 +1,16 @@
-from django.urls import path
-from .views import RegisterView, ProfileView, LogoutView
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from . import views
+
+# Router dành cho ViewSet
+router = DefaultRouter()
+router.register('users', views.UserView, basename='user')
 
 urlpatterns = [
-    path('register/', RegisterView.as_view(), name='auth_register'),
-    path('profile/', ProfileView.as_view(), name='auth_profile'),
-    path('logout/', LogoutView.as_view(), name='auth_logout'),
+    # Path dành cho Generic View
+    path('register/candidate/', views.RegisterCandidateView.as_view(), name='register-candidate'),
+    path('register/employer/', views.RegisterEmployerView.as_view(), name='register-employer'),
+
+    # Include router vào
+    path('', include(router.urls)),
 ]
