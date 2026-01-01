@@ -30,7 +30,6 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 
-
 import cloudinary.api
 
 cloudinary.config(
@@ -56,11 +55,11 @@ INSTALLED_APPS = [
     'oauth2_provider',
     'ckeditor',
     'ckeditor_uploader',
+    'django_filters'
 ]
 
-
-
 REST_FRAMEWORK = {
+    "DEFAULT_FILTER_BACKENDS": ["django_filters.rest_framework.DjangoFilterBackend"],
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'oauth2_provider.contrib.rest_framework.OAuth2Authentication',
     ),
@@ -96,17 +95,16 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'joblink.wsgi.application'
 
-
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
-'default': {
+    'default': {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': 'joblinkdb',
         'USER': 'root',
-        'PASSWORD': 'root',
-        'HOST': ''  # mặc định localhost
+        'PASSWORD': '123',
+        'HOST': 'localhost'  # mặc định localhost
     }
 }
 import pymysql
@@ -133,7 +131,6 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
@@ -144,7 +141,6 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 
 USE_TZ = True
-
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/

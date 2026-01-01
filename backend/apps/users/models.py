@@ -1,7 +1,7 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from cloudinary.models import CloudinaryField
-from apps.core.models import BaseModel
+from ..core.models import BaseModel
 
 class UserRole(models.TextChoices):
     ADMIN = "ADMIN", "Admin"

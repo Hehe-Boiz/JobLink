@@ -1,6 +1,6 @@
 from django.db import models
-from apps.core.models import BaseModel
-from apps.jobs.models import Job
+from ..core.models import BaseModel
+from ..jobs.models import Job
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
