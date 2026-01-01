@@ -2,10 +2,13 @@ from rest_framework import generics, status, viewsets, parsers, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
-from .models import User
-
+from .models import User, VerificationStatus
+from .models import EmployerProfile
+from .permissions import IsAdminRole
+from .serializers import EmployerProfileSerializer, AdminEmployerSerializer
 from . import serializers
 from .serializers import CandidateRegisterSerializer, EmployerRegisterSerializer, UserSerializer
+from django.utils import timezone
 
 
 class UserView(viewsets.ViewSet, generics.CreateAPIView):
@@ -24,7 +27,48 @@ class UserView(viewsets.ViewSet, generics.CreateAPIView):
         return Response(serializers.UserSerializer(u).data, status=status.HTTP_200_OK)
 
 
-class RegisterCandidateView(generics.CreateAPIView):
+class EmployerMeView(viewsets.ViewSet,generics.RetrieveUpdateAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = EmployerProfileSerializer
+
+    def get_object(self):
+        return self.request.user.employer_profile
+
+
+class AdminEmployerViewSet(viewsets.ReadOnlyModelViewSet):
+    permission_classes = [IsAdminRole]
+    queryset = EmployerProfile.objects.select_related("user").all()
+    serializer_class = AdminEmployerSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        st = self.request.query_params.get("status")
+        if st:
+            qs = qs.filter(status=st)
+        return qs
+
+    @action(methods=["post"], detail=True)
+    def approve(self, request, pk=None):
+        emp = self.get_object()
+        emp.status = VerificationStatus.APPROVED
+        emp.reject_reason = ""
+        emp.verified_at = timezone.now()
+        emp.verified_by = request.user
+        emp.save()
+        return Response({"message": "Approved", "data": serializers.EmployerProfileSerializer(emp).data}, status=status.HTTP_200_OK)
+
+    @action(methods=["post"], detail=True)
+    def reject(self, request, pk=None):
+        emp = self.get_object()
+        emp.status = VerificationStatus.REJECTED
+        emp.reject_reason = request.data.get("reason", "")
+        emp.verified_at = timezone.now()
+        emp.verified_by = request.user
+        emp.save()
+        return Response({"message": "Rejected"}, status=status.HTTP_200_OK)
+
+
+class RegisterCandidateView(viewsets.ViewSet, generics.CreateAPIView):
     permission_classes = [AllowAny]
     serializer_class = CandidateRegisterSerializer
     parser_classes = [parsers.MultiPartParser]
@@ -39,7 +83,7 @@ class RegisterCandidateView(generics.CreateAPIView):
         )
 
 
-class RegisterEmployerView(generics.CreateAPIView):
+class RegisterEmployerView(viewsets.ViewSet, generics.CreateAPIView):
     permission_classes = [AllowAny]
     serializer_class = EmployerRegisterSerializer
     parser_classes = [parsers.MultiPartParser]

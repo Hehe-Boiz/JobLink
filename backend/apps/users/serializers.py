@@ -109,6 +109,17 @@ class EmployerProfileSerializer(MediaURLSerializer):
             "verified_by": {"read_only": True},
         }
 
+class AdminEmployerSerializer(EmployerProfileSerializer):
+    # thêm thông tin user đầy đủ để admin xem nhanh
+    user_detail = UserSerializer(source="user", read_only=True)
+    verified_by_detail = UserSerializer(source="verified_by", read_only=True)
+
+    class Meta(EmployerProfileSerializer.Meta):
+        fields = EmployerProfileSerializer.Meta.fields + [
+            "user_detail",
+            "verified_by_detail",
+        ]
+        read_only_fields = fields
 
 class BaseRegisterSerializer(serializers.Serializer):
     email = serializers.EmailField()
@@ -198,6 +209,5 @@ class EmployerRegisterSerializer(BaseRegisterSerializer):
             tax_code=tax_code,
             website=website,
             logo=logo,
-            is_verified=False
         )
         return user

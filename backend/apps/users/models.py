@@ -1,4 +1,4 @@
-from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.models import AbstractUser, UserManager
 from django.db import models
 from cloudinary.models import CloudinaryField
 from ..core.models import BaseModel
@@ -7,6 +7,20 @@ class UserRole(models.TextChoices):
     ADMIN = "ADMIN", "Admin"
     EMPLOYER = "EMPLOYER", "Employer"
     CANDIDATE = "CANDIDATE", "Candidate"
+
+class VerificationStatus(models.TextChoices):
+    PENDING = "PENDING", "Pending"
+    APPROVED = "APPROVED", "Approved"
+    REJECTED = "REJECTED", "Rejected"
+
+class CustomUserManager(UserManager):
+    def create_superuser(self, username, email=None, password=None, **extra_fields):
+        extra_fields.setdefault("is_staff", True)
+        extra_fields.setdefault("is_superuser", True)
+        extra_fields.setdefault("is_active", True)
+        extra_fields.setdefault("role", UserRole.ADMIN)
+
+        return super().create_superuser(username, email=email, password=password, **extra_fields)
 
 class User(AbstractUser, BaseModel):
     email = models.EmailField(unique=True)
@@ -25,9 +39,12 @@ class User(AbstractUser, BaseModel):
     def __str__(self):
         return f"{self.first_name} ({self.email})"
 
+    objects = CustomUserManager()
+
     @property
     def display_name(self):
         return self.first_name or self.username
+
 
 class CandidateProfile(BaseModel):
     user = models.OneToOneField(
@@ -55,7 +72,8 @@ class EmployerProfile(BaseModel):
     website = models.URLField(blank=True, null=True)
     logo = CloudinaryField(null=True, blank=True)
 
-    is_verified = models.BooleanField(default=False)
+    status = models.CharField(max_length=20, choices=VerificationStatus.choices, default=VerificationStatus.PENDING)
+    reject_reason = models.TextField(blank=True, default="")
     verified_at = models.DateTimeField(blank=True, null=True)
     verified_by = models.ForeignKey(
         User,
@@ -63,5 +81,10 @@ class EmployerProfile(BaseModel):
         null=True, blank=True,
         related_name="verified_employers"
     )
+
+    @property
+    def is_verified(self):
+        return self.status == VerificationStatus.APPROVED
+
     def __str__(self):
         return self.company_name
