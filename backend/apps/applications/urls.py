@@ -1,7 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-
-from apps.applications.views import EmployerApplicationViewSet
+from ..applications.views import EmployerApplicationViewSet
 
 router = DefaultRouter()
 router.register("employer/application", EmployerApplicationViewSet, basename="employer-application")

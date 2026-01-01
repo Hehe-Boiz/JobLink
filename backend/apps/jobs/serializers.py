@@ -21,7 +21,7 @@ class TagSerializer(serializers.ModelSerializer):
         fields = ['id', 'name']
 
 
-class JobSerializer(serializers.ModelSerializer):
+class CandidateJobSerializer(serializers.ModelSerializer):
     category = JobCategorySerializer(read_only=True)
     location = LocationSerializer(read_only=True)
     tags = TagSerializer(many=True, read_only=True)
@@ -45,9 +45,10 @@ class JobSerializer(serializers.ModelSerializer):
         return None
 
 
-class JobDetailSerializer(JobSerializer):
-    class Meta(JobSerializer.Meta):
-        fields = JobSerializer.Meta.fields + ['description', 'requirements', 'benefits']
+class CandidateJobDetailSerializer(CandidateJobSerializer):
+    class Meta(CandidateJobSerializer.Meta):
+        fields = CandidateJobSerializer.Meta.fields + ['description', 'requirements', 'benefits']
+
 
 class EmployerJobSerializer(serializers.ModelSerializer):
     # Hiển thị thêm tên category/location cho dễ đọc

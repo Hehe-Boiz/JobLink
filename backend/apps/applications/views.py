@@ -1,7 +1,7 @@
 from rest_framework import viewsets
 from .models import Application
 from .serializers import EmployerApplicationSerializer
-from apps.users.permissions import IsEmployerApproved
+from ..users.permissions import IsEmployerApproved
 
 
 class EmployerApplicationViewSet(viewsets.ModelViewSet):

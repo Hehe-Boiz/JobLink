@@ -3,7 +3,7 @@ from .models import Job
 from ..core.paginators import StandardResultsSetPagination
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
-from .serializers import JobSerializer, JobDetailSerializer, EmployerJobSerializer
+from .serializers import CandidateJobSerializer, CandidateJobDetailSerializer, EmployerJobSerializer
 from ..users.permissions import IsEmployerApproved
 
 
@@ -25,8 +25,9 @@ class JobViewCandidate(viewsets.ReadOnlyModelViewSet):
 
     def get_serializer_class(self):
         if self.action == 'retrieve':
-            return JobDetailSerializer
-        return JobSerializer
+            return CandidateJobDetailSerializer
+        return CandidateJobSerializer
+
 
 class EmployerJobViewSet(viewsets.ModelViewSet):
     serializer_class = EmployerJobSerializer

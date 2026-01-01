@@ -1,8 +1,6 @@
-# apps/applications/serializers.py
 from rest_framework import serializers
-
 from .models import Application
-from apps.jobs.models import Job  # để lấy job.title (nếu cần)
+from ..jobs.models import Job  # để lấy job.title (nếu cần)
 
 
 class EmployerApplicationSerializer(serializers.ModelSerializer):
