@@ -1,27 +1,11 @@
-# apps/users/serializers.py
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.utils import timezone
 from rest_framework import serializers
 
 from .models import UserRole, CandidateProfile, EmployerProfile
+from ..core.serializers import MediaURLSerializer
 
 User = get_user_model()
-
-
-class MediaURLSerializer(serializers.ModelSerializer):
-
-    media_fields = []  # ví dụ: ["avatar"], ["logo"]
-
-    def to_representation(self, instance):
-        data = super().to_representation(instance)
-
-        for f in getattr(self, "media_fields", []):
-            val = getattr(instance, f, None)
-            # CloudinaryField & ImageField thường có .url
-            data[f] = val.url if val else ""
-
-        return data
 
 
 class UserSerializer(MediaURLSerializer):
