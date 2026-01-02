@@ -1,10 +1,11 @@
-from rest_framework import viewsets, filters
-from .models import Job
+from rest_framework import viewsets, filters, status
+from .models import Job, BookmarkJob
 from ..core.paginators import StandardResultsSetPagination
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
-from .serializers import CandidateJobSerializer, CandidateJobDetailSerializer, EmployerJobSerializer
-from ..users.permissions import IsEmployerApproved
+from .serializers import CandidateJobSerializer, CandidateJobDetailSerializer, EmployerJobSerializer, CandidateBookmarkJobSerializer
+from ..users.permissions import IsEmployerApproved, IsCandidate
+from rest_framework.response import Response
 
 
 # danh sách và chi tiết job
@@ -46,3 +47,26 @@ class EmployerJobViewSet(viewsets.ModelViewSet):
             posted_by=self.request.user,
             company_name=ep.company_name,
         )
+
+class BookmarkJobViewSet(viewsets.ModelViewSet):
+    serializer_class = CandidateBookmarkJobSerializer
+    permission_classes = [IsCandidate]
+    http_method_names = ['get', 'post', 'delete']
+
+    def get_queryset(self):
+        return BookmarkJob.objects.filter(user=self.request.user).select_related('job')
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user) # gán vào giai đoạn này vì backend chỉ tin chính nó
+
+    def create(self, request, *args, **kwargs):
+        # Bắt lỗi nếu đã lưu rồi mà bấm lưu tiếp
+        try:
+            return super().create(request, *args, **kwargs)
+        except Exception as e:
+            if "unique_user_job_bookmark" in str(e):
+                return Response(
+                    {"detail": "Bạn đã lưu công việc này rồi."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            raise e

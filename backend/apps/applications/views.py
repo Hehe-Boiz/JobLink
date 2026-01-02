@@ -2,7 +2,7 @@ from rest_framework import viewsets, permissions, status, generics
 from .models import Application
 from .serializers import EmployerApplicationSerializer, CandidateApplicationListSerializer, \
     CandidateApplicationWriteSerializer, CandidateApplicationDetailSerializer
-from ..users.permissions import IsEmployerApproved
+from ..users.permissions import IsEmployerApproved, IsCandidate
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
 
@@ -27,7 +27,7 @@ class EmployerApplicationViewSet(viewsets.ModelViewSet):
 
 
 class CandidateApplicationViewSet(viewsets.ModelViewSet):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsCandidate]
 
     def get_queryset(self):
         return Application.objects.filter(user=self.request.user).select_related('job')

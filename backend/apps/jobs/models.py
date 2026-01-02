@@ -3,8 +3,9 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 from ckeditor.fields import RichTextField
 from django.db.models import Q, F
-from apps.core.models import BaseModel
+from ..core.models import BaseModel
 from django.contrib.auth import get_user_model
+from django.conf import settings
 
 User = get_user_model()
 
@@ -44,6 +45,7 @@ class Tag(BaseModel):
     def __str__(self):
         return self.name
 
+
 class Job(BaseModel):
     posted_by = models.ForeignKey(User, related_name='posted_jobs', on_delete=models.CASCADE)
     title = models.CharField(max_length=255, db_index=True)
@@ -67,6 +69,7 @@ class Job(BaseModel):
     salary_max = models.PositiveIntegerField(null=True, blank=True)
     deadline = models.DateField(null=True, blank=True)
     tags = models.ManyToManyField(Tag, blank=True, related_name="jobs")
+
     class Meta:
         constraints = [
             models.CheckConstraint(
@@ -91,3 +94,15 @@ class Job(BaseModel):
         return f"{self.title} - {self.company_name}"
 
 
+class BookmarkJob(BaseModel):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, related_name='bookmarked_jobs', on_delete=models.CASCADE)
+    job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name='bookmarked_by')
+
+    class Meta:
+        ordering = ['-created_date']
+        constraints = [
+            models.UniqueConstraint(fields=['user', 'job'], name='unique_user_job_bookmark'),
+        ]
+
+    def __str__(self):
+            return f"{self.user} bookmarked {self.job}"
