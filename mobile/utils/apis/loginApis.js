@@ -5,6 +5,7 @@ const BASE_URL = 'http://localhost:8000/';
 export const endpoints = {
     'register': '/users/',
     'login': '/o/token/',
+    'logout': '/o/revoke_token'
 };
 
 export const authApis = (token) => {
