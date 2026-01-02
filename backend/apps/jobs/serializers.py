@@ -90,8 +90,8 @@ class EmployerJobSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "posted_by", "company_name", "category_name", "location_name", "tags_detail"]
 
-    def get_tags_detail(self, obj):
-        return [{"id": t.id, "name": t.name} for t in obj.tags.all()]
+    def get_tags_detail(self, job):
+        return [{"id": t.id, "name": t.name} for t in job.tags.all()]
 
     def validate(self, attrs):
         salary_min = attrs.get("salary_min")
