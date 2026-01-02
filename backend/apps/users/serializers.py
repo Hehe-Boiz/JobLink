@@ -9,13 +9,11 @@ User = get_user_model()
 
 
 class UserSerializer(MediaURLSerializer):
-    media_fields = ["avatar"]
-
     class Meta:
         model = User
         # bạn có thể bỏ bớt field nếu muốn ngắn hơn
         fields = [
-            "id",
+            # "id",
             "username",
             "email",
             "password",
@@ -23,14 +21,13 @@ class UserSerializer(MediaURLSerializer):
             "first_name",
             "last_name",
             "bio",
-            "avatar",
-            "email_notifications",
-            "push_notifications",
+            "created_date",
         ]
         extra_kwargs = {
             "password": {"write_only": True, "required": False},
             # role không cho đổi lung tung qua API user update (đổi role do admin)
             "role": {"read_only": True},
+            "created_date": {"read_only": True},
         }
 
     def validate_email(self, value):
@@ -62,13 +59,13 @@ class UserSerializer(MediaURLSerializer):
         return instance
 
 
-class CandidateProfileSerializer(serializers.ModelSerializer):
+class CandidateProfileSerializer(MediaURLSerializer):
+    media_fields = ["avatar"]
+    user = UserSerializer(read_only=True)
+
     class Meta:
         model = CandidateProfile
-        fields = ["user", "full_name", "phone", "address"]
-        extra_kwargs = {
-            "user": {"read_only": True},
-        }
+        fields = ["user", "full_name", "phone", "address", "avatar"]
 
 
 class EmployerProfileSerializer(MediaURLSerializer):
@@ -93,6 +90,7 @@ class EmployerProfileSerializer(MediaURLSerializer):
             "verified_by": {"read_only": True},
         }
 
+
 class AdminEmployerSerializer(EmployerProfileSerializer):
     # thêm thông tin user đầy đủ để admin xem nhanh
     user_detail = UserSerializer(source="user", read_only=True)
@@ -104,6 +102,7 @@ class AdminEmployerSerializer(EmployerProfileSerializer):
             "verified_by_detail",
         ]
         read_only_fields = fields
+
 
 class BaseRegisterSerializer(serializers.Serializer):
     email = serializers.EmailField()

@@ -10,5 +10,6 @@ router.register('register/candidate', views.RegisterCandidateView, basename='reg
 router.register('admin/employers', views.AdminEmployerViewSet, basename='admin-employer')
 
 urlpatterns = [
+    path('candidates/me/', views.CandidateMeView.as_view(), name='candidate-me'),
     path('', include(router.urls)),
 ]

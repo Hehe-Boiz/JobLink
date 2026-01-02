@@ -4,31 +4,37 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 from .models import User, VerificationStatus
 from .models import EmployerProfile
-from .permissions import IsAdminRole
+from .permissions import IsAdminRole, IsCandidate, IsEmployer
 from .serializers import EmployerProfileSerializer, AdminEmployerSerializer
 from . import serializers
-from .serializers import CandidateRegisterSerializer, EmployerRegisterSerializer, UserSerializer
+from .serializers import CandidateRegisterSerializer, EmployerRegisterSerializer, UserSerializer, CandidateProfileSerializer
 from django.utils import timezone
 
 
 class UserView(viewsets.ViewSet, generics.CreateAPIView):
     queryset = User.objects.filter(is_active=True)
     serializer_class = serializers.UserSerializer
-    parser_classes = [parsers.MultiPartParser]
 
     @action(methods=['get', 'patch'], url_path='current-user', detail=False, permission_classes=[permissions.IsAuthenticated])
     def get_current_user(self, request):
         u = request.user
-        if request.method.__eq__('PATCH'):
-            for k, v in request.data.items():
-                if k in ['first_name', 'last_name', 'email']:
-                    setattr(u, k, v)
-            u.save()
+        if request.method == 'PATCH':
+            serializer = serializers.UserSerializer(u, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         return Response(serializers.UserSerializer(u).data, status=status.HTTP_200_OK)
 
+class CandidateMeView(generics.RetrieveUpdateAPIView):
+    permission_classes = [IsCandidate]
+    serializer_class = CandidateProfileSerializer
+
+    def get_object(self):
+        return self.request.user.candidate_profile
 
 class EmployerMeView(viewsets.ViewSet,generics.RetrieveUpdateAPIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsEmployer]
     serializer_class = EmployerProfileSerializer
 
     def get_object(self):
