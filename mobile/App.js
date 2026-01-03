@@ -1,7 +1,7 @@
 // App.js
 import React from 'react';
 import { Provider as PaperProvider, MD3LightTheme as DefaultTheme } from 'react-native-paper';
-import AppNavigator from './navigation/AppNavigator'; // File điều hướng chính
+import AppNavigator from './src/navigation/AppNavigator'; // File điều hướng chính
 
 // Định nghĩa Theme màu chủ đạo (ví dụ màu Xanh dương cho Job Portal)
 const theme = {
