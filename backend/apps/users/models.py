@@ -48,7 +48,6 @@ class User(AbstractUser, BaseModel):
 
 
 class CandidateProfile(BaseModel):
-    avatar = CloudinaryField(resource_type='image', null=True, folder='avatars')
     user = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
