@@ -95,14 +95,22 @@ class RegisterEmployerView(viewsets.ViewSet, generics.CreateAPIView):
     serializer_class = EmployerRegisterSerializer
     parser_classes = [parsers.MultiPartParser]
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = serializer.save()
+        try:
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            user = serializer.save()
 
-        return Response(
-            {
-                "message": "Đăng ký thành công. Vui lòng chờ Admin phê duyệt trước khi đăng tin.",
-                "user": UserSerializer(user).data
-            },
-            status=status.HTTP_201_CREATED
-        )
+            return Response(
+                {
+                    "message": "Đăng ký thành công. Vui lòng chờ Admin phê duyệt trước khi đăng tin.",
+                    "user": UserSerializer(user).data
+                },
+                status=status.HTTP_201_CREATED
+            )
+        except TypeError as ex:
+            return Response(
+                {
+                    "message": f"Không có trường {ex}",
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
