@@ -30,7 +30,10 @@ class CandidateApplicationViewSet(viewsets.ModelViewSet):
     permission_classes = [IsCandidate]
 
     def get_queryset(self):
-        return Application.objects.filter(user=self.request.user).select_related('job')
+        user = self.request.user
+        if not user.is_authenticated:
+            return Application.objects.none()
+        return Application.objects.filter(user=user).select_related('job')
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)

@@ -8,14 +8,20 @@ from .serializers import CandidateJobSerializer, CandidateJobDetailSerializer, E
 from ..users.permissions import IsEmployerApproved, IsCandidate
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from .filters import JobFilter
 
 
 # danh sách và chi tiết job
 class JobViewCandidate(viewsets.ReadOnlyModelViewSet):
-    queryset = Job.objects.all()
+    queryset = Job.objects.filter(deadline__gte=timezone.now())
     pagination_class = StandardResultsSetPagination
 
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filter_backends = [
+        DjangoFilterBackend,
+        filters.SearchFilter,
+        filters.OrderingFilter,
+    ]
+    filterset_class = JobFilter
     search_fields = ['title', 'company_name']  # cấu hình cho SearchFilter
     filterset_fields = ['category', 'location', 'employment_type',
                         'experience_level']  # cấu hình cho DjangoFilterBackend dành cho tìm kiếm chính xác
@@ -86,7 +92,9 @@ class BookmarkJobViewSet(viewsets.ModelViewSet):
     http_method_names = ['get', 'post', 'delete']
 
     def get_queryset(self):
-        return BookmarkJob.objects.filter(user=self.request.user).select_related('job')
+        if self.request.user.is_authenticated:
+            return BookmarkJob.objects.filter(user=self.request.user).select_related('job')
+        return BookmarkJob.objects.none()
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)  # gán vào giai đoạn này vì backend chỉ tin chính nó

@@ -9,6 +9,8 @@ User = get_user_model()
 
 
 class UserSerializer(MediaURLSerializer):
+    media_fields = ["avatar"]
+
     class Meta:
         model = User
         # bạn có thể bỏ bớt field nếu muốn ngắn hơn
@@ -22,6 +24,8 @@ class UserSerializer(MediaURLSerializer):
             "last_name",
             "bio",
             "created_date",
+            "phone",
+            "avatar",
         ]
         extra_kwargs = {
             "password": {"write_only": True, "required": False},
@@ -59,18 +63,15 @@ class UserSerializer(MediaURLSerializer):
         return instance
 
 
-class CandidateProfileSerializer(MediaURLSerializer):
-    media_fields = ["avatar"]
+class CandidateProfileSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
 
     class Meta:
         model = CandidateProfile
-        fields = ["user", "full_name", "phone", "address", "avatar"]
+        fields = ["user", "full_name", "address", ]
 
 
 class EmployerProfileSerializer(MediaURLSerializer):
-    media_fields = ["logo"]
-
     class Meta:
         model = EmployerProfile
         fields = [
@@ -78,7 +79,6 @@ class EmployerProfileSerializer(MediaURLSerializer):
             "company_name",
             "tax_code",
             "website",
-            "logo",
             "is_verified",
             "verified_at",
             "verified_by",

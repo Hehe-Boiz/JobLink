@@ -11,7 +11,7 @@ from .serializers import CandidateRegisterSerializer, EmployerRegisterSerializer
 from django.utils import timezone
 
 
-class UserView(viewsets.ViewSet, generics.CreateAPIView):
+class UserView(viewsets.ViewSet):
     queryset = User.objects.filter(is_active=True)
     serializer_class = serializers.UserSerializer
 
