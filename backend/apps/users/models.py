@@ -25,7 +25,8 @@ class CustomUserManager(UserManager):
 class User(AbstractUser, BaseModel):
     email = models.EmailField(unique=True)
     bio = models.TextField(blank=True, null=True)
-    avatar = CloudinaryField(null=True)
+    avatar = CloudinaryField(resource_type='image', null=True, folder='avatars')
+    phone = models.CharField(max_length=30)
 
     role = models.CharField(
         max_length=20,
@@ -47,6 +48,7 @@ class User(AbstractUser, BaseModel):
 
 
 class CandidateProfile(BaseModel):
+    avatar = CloudinaryField(resource_type='image', null=True, folder='avatars')
     user = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
@@ -54,7 +56,6 @@ class CandidateProfile(BaseModel):
         related_name="candidate_profile"
     )
     full_name = models.CharField(max_length=255)
-    phone = models.CharField(max_length=30)
     address = models.CharField(max_length=255, blank=True, default="")
 
     def __str__(self):
@@ -70,7 +71,6 @@ class EmployerProfile(BaseModel):
     company_name = models.CharField(max_length=255)
     tax_code = models.CharField(max_length=50, blank=True, null=True, unique=True)
     website = models.URLField(blank=True, null=True)
-    logo = CloudinaryField(null=True, blank=True)
 
     status = models.CharField(max_length=20, choices=VerificationStatus.choices, default=VerificationStatus.PENDING)
     reject_reason = models.TextField(blank=True, default="")

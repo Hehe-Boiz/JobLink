@@ -1,6 +1,9 @@
 from rest_framework import serializers
 from .models import Application
 from ..jobs.models import Job  # để lấy job.title (nếu cần)
+from ..core.serializers import MediaURLSerializer
+from ..jobs.serializers import CandidateJobSerializer, CandidateJobDetailSerializer
+from django.utils import timezone
 
 
 class EmployerApplicationSerializer(serializers.ModelSerializer):
@@ -43,4 +46,46 @@ class EmployerApplicationSerializer(serializers.ModelSerializer):
         # Bạn có thể đổi range theo ý (vd 0-100). Model đang integer nên MVP: 1..5
         if not (1 <= value <= 5):
             raise serializers.ValidationError("rating must be between 1 and 5")
+        return value
+
+
+class CandidateApplicationListSerializer(serializers.ModelSerializer):
+    job = CandidateJobSerializer(read_only=True)
+
+    class Meta:
+        model = Application
+        fields = ['id', 'job', 'status', 'created_date']
+        read_only_fields = ['status', 'created_date']
+
+
+class CandidateApplicationDetailSerializer(MediaURLSerializer):
+    job = CandidateJobDetailSerializer(read_only=True)
+    media_fields = ["cv"]
+
+    class Meta:
+        model = Application
+        fields = ['id', 'job', 'cv', 'cover_letter', 'status', 'employer_note', 'created_date', 'updated_date']
+        read_only_fields = ['status', 'created_date', 'updated_date', 'employer_note']
+
+
+class CandidateApplicationWriteSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Application
+        fields = ['job', 'cv', 'cover_letter']
+
+    def validate_job(self, value):
+        if not value.active:
+            raise serializers.ValidationError("Công việc này đã đóng, bạn không thể ứng tuyển.")
+
+        if value.deadline and value.deadline < timezone.now().date():
+            raise serializers.ValidationError("Công việc này đã hết hạn nộp hồ sơ.")
+
+        return value
+
+    def validate_cv(self, value):
+        valid_extensions = ['.pdf', '.doc', '.docx']
+        if not any(value.name.lower().endswith(ext) for ext in valid_extensions):
+            raise serializers.ValidationError("Chỉ chấp nhận file định dạng PDF hoặc Word (.doc, .docx).")
+
         return value

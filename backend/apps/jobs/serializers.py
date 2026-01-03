@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Job, JobCategory, Location, Tag
+from .models import Job, JobCategory, Location, Tag, BookmarkJob
 from django.utils import timezone
 
 
@@ -146,3 +146,18 @@ class EmployerJobSerializer(serializers.ModelSerializer):
         if tags is not None:
             instance.tags.set(tags)
         return instance
+
+
+class CandidateBookmarkJobSerializer(serializers.ModelSerializer):
+    job = CandidateJobSerializer(read_only=True)  # chỉ dùng cho chiều dữ liệu đi ra
+
+    job_id = serializers.PrimaryKeyRelatedField(
+        queryset=Job.objects.filter(active=True), # giới hạn phạm vi tìm kiếm
+        source="job", # gán vào trường job của Bookmark sau khi tìm thấy
+        write_only=True # dùng cho chiều dữ liệu đi vào
+    )
+
+    class Meta:
+        model = BookmarkJob
+        fields = ['id', 'job_id', 'job', 'created_date']
+        read_only_fields = ['created_date']

@@ -1,27 +1,11 @@
-# apps/users/serializers.py
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.utils import timezone
 from rest_framework import serializers
 
 from .models import UserRole, CandidateProfile, EmployerProfile
+from ..core.serializers import MediaURLSerializer
 
 User = get_user_model()
-
-
-class MediaURLSerializer(serializers.ModelSerializer):
-
-    media_fields = []  # ví dụ: ["avatar"], ["logo"]
-
-    def to_representation(self, instance):
-        data = super().to_representation(instance)
-
-        for f in getattr(self, "media_fields", []):
-            val = getattr(instance, f, None)
-            # CloudinaryField & ImageField thường có .url
-            data[f] = val.url if val else ""
-
-        return data
 
 
 class UserSerializer(MediaURLSerializer):
@@ -31,7 +15,7 @@ class UserSerializer(MediaURLSerializer):
         model = User
         # bạn có thể bỏ bớt field nếu muốn ngắn hơn
         fields = [
-            "id",
+            # "id",
             "username",
             "email",
             "password",
@@ -39,14 +23,15 @@ class UserSerializer(MediaURLSerializer):
             "first_name",
             "last_name",
             "bio",
+            "created_date",
+            "phone",
             "avatar",
-            "email_notifications",
-            "push_notifications",
         ]
         extra_kwargs = {
             "password": {"write_only": True, "required": False},
             # role không cho đổi lung tung qua API user update (đổi role do admin)
             "role": {"read_only": True},
+            "created_date": {"read_only": True},
         }
 
     def validate_email(self, value):
@@ -79,17 +64,14 @@ class UserSerializer(MediaURLSerializer):
 
 
 class CandidateProfileSerializer(serializers.ModelSerializer):
+    user = UserSerializer(read_only=True)
+
     class Meta:
         model = CandidateProfile
-        fields = ["user", "full_name", "phone", "address"]
-        extra_kwargs = {
-            "user": {"read_only": True},
-        }
+        fields = ["user", "full_name", "address", ]
 
 
 class EmployerProfileSerializer(MediaURLSerializer):
-    media_fields = ["logo"]
-
     class Meta:
         model = EmployerProfile
         fields = [
@@ -97,7 +79,6 @@ class EmployerProfileSerializer(MediaURLSerializer):
             "company_name",
             "tax_code",
             "website",
-            "logo",
             "is_verified",
             "verified_at",
             "verified_by",
@@ -108,6 +89,7 @@ class EmployerProfileSerializer(MediaURLSerializer):
             "verified_at": {"read_only": True},
             "verified_by": {"read_only": True},
         }
+
 
 class AdminEmployerSerializer(EmployerProfileSerializer):
     # thêm thông tin user đầy đủ để admin xem nhanh
@@ -120,6 +102,7 @@ class AdminEmployerSerializer(EmployerProfileSerializer):
             "verified_by_detail",
         ]
         read_only_fields = fields
+
 
 class BaseRegisterSerializer(serializers.Serializer):
     email = serializers.EmailField()
