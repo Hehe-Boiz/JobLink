@@ -19,7 +19,7 @@ class UserView(viewsets.ViewSet):
     @action(methods=['get', 'patch'], url_path='current-user', detail=False, permission_classes=[permissions.IsAuthenticated])
     def get_current_user(self, request):
         u = request.user
-        if request.method == 'PATCH':
+        if request.method.__eq__('PATCH'):
             serializer = serializers.UserSerializer(u, data=request.data, partial=True)
             if serializer.is_valid():
                 serializer.save()
