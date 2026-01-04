@@ -1,13 +1,13 @@
 // src/navigation/AppNavigator.js
 import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack';
+import {NavigationContainer} from '@react-navigation/native';
+import {createStackNavigator} from '@react-navigation/stack';
 
 // Import các màn hình Auth
 import Login from '../screens/Auth/Login';
 // Import bộ Tab vừa làm
 import EmployerTabs from './EmployerTabs';
-import { Provider } from 'react-native-paper';
+import {Provider} from 'react-native-paper';
 import Register from '../screens/Auth/Register';
 
 const Stack = createStackNavigator();
@@ -19,16 +19,23 @@ export default function AppNavigator() {
     return (
         <Provider>
             <NavigationContainer>
-                <Stack.Navigator screenOptions={{ headerShown: false }}>
-                    {/* Logic điều hướng: Nếu chưa đăng nhập -> Login, Ngược lại vào Main */}
-                    <Stack.Screen name="Login" component={Login} />
-                    <Stack.Screen name="Register" component={Register} />
-                    {/* Ví dụ đơn giản: Mặc định vào thẳng CandidateTabs để bạn test giao diện */}
-                    <Stack.Screen name="EmployerMain" component={EmployerTabs} />
-                    {/* Sau này sẽ là:
-        <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="RecruiterMain" component={RecruiterTabs} />
-        */}
+                <Stack.Navigator screenOptions={{headerShown: false}}>
+                    {!isAuthenticated ? (
+                        // Stack cho người chưa đăng nhập
+                        <>
+                            <Stack.Screen name="Login" component={Login}/>
+                            <Stack.Screen name="Register" component={Register}/>
+                        </>
+                    ) : (
+                        // Stack cho người đã đăng nhập
+                        <>
+                            {userRole === 'Employer' ? (
+                                <Stack.Screen name="EmployerMain" component={EmployerTabs}/>
+                            ) : (
+                                <Stack.Screen name="CandidateMain" component={CandidateTabs}/>
+                            )}
+                        </>
+                    )}
                 </Stack.Navigator>
             </NavigationContainer>
         </Provider>
