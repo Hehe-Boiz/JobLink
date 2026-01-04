@@ -26,7 +26,7 @@ class User(AbstractUser, BaseModel):
     email = models.EmailField(unique=True)
     bio = models.TextField(blank=True, null=True)
     avatar = CloudinaryField(resource_type='image', null=True, folder='avatars')
-    phone = models.CharField(max_length=30)
+    phone = models.CharField(max_length=30, null=False)
 
     role = models.CharField(
         max_length=20,

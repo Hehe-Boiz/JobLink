@@ -14,11 +14,12 @@ from django.utils import timezone
 class UserView(viewsets.ViewSet):
     queryset = User.objects.filter(is_active=True)
     serializer_class = serializers.UserSerializer
+    parser_classes = [parsers.MultiPartParser]
 
     @action(methods=['get', 'patch'], url_path='current-user', detail=False, permission_classes=[permissions.IsAuthenticated])
     def get_current_user(self, request):
         u = request.user
-        if request.method == 'PATCH':
+        if request.method.__eq__('PATCH'):
             serializer = serializers.UserSerializer(u, data=request.data, partial=True)
             if serializer.is_valid():
                 serializer.save()
@@ -94,14 +95,22 @@ class RegisterEmployerView(viewsets.ViewSet, generics.CreateAPIView):
     serializer_class = EmployerRegisterSerializer
     parser_classes = [parsers.MultiPartParser]
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = serializer.save()
+        try:
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            user = serializer.save()
 
-        return Response(
-            {
-                "message": "Đăng ký thành công. Vui lòng chờ Admin phê duyệt trước khi đăng tin.",
-                "user": UserSerializer(user).data
-            },
-            status=status.HTTP_201_CREATED
-        )
+            return Response(
+                {
+                    "message": "Đăng ký thành công. Vui lòng chờ Admin phê duyệt trước khi đăng tin.",
+                    "user": UserSerializer(user).data
+                },
+                status=status.HTTP_201_CREATED
+            )
+        except TypeError as ex:
+            return Response(
+                {
+                    "message": f"Không có trường {ex}",
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )

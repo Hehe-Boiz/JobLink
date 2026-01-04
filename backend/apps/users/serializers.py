@@ -109,6 +109,7 @@ class BaseRegisterSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True, min_length=6)
     first_name = serializers.CharField(required=False, allow_blank=True)
     last_name = serializers.CharField(required=False, allow_blank=True)
+    phone = serializers.CharField(required=True, allow_null=False)
 
     def validate_email(self, value):
         if User.objects.filter(email=value).exists():
@@ -162,26 +163,24 @@ class EmployerRegisterSerializer(BaseRegisterSerializer):
     company_name = serializers.CharField(required=True)
     tax_code = serializers.CharField(required=False, allow_blank=True)
     website = serializers.URLField(required=False, allow_blank=True)
-    logo = serializers.ImageField(required=True)  # Bắt buộc logo
 
     @transaction.atomic
     def create(self, validated_data):
         password = validated_data.pop("password")
         email = validated_data.pop("email")
-
+        phone = validated_data.pop("phone")
         # Profile data
         company_name = validated_data.pop("company_name")
         tax_code = validated_data.pop("tax_code", None)
         website = validated_data.pop("website", None)
-        logo = validated_data.pop("logo")
         user_data = validated_data
-
         # Tạo User
         user = User.objects.create_user(
             username=email,
             email=email,
             password=password,
             role=UserRole.EMPLOYER,
+            phone=phone,
             **user_data
         )
 
@@ -191,6 +190,5 @@ class EmployerRegisterSerializer(BaseRegisterSerializer):
             company_name=company_name,
             tax_code=tax_code,
             website=website,
-            logo=logo,
         )
         return user
