@@ -4,7 +4,6 @@ from .models import Job
 
 class JobFilter(django_filters.FilterSet):
     min_salary = django_filters.NumberFilter(field_name="salary_min", lookup_expr='gte')
-
     max_salary = django_filters.NumberFilter(field_name="salary_max", lookup_expr='lte')
 
     created_after = django_filters.DateFilter(field_name="created_date", lookup_expr='gte')
@@ -12,4 +11,4 @@ class JobFilter(django_filters.FilterSet):
 
     class Meta:
         model = Job
-        fields = ['category', 'location', 'employment_type']
+        fields = ['category', 'location', 'employment_type', 'experience_level'] # cấu hình cho DjangoFilterBackend dành cho tìm kiếm chính xác

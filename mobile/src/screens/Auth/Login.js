@@ -112,7 +112,7 @@ const Login = ({ navigation }) => {
                 style={styles.googleBtn}
                 labelStyle={styles.googleBtnLabel}
                 icon={({ size, color }) => (
-                    <MaterialCommunityIcons name="google" size={20} color="#EA4335" />
+                        <MaterialCommunityIcons name="google" size={20} color="#EA4335" />
                 )}
             >
                 SIGN IN WITH GOOGLE
