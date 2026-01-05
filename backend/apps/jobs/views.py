@@ -17,14 +17,12 @@ class JobViewCandidate(viewsets.ReadOnlyModelViewSet):
     pagination_class = StandardResultsSetPagination
 
     filter_backends = [
-        DjangoFilterBackend,
-        filters.SearchFilter,
-        filters.OrderingFilter,
+        DjangoFilterBackend, # Lọc theo các trường cố định
+        filters.SearchFilter, # hỗ trợ tìm kiếm theo từ khóa
+        filters.OrderingFilter, # sắp xếp kết quả
     ]
     filterset_class = JobFilter
     search_fields = ['title', 'company_name']  # cấu hình cho SearchFilter
-    filterset_fields = ['category', 'location', 'employment_type',
-                        'experience_level']  # cấu hình cho DjangoFilterBackend dành cho tìm kiếm chính xác
     ordering_fields = ['salary_min', 'salary_max', 'created_date']  # các trường người dùng được sắp xếp
     ordering = ['-created_date']  # sắp xếp mặc định
 

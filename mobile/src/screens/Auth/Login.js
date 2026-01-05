@@ -191,18 +191,17 @@ const Login = ({ route }) => {
                     LOGIN
                 </Button>
 
-                {/* Google Button */}
-                <Button
-                    mode="contained"
-                    onPress={() => console.log('Google Login')}
-                    style={styles.googleBtn}
-                    labelStyle={styles.googleBtnLabel}
-                    icon={({ size, color }) => (
+            <Button
+                mode="contained"
+                onPress={() => console.log('Google Login')}
+                style={styles.googleBtn}
+                labelStyle={styles.googleBtnLabel}
+                icon={({ size, color }) => (
                         <MaterialCommunityIcons name="google" size={20} color="#EA4335" />
-                    )}
-                >
-                    SIGN IN WITH GOOGLE
-                </Button>
+                )}
+            >
+                SIGN IN WITH GOOGLE
+            </Button>
 
                 {/* Footer */}
                 <View style={styles.footer}>

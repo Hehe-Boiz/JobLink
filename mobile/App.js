@@ -7,14 +7,23 @@ import { MyUserContext } from './src/utils/contexts/MyContext';
 import MyUserReducer from './src/utils/reducers/MyUserReducer';
 
 // Định nghĩa Theme màu chủ đạo (ví dụ màu Xanh dương cho Job Portal)
+import React, {useEffect} from 'react';
+import {Provider as PaperProvider, MD3LightTheme as DefaultTheme} from 'react-native-paper';
+import {useFonts} from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
+import AppNavigator from './src/navigation/AppNavigator';
+import CandidateHome from "./src/screens/Candidate/CandidateHome";
+
+SplashScreen.preventAutoHideAsync();
+
 const theme = {
-  ...DefaultTheme,
-  colors: {
-    ...DefaultTheme.colors,
-    primary: '#105be6ff', // Màu chính
-    secondary: '#7d786cff',
-    error: '#dc3545',
-  },
+    ...DefaultTheme,
+    colors: {
+        ...DefaultTheme.colors,
+        primary: '#105be6ff',
+        secondary: '#7d786cff',
+        error: '#dc3545',
+    },
 };
 
 export default function App() {

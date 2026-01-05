@@ -1,7 +1,7 @@
 // src/navigation/AppNavigator.js
 import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack';
+import {NavigationContainer} from '@react-navigation/native';
+import {createStackNavigator} from '@react-navigation/stack';
 
 // Import các màn hình Auth
 import Login from '../screens/Auth/Login';
@@ -12,6 +12,8 @@ import CandidateRegister from '../screens/Auth/CandidateRegister';
 import EmployerRegister from '../screens/Auth/EmployerRegister';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import CandidateTabs from './CandidateTabs';
+import {Provider} from 'react-native-paper';
+import Register from '../screens/Auth/Register';
 
 const Stack = createStackNavigator();
 

@@ -33,9 +33,9 @@ const styles = StyleSheet.create({
     },
 
     brandHighlight: {
-        color: '#FF9228',     // Màu Cam
+        color: '#FCA34D',     // Màu Cam
         // Cũng đổ bóng cho phần này luôn
-        textShadowColor: '#FF9228',
+        textShadowColor: '#FCA34D',
         textShadowOffset: { width: 0.5, height: 0.5 },
         textShadowRadius: 1,
     },
@@ -80,8 +80,8 @@ const styles = StyleSheet.create({
 
     // Buttons
     loginBtn: {
-        borderRadius: 6, // Bo góc vuông nhẹ giống hình
-        height: 50,
+        borderRadius: 10, // Bo góc vuông nhẹ giống hình
+        height: 60,
         justifyContent: 'center',
         backgroundColor: '#130160', // Màu tím than đậm
         marginBottom: 15,
@@ -94,8 +94,8 @@ const styles = StyleSheet.create({
     },
 
     googleBtn: {
-        borderRadius: 6,
-        height: 50,
+        borderRadius: 10,
+        height: 60,
         justifyContent: 'center',
         backgroundColor: '#E6E1FF', // Màu tím nhạt nền nút Google (hoặc xám nhạt)
         elevation: 0,
