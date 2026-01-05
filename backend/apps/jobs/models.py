@@ -50,14 +50,14 @@ class Job(BaseModel):
     posted_by = models.ForeignKey(User, related_name='posted_jobs', on_delete=models.CASCADE)
     title = models.CharField(max_length=255, db_index=True)
     description = RichTextField()
-    requirements = models.TextField(blank=True, default="")
-    benefits = models.TextField(blank=True, default="")
+    requirements = RichTextField()
+    benefits = RichTextField()
 
     company_name = models.CharField(max_length=255)
 
     category = models.ForeignKey(JobCategory, on_delete=models.PROTECT, related_name="jobs")
     location = models.ForeignKey(Location, on_delete=models.PROTECT, related_name="jobs")
-
+    address = models.TextField(blank=True, default="")
     employment_type = models.CharField(
         max_length=20, choices=EmploymentType.choices, default=EmploymentType.FULL_TIME
     )
