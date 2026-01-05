@@ -1,11 +1,13 @@
 import axios from "axios";
 
-const BASE_URL = 'http://localhost:8000/';
+const BASE_URL = 'http://192.168.1.16:8000/';
 
 export const endpoints = {
-    'register': '/users/',
+    'register_candidate': '/register/candidate/',
+    'register_employer': '/register/employer/',
     'login': '/o/token/',
-    'logout': '/o/revoke_token'
+    'current_user': '/users/current-user/',
+    'logout': '/o/revoke_token/'
 };
 
 export const authApis = (token) => {

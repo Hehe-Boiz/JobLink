@@ -17,6 +17,8 @@ schema_view = get_schema_view(
     permission_classes=(permissions.AllowAny,),
 )
 
+
+
 urlpatterns = [
     path('', include('apps.applications.urls')),
     path('', include('apps.jobs.urls')),
