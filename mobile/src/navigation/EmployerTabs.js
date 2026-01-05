@@ -8,6 +8,7 @@ import { BottomNavigation, useTheme, Badge } from 'react-native-paper'; // Impor
 // Import các màn hình
 import EmployerHome from '../screens/Employer/EmployerHome'; // Đổi tên cho chuẩn
 import Login from '../screens/Auth/Login'; // Tạm
+import EmployerProfile from '../screens/Employer/EmployerProfile';
 
 // Màn hình giả lập
 const MyJobsScreen = () => <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><Text>Quản lý tin đăng</Text></View>;
@@ -136,7 +137,7 @@ export default function EmployerTabs() {
             {/* TAB 4: CÀI ĐẶT / TÀI KHOẢN */}
             <Tab.Screen
                 name="Settings"
-                component={Login} // Tạm
+                component={EmployerProfile} // Tạm
                 options={{
                     tabBarLabel: 'Tài khoản',
                     tabBarIcon: ({ color, size }) => (

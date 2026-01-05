@@ -7,7 +7,7 @@ const styles = StyleSheet.create({
     padding: 20,
     justifyContent: 'center',
   },
-  
+
   // Header: Giống hệt Login
   headerContainer: {
     alignItems: 'center',
@@ -15,7 +15,7 @@ const styles = StyleSheet.create({
     marginTop: 40,
   },
   appName: {
-    fontSize: 40, // Nhỏ hơn Login xíu (50 -> 40) để tiết kiệm chỗ
+    fontSize: 50, // Nhỏ hơn Login xíu (50 -> 40) để tiết kiệm chỗ
     fontWeight: 'bold',
     color: '#130160',
     letterSpacing: -1,

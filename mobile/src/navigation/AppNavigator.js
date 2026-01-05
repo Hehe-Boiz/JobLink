@@ -8,7 +8,10 @@ import Login from '../screens/Auth/Login';
 // Import bộ Tab vừa làm
 import EmployerTabs from './EmployerTabs';
 import { Provider } from 'react-native-paper';
-import Register from '../screens/Auth/Register';
+import CandidateRegister from '../screens/Auth/CandidateRegister';
+import EmployerRegister from '../screens/Auth/EmployerRegister';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import CandidateTabs from './CandidateTabs';
 
 const Stack = createStackNavigator();
 
@@ -22,9 +25,11 @@ export default function AppNavigator() {
                 <Stack.Navigator screenOptions={{ headerShown: false }}>
                     {/* Logic điều hướng: Nếu chưa đăng nhập -> Login, Ngược lại vào Main */}
                     <Stack.Screen name="Login" component={Login} />
-                    <Stack.Screen name="Register" component={Register} />
+                    <Stack.Screen name="CandidateRegister" component={CandidateRegister} />
+                    <Stack.Screen name="EmployerRegister" component={EmployerRegister} />
                     {/* Ví dụ đơn giản: Mặc định vào thẳng CandidateTabs để bạn test giao diện */}
                     <Stack.Screen name="EmployerMain" component={EmployerTabs} />
+                    <Stack.Screen name="CandidateMain" component={CandidateTabs} />
                     {/* Sau này sẽ là:
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="RecruiterMain" component={RecruiterTabs} />
