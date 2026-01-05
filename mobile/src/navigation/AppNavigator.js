@@ -10,10 +10,8 @@ import EmployerTabs from './EmployerTabs';
 import { Provider } from 'react-native-paper';
 import CandidateRegister from '../screens/Auth/CandidateRegister';
 import EmployerRegister from '../screens/Auth/EmployerRegister';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
 import CandidateTabs from './CandidateTabs';
 import {Provider} from 'react-native-paper';
-import Register from '../screens/Auth/Register';
 
 const Stack = createStackNavigator();
 

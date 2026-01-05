@@ -22,6 +22,7 @@ class UserSerializer(MediaURLSerializer):
             "role",
             "first_name",
             "last_name",
+            "full_name",
             "bio",
             "created_date",
             "phone",
@@ -65,13 +66,13 @@ class UserSerializer(MediaURLSerializer):
 
 class CandidateProfileSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
-
     class Meta:
         model = CandidateProfile
-        fields = ["user", "full_name", "address", ]
+        fields = ["user", "address"]
 
 
 class EmployerProfileSerializer(MediaURLSerializer):
+    user = UserSerializer(read_only=True)
     class Meta:
         model = EmployerProfile
         fields = [
@@ -109,7 +110,7 @@ class BaseRegisterSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True, min_length=6)
     first_name = serializers.CharField(required=False, allow_blank=True)
     last_name = serializers.CharField(required=False, allow_blank=True)
-    phone = serializers.CharField(required=True, allow_null=False)
+    phone = serializers.CharField(required=False)
 
     def validate_email(self, value):
         if User.objects.filter(email=value).exists():
@@ -119,21 +120,12 @@ class BaseRegisterSerializer(serializers.Serializer):
 
 # --- 1. Candidate Register ---
 class CandidateRegisterSerializer(BaseRegisterSerializer):
-    full_name = serializers.CharField(required=True)
-    phone = serializers.CharField(required=True)
-    address = serializers.CharField(required=False, allow_blank=True)
-    avatar = serializers.ImageField(required=True)
-
     @transaction.atomic
     def create(self, validated_data):
         # Tách data
         password = validated_data.pop("password")
         email = validated_data.pop("email")
         # Profile data
-        full_name = validated_data.pop("full_name")
-        phone = validated_data.pop("phone")
-        address = validated_data.pop("address", "")
-        avatar = validated_data.pop("avatar")
 
         # User basic data (first_name, last_name...)
         user_data = validated_data
@@ -144,16 +136,12 @@ class CandidateRegisterSerializer(BaseRegisterSerializer):
             email=email,
             password=password,
             role=UserRole.CANDIDATE,
-            avatar=avatar,
             **user_data
         )
 
         # Tạo Profile
         CandidateProfile.objects.create(
             user=user,
-            full_name=full_name,
-            phone=phone,
-            address=address
         )
         return user
 
@@ -168,19 +156,18 @@ class EmployerRegisterSerializer(BaseRegisterSerializer):
     def create(self, validated_data):
         password = validated_data.pop("password")
         email = validated_data.pop("email")
-        phone = validated_data.pop("phone")
         # Profile data
         company_name = validated_data.pop("company_name")
         tax_code = validated_data.pop("tax_code", None)
         website = validated_data.pop("website", None)
         user_data = validated_data
+        print(user_data)
         # Tạo User
         user = User.objects.create_user(
             username=email,
             email=email,
             password=password,
             role=UserRole.EMPLOYER,
-            phone=phone,
             **user_data
         )
 

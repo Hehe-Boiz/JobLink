@@ -26,7 +26,7 @@ class User(AbstractUser, BaseModel):
     email = models.EmailField(unique=True)
     bio = models.TextField(blank=True, null=True)
     avatar = CloudinaryField(resource_type='image', null=True, folder='avatars')
-    phone = models.CharField(max_length=30, null=False)
+    phone = models.CharField(max_length=30, null=True)
 
     role = models.CharField(
         max_length=20,
@@ -36,6 +36,12 @@ class User(AbstractUser, BaseModel):
 
     email_notifications = models.BooleanField(default=True)
     push_notifications = models.BooleanField(default=True)
+
+    @property
+    def full_name(self):
+        if self.last_name and self.first_name:
+            return f"{self.last_name} {self.first_name}"
+        return self.first_name or self.last_name or self.username
 
     def __str__(self):
         return f"{self.first_name} ({self.email})"
@@ -54,11 +60,10 @@ class CandidateProfile(BaseModel):
         primary_key=True,
         related_name="candidate_profile"
     )
-    full_name = models.CharField(max_length=255)
     address = models.CharField(max_length=255, blank=True, default="")
-
+    experience_years = models.IntegerField(default=0)
     def __str__(self):
-        return self.full_name
+        return self.user.get_full_name() if self.user.get_full_name() else self.user.username
 
 class EmployerProfile(BaseModel):
     user = models.OneToOneField(
