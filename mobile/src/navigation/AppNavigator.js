@@ -11,7 +11,6 @@ import { Provider } from 'react-native-paper';
 import CandidateRegister from '../screens/Auth/CandidateRegister';
 import EmployerRegister from '../screens/Auth/EmployerRegister';
 import CandidateTabs from './CandidateTabs';
-import {Provider} from 'react-native-paper';
 
 const Stack = createStackNavigator();
 
