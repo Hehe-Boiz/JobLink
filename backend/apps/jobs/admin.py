@@ -6,7 +6,8 @@ from .models import Job, JobCategory, Tag, Location
 
 class JobForm(forms.ModelForm):
     description = forms.CharField(widget=CKEditorUploadingWidget())
-
+    benefits = forms.CharField(widget=CKEditorUploadingWidget())
+    requirements = forms.CharField(widget=CKEditorUploadingWidget())
     class Meta:
         model = Job
         fields = '__all__'
