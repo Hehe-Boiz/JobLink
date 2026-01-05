@@ -10,6 +10,7 @@ import MyUserReducer from './src/utils/reducers/MyUserReducer';
 import { Provider as PaperProvider, MD3LightTheme as DefaultTheme } from 'react-native-paper';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
+import CandidateJobDetail from "./src/screens/Candidate/CandidateJobDetail";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -62,7 +63,8 @@ export default function App() {
     <SafeAreaProvider>
       <MyUserContext.Provider value={[user, dispatch]}>
         <PaperProvider theme={theme}>
-          <AppNavigator />
+          {/*<AppNavigator />*/}
+          <CandidateJobDetail/>
         </PaperProvider>
       </MyUserContext.Provider>
     </SafeAreaProvider>
