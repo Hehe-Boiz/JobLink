@@ -2,7 +2,7 @@
 import React, { useEffect, useReducer } from 'react';
 
 import AppNavigator from './src/navigation/AppNavigator'; // File điều hướng chính
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { MyUserContext } from './src/utils/contexts/MyContext';
 import MyUserReducer from './src/utils/reducers/MyUserReducer';
 
@@ -17,11 +17,12 @@ const theme = {
   ...DefaultTheme,
   colors: {
     ...DefaultTheme.colors,
-    primary: '#105be6ff',
-    secondary: '#7d786cff',
+    primary: '#FF9228',
+    secondary: '#130160ff',
     error: '#dc3545',
   },
 };
+
 
 export default function App() {
   const [user, dispatch] = useReducer(MyUserReducer, null);
@@ -59,12 +60,12 @@ export default function App() {
     return null;
   }
   return (
-    <SafeAreaProvider>
-      <MyUserContext.Provider value={[user, dispatch]}>
-        <PaperProvider theme={theme}>
-          <AppNavigator />
-        </PaperProvider>
-      </MyUserContext.Provider>
-    </SafeAreaProvider>
+      <SafeAreaProvider>
+        <MyUserContext.Provider value={[user, dispatch]}>
+          <PaperProvider theme={theme}>
+            <AppNavigator />
+          </PaperProvider>
+        </MyUserContext.Provider>
+      </SafeAreaProvider>
   );
 }

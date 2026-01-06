@@ -7,7 +7,10 @@ export const endpoints = {
     'register_employer': '/register/employer/',
     'login': '/o/token/',
     'current_user': '/users/current-user/',
-    'logout': '/o/revoke_token/'
+    'logout': '/o/revoke_token/',
+    'employer_jobs': '/employer/jobs/',
+    'categories': '/categories/',
+    'locations': '/locations/',
 };
 
 export const authApis = (token) => {
