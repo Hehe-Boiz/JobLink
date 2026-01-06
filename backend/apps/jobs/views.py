@@ -1,10 +1,12 @@
-from rest_framework import viewsets, filters, status
-from .models import Job, BookmarkJob
+from rest_framework import viewsets, filters, status, generics
+from rest_framework.permissions import AllowAny
+
+from .models import Job, BookmarkJob, JobCategory, Location
 from ..core.paginators import StandardResultsSetPagination
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
 from .serializers import CandidateJobSerializer, CandidateJobDetailSerializer, EmployerJobSerializer, \
-    CandidateBookmarkJobSerializer
+    CandidateBookmarkJobSerializer, JobCategorySerializer, LocationSerializer
 from ..users.permissions import IsEmployerApproved, IsCandidate
 from rest_framework.response import Response
 from rest_framework.decorators import action
@@ -108,3 +110,13 @@ class BookmarkJobViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             raise e
+class JobCategoryViewSet(viewsets.ViewSet, generics.ListAPIView):
+    serializer_class = JobCategorySerializer
+    queryset = JobCategory.objects.all()
+    permission_classes = [AllowAny]
+
+
+class LocationViewSet(viewsets.ViewSet, generics.ListAPIView):
+    serializer_class = LocationSerializer
+    queryset = Location.objects.all()
+    permission_classes = [AllowAny]

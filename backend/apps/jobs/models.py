@@ -33,6 +33,7 @@ class EmploymentType(models.TextChoices):
 
 class ExperienceLevel(models.TextChoices):
     INTERN = "INTERN", "Intern"
+    FRESHER = "FRESHER", "Fresher"
     JUNIOR = "JUNIOR", "Junior"
     MIDDLE = "MIDDLE", "Middle"
     SENIOR = "SENIOR", "Senior"
@@ -85,10 +86,9 @@ class Job(BaseModel):
     def clean(self):
         if self.salary_min is not None and self.salary_max is not None:
             if self.salary_min > self.salary_max:
-                raise ValidationError("salary_min must be <= salary_max")
+                raise ValidationError("Mức lương không phù hợp")
         if self.deadline is not None and self.deadline < timezone.now().date():
-            # optional rule: không bắt buộc, bạn có thể bỏ
-            pass
+            raise ValidationError("Ngày không phù hợp")
 
     def __str__(self):
         return f"{self.title} - {self.company_name}"

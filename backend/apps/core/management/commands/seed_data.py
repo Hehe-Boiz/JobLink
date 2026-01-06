@@ -10,6 +10,7 @@ from datetime import timedelta
 # Bạn hãy đổi tên app 'users', 'jobs' cho đúng với project của bạn
 from apps.users.models import User, UserRole, VerificationStatus, CandidateProfile, EmployerProfile
 from apps.jobs.models import JobCategory, Location, Job, Tag, EmploymentType, ExperienceLevel
+from apps.applications.models import Application, ApplicationStatus
 
 
 class Command(BaseCommand):
@@ -24,17 +25,17 @@ class Command(BaseCommand):
             # ==========================================
             # 1. TẠO ADMIN
             # ==========================================
-            # self.stdout.write("- Đang tạo Admin...")
+            self.stdout.write("- Đang tạo Admin...")
             admin_email = 'admin@gmail.com'
-            # if not User.objects.filter(email=admin_email).exists():
-            #     User.objects.create_superuser(
-            #         username='admin',
-            #         email=admin_email,
-            #         password='123456',
-            #         first_name='Super',
-            #         last_name='Admin'
-            #     )
-            #
+            if not User.objects.filter(email=admin_email).exists():
+                User.objects.create_superuser(
+                    username='admin',
+                    email=admin_email,
+                    password='123456',
+                    first_name='Super',
+                    last_name='Admin'
+                )
+
             admin_user = User.objects.get(email=admin_email)
 
             # ==========================================
@@ -147,5 +148,55 @@ class Command(BaseCommand):
                     deadline=timezone.now().date() + timedelta(days=random.randint(5, 60))
                 )
                 job.tags.set(random.sample(tags, k=2))
+
+                recruiters = User.objects.filter(role=UserRole.EMPLOYER,
+                                                 employer_profile__status=VerificationStatus.APPROVED)
+                candidates = User.objects.filter(role=UserRole.CANDIDATE)
+                all_jobs = Job.objects.all()
+
+                if not all_jobs.exists() or not candidates.exists():
+                    self.stdout.write(self.style.WARNING(
+                        "⚠️ Cần có Job và Candidate để tạo Application. Hãy chạy seed User/Job trước."))
+                    return
+                self.stdout.write("- Đang tạo Hồ sơ ứng tuyển (Applications)...")
+
+                # Xóa dữ liệu cũ để tránh lỗi Unique Constraint khi chạy lại
+                Application.objects.all().delete()
+
+                app_count = 0
+
+                for candidate in candidates:
+                    # Mỗi ứng viên nộp bừa 3 đến 8 công việc
+                    random_jobs = random.sample(list(all_jobs), k=random.randint(3, 8))
+
+                    for job in random_jobs:
+                        # Random trạng thái hồ sơ
+                        status = random.choice(ApplicationStatus.choices)[0]
+
+                        # Logic dữ liệu hợp lý:
+                        # - Nếu mới nộp (SUBMITTED) -> Chưa có đánh giá, chưa có note
+                        # - Nếu đã xem/phỏng vấn -> Có thể có đánh giá và note
+                        rating = None
+                        employer_note = ""
+
+                        if status != ApplicationStatus.SUBMITTED:
+                            rating = random.randint(1, 5) if random.random() > 0.3 else None  # 70% cơ hội có rating
+                            employer_note = fake.sentence() if random.random() > 0.5 else ""
+
+                        # Tạo Cover Letter giả
+                        cover_letter = f"Kính gửi {job.company_name},\n\nTôi rất thích vị trí {job.title}. {fake.paragraph()} \n\nTrân trọng."
+
+                        Application.objects.create(
+                            user=candidate,
+                            job=job,
+                            status=status,
+                            cover_letter=cover_letter,
+                            employer_note=employer_note,
+                            rating=rating,
+                            # cv=None # CloudinaryField khó fake file thật, để null hoặc string url giả nếu model cho phép
+                        )
+                        app_count += 1
+
+                self.stdout.write(f"- Đã tạo {app_count} hồ sơ ứng tuyển.")
 
         self.stdout.write(self.style.SUCCESS('✅ Đã tạo dữ liệu thành công!'))

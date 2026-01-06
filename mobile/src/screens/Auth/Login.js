@@ -58,8 +58,8 @@ const Login = ({ route }) => {
                 // 1. Gọi API lấy Token (OAuth2)
                 let res = await Apis.post(endpoints['login'], {
                     ...user,
-                    'client_id': 'fqHrRS8b4YzjTOFZhBxvTDwaYzktwOvVUYN3EbSr',
-                    'client_secret': 'YIG0GudFS74EQMuanjjQcB1A7m6XGeJYwDH0gOoLS3XgFvNdtIiNJE7vYxD4XV0iXp0D4FP0S9lOvBhiQcouEFmX4uB2F34VmMclrynrKKXWA5H0N24H58wsbmZwYX1H',
+                    'client_id': '6ggfozYm0GXBwradb487j7KQed12z5pm76q8QFiD',
+                    'client_secret': '3Ep4P7pK9d2LO0ksGSimeTNktjapz2lAl2pF0vhjZKkdxWRJVDSO2Us6oZSyzSCZRr4NhU2POoIpfontO3B2yWjjnYvCF73aEvFlVYArrp42OEZcOUJdJdSlf6LJhbAa',
                     'grant_type': 'password'
                 });
                 // 2. Lưu Token vào máy

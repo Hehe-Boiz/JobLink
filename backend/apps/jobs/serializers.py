@@ -79,6 +79,7 @@ class EmployerJobSerializer(serializers.ModelSerializer):
             "category",
             "category_name",
             "location",
+            "address",
             "location_name",
             "employment_type",
             "experience_level",
@@ -122,7 +123,8 @@ class EmployerJobSerializer(serializers.ModelSerializer):
         tags = validated_data.pop("tags", [])
 
         ep = self._require_approved_employer(request.user)
-
+        validated_data.pop("posted_by", None)
+        validated_data.pop("company_name", None)
         job = Job.objects.create(
             posted_by=request.user,
             company_name=ep.company_name,

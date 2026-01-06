@@ -11,6 +11,10 @@ import { Provider } from 'react-native-paper';
 import CandidateRegister from '../screens/Auth/CandidateRegister';
 import EmployerRegister from '../screens/Auth/EmployerRegister';
 import CandidateTabs from './CandidateTabs';
+import JobApplicants from '../screens/Employer/JobApplicants';
+import CandidateDetail from '../screens/Employer/CandidateDetail';
+import PostJob from '../screens/Employer/PostJob';
+import JobDetail from '../screens/Job/JobDetail';
 
 const Stack = createStackNavigator();
 
@@ -22,17 +26,15 @@ export default function AppNavigator() {
         <Provider>
             <NavigationContainer>
                 <Stack.Navigator screenOptions={{ headerShown: false }}>
-                    {/* Logic điều hướng: Nếu chưa đăng nhập -> Login, Ngược lại vào Main */}
                     <Stack.Screen name="Login" component={Login} />
                     <Stack.Screen name="CandidateRegister" component={CandidateRegister} />
                     <Stack.Screen name="EmployerRegister" component={EmployerRegister} />
-                    {/* Ví dụ đơn giản: Mặc định vào thẳng CandidateTabs để bạn test giao diện */}
                     <Stack.Screen name="EmployerMain" component={EmployerTabs} />
                     <Stack.Screen name="CandidateMain" component={CandidateTabs} />
-                    {/* Sau này sẽ là:
-        <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="RecruiterMain" component={RecruiterTabs} />
-        */}
+                    <Stack.Screen name="JobApplicants" component={JobApplicants} />
+                    <Stack.Screen name="CandidateDetail" component={CandidateDetail} />
+                    <Stack.Screen name="JobDetail" component={JobDetail} />
+                    <Stack.Screen name="PostJob" component={PostJob} />
                 </Stack.Navigator>
             </NavigationContainer>
         </Provider>
