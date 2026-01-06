@@ -245,4 +245,12 @@ export default StyleSheet.create({
         fontSize: 14,
         fontWeight: '700', // Bold
     },
+    fabSearch: {
+        position: "absolute",
+        bottom: 20,
+        right: 20,
+        borderRadius: 28,
+        backgroundColor: '#FFFFFF',
+        elevation: 8,
+    }
 });
