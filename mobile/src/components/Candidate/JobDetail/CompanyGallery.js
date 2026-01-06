@@ -61,7 +61,7 @@ const CompanyGallery = ({ images }) => {
             </View>
 
             <Modal
-                animationType="slide" // Chuyển động trượt lên trông sẽ sang trọng hơn
+                animationType="slide"
                 transparent={true}
                 visible={modalVisible}
                 onRequestClose={() => setModalVisible(false)}
@@ -69,7 +69,6 @@ const CompanyGallery = ({ images }) => {
                 <View style={styles.modalContainer}>
                     <StatusBar barStyle="light-content" />
 
-                    {/* Header mới: Gồm bộ đếm và nút đóng */}
                     <View style={styles.modalHeader}>
                         <CustomText style={styles.paginationText}>
                             {currentIndex} / {images.length}

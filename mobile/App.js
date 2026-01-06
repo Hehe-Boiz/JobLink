@@ -63,7 +63,7 @@ export default function App() {
     <SafeAreaProvider>
       <MyUserContext.Provider value={[user, dispatch]}>
         <PaperProvider theme={theme}>
-          <AppNavigator />
+          <JobDetail/>
         </PaperProvider>
       </MyUserContext.Provider>
     </SafeAreaProvider>
