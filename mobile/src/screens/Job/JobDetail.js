@@ -1,11 +1,13 @@
-import React, {useState, useMemo} from "react";
+import React, {useState, useMemo, useContext} from "react";
 import {SafeAreaView} from "react-native-safe-area-context";
 import {ScrollView, TouchableOpacity, View, StyleSheet, Image} from "react-native";
 import {MaterialCommunityIcons} from '@expo/vector-icons';
 import CustomText from "../../components/CustomText";
-import JobDescriptionTab from "../../components/Candidate/JobDetail/CandidateJobDetailDescription";
-import CompanyTab from "../../components/Candidate/JobDetail/CandidateJobDetailCompany";
+import JobDescriptionTab from "../../components/Job/JobDetail/JobDetailDescription";
+import CompanyTab from "../../components/Job/JobDetail/JobDetailCompany";
 import styles from '../../styles/Candidate/CandidateJobDetailStyles'
+import JobApplicantsTab from "../../components/Job/JobDetail/JobApplicantsTab";
+import { MyUserContext } from "../../utils/contexts/MyContext";
 
 const MOCK_JOB_DETAIL = {
     id: '1',
@@ -45,12 +47,18 @@ const MOCK_JOB_DETAIL = {
         "https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=800&q=80"
     ]
 };
+const MOCK_APPLICANTS = [
+    { id: 1, name: 'Nguyễn Văn An', email: 'an.nguyen@email.com', status: 'Chờ duyệt', statusColor: '#FF9228', bg: '#FFF4E5', avatar: 'https://randomuser.me/api/portraits/men/32.jpg' },
+    { id: 2, name: 'Phạm Thị Dung', email: 'dung.pham@email.com', status: 'Đã xem', statusColor: '#2E5CFF', bg: '#E6E1FF', avatar: 'https://randomuser.me/api/portraits/women/44.jpg' },
+    { id: 3, name: 'Lê Hoàng', email: 'hoang.le@email.com', status: 'Từ chối', statusColor: '#FF4D4D', bg: '#FFECEC', avatar: 'https://randomuser.me/api/portraits/men/45.jpg' },
+];
 
-const CandidateJobDetail = ({navigation}) => {
+const JobDetail = ({ navigation, route }) => {
+    const [user, ] = useContext(MyUserContext)
+    const applicants = MOCK_APPLICANTS;
     const item = MOCK_JOB_DETAIL;
     const [activeTab, setActiveTab] = useState(0);
-
-
+    const isEmployer = user.role == "EMPLOYER" ? true : false;
     return (
         <SafeAreaView style={styles.container}>
             <ScrollView showsVerticalScrollIndicator={false}>
@@ -97,13 +105,21 @@ const CandidateJobDetail = ({navigation}) => {
                                 Company
                             </CustomText>
                         </TouchableOpacity>
+                        {isEmployer && 
+                        <TouchableOpacity
+                            style={[styles.tabButton, activeTab === 2 && styles.activeTab]}
+                            onPress={() => setActiveTab(2)}
+                        >
+                            <CustomText style={[styles.tabText, activeTab === 2 && styles.activeTabText]}>
+                                Applicants
+                            </CustomText>
+                        </TouchableOpacity>
+                        }
                     </View>
 
-                    {activeTab === 0 ? (
-                        <JobDescriptionTab item={item}/>
-                    ) : (
-                        <CompanyTab item={item}/>
-                    )}
+                    {activeTab === 0 && <JobDescriptionTab item={item}/>}
+                    {activeTab === 1 && <CompanyTab item={item}/>}
+                    {activeTab === 2 && isEmployer && <JobApplicantsTab job={route.params.job}/>}
 
                 </View>
             </ScrollView>
@@ -111,6 +127,6 @@ const CandidateJobDetail = ({navigation}) => {
     );
 };
 
-export default CandidateJobDetail;
+export default JobDetail;
 
 

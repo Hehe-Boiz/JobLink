@@ -5,6 +5,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 // Import screens
 import CandidateHome from '../screens/Candidate/CandidateHome';
+import JobDetail from '../screens/Job/JobDetail';
 
 // Placeholder screens
 const NetworkScreen = () => (
@@ -57,7 +58,7 @@ export default function CandidateTabs() {
     >
       <Tab.Screen
         name="Home"
-        component={CandidateHome}
+        component={JobDetail}
         options={{
           tabBarIcon: ({ color, size, focused }) => (
             <View style={focused ? styles.activeTab : null}>

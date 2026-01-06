@@ -10,7 +10,7 @@ import MyUserReducer from './src/utils/reducers/MyUserReducer';
 import { Provider as PaperProvider, MD3LightTheme as DefaultTheme } from 'react-native-paper';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
-import CandidateJobDetail from "./src/screens/Candidate/CandidateJobDetail";
+import JobDetail from "./src/screens/Job/JobDetail";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -61,12 +61,12 @@ export default function App() {
     return null;
   }
   return (
-      <SafeAreaProvider>
-        <MyUserContext.Provider value={[user, dispatch]}>
-          <PaperProvider theme={theme}>
-            <AppNavigator />
-          </PaperProvider>
-        </MyUserContext.Provider>
-      </SafeAreaProvider>
+    <SafeAreaProvider>
+      <MyUserContext.Provider value={[user, dispatch]}>
+        <PaperProvider theme={theme}>
+          <AppNavigator />
+        </PaperProvider>
+      </MyUserContext.Provider>
+    </SafeAreaProvider>
   );
 }

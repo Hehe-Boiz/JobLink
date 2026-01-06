@@ -11,6 +11,8 @@ export const endpoints = {
     'employer_jobs': '/employer/jobs/',
     'categories': '/categories/',
     'locations': '/locations/',
+    'applications_by_employer_jobs': (jobId) => `employer/jobs/${jobId}/applications/`,
+    'candidate_by_applications_in_employer_jobs': (applicationId) => `employer/applications/${applicationId}/candidate-profile/`
 };
 
 export const authApis = (token) => {

@@ -9,7 +9,7 @@ const MAP_BG = require('../../../../assets/images/Map.png');
 const PIN_ICON = require('../../../../assets/images/Icon_Locations.png');
 const GOOGLE_ICON = 'https://cdn-icons-png.flaticon.com/512/300/300221.png';
 
-const CandidateJobDescriptionTab = ({item}) => {
+const JobDescriptionTab = ({item}) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const [showButton, setShowButton] = useState(false);
     const parsedRequirements = useParsedList(item.requirements);
@@ -85,4 +85,4 @@ const CandidateJobDescriptionTab = ({item}) => {
 };
 
 
-export default CandidateJobDescriptionTab;
+export default JobDescriptionTab;

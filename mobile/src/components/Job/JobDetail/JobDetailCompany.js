@@ -5,7 +5,7 @@ import styles from "../../../styles/Candidate/CandidateJobDetailStyles";
 import {useParsedList} from "../../../hooks/useParsedList";
 import CompanyGallery from './CompanyGallery';
 
-const CandidateJobDetailCompany = ({item}) => {
+const JobDetailCompany = ({item}) => {
     const parserAbout = useParsedList(item.aboutCompany)
 
     return (
@@ -35,4 +35,4 @@ const CandidateJobDetailCompany = ({item}) => {
     );
 };
 
-export default CandidateJobDetailCompany;
+export default JobDetailCompany;

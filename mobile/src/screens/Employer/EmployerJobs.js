@@ -80,7 +80,7 @@ const EmployerJobs = ({ navigation }) => {
             renderItem={({ item }) => (
                 <JobCard 
                     job={item} 
-                    onPress={() => navigation.navigate('JobApplicants', { job: item })}
+                    onPress={() => navigation.navigate('JobDetail', { job: item })}
                 />
             )}
             ListEmptyComponent={
