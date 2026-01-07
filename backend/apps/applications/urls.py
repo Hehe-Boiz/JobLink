@@ -3,8 +3,8 @@ from rest_framework.routers import DefaultRouter
 from ..applications.views import EmployerApplicationViewSet, CandidateApplicationViewSet
 
 router = DefaultRouter()
-router.register("employer/application", EmployerApplicationViewSet, basename="employer-application")
-router.register("candidate/application", CandidateApplicationViewSet, basename="candidate-application")
+router.register("employer/applications", EmployerApplicationViewSet, basename="employer-application")
+router.register("candidate/applications", CandidateApplicationViewSet, basename="candidate-application")
 urlpatterns = [
     path('', include(router.urls)),
 ]

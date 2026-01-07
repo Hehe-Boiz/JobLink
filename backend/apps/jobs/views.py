@@ -7,6 +7,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
 from .serializers import CandidateJobSerializer, CandidateJobDetailSerializer, EmployerJobSerializer, \
     CandidateBookmarkJobSerializer, JobCategorySerializer, LocationSerializer
+from apps.applications.serializers import EmployerApplicationSerializer
 from ..users.permissions import IsEmployerApproved, IsCandidate
 from rest_framework.response import Response
 from rest_framework.decorators import action
@@ -67,7 +68,7 @@ class JobViewCandidate(viewsets.ReadOnlyModelViewSet):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
-class EmployerJobViewSet(viewsets.ModelViewSet):
+class EmployerJobViewSet(viewsets.ViewSet, generics.ListCreateAPIView, generics.UpdateAPIView):
     serializer_class = EmployerJobSerializer
     permission_classes = [IsEmployerApproved]
 
@@ -85,6 +86,10 @@ class EmployerJobViewSet(viewsets.ModelViewSet):
             company_name=ep.company_name,
         )
 
+    @action(methods=['get'], url_path='applications', detail=True)
+    def get_applications(self, request, pk):
+        applications = self.get_object().applications.filter(active=True)
+        return Response(EmployerApplicationSerializer(applications, many=True).data, status=status.HTTP_200_OK)
 
 class BookmarkJobViewSet(viewsets.ModelViewSet):
     serializer_class = CandidateBookmarkJobSerializer

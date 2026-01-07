@@ -1,4 +1,7 @@
 from rest_framework import viewsets, permissions, status, generics
+from rest_framework.decorators import action
+from apps.users.models import CandidateProfile
+from apps.users.serializers import CandidateProfileSerializer
 from .models import Application
 from .serializers import EmployerApplicationSerializer, CandidateApplicationListSerializer, \
     CandidateApplicationWriteSerializer, CandidateApplicationDetailSerializer
@@ -7,7 +10,7 @@ from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
 
 
-class EmployerApplicationViewSet(viewsets.ModelViewSet):
+class EmployerApplicationViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
     serializer_class = EmployerApplicationSerializer
     permission_classes = [IsEmployerApproved]
 
@@ -24,6 +27,12 @@ class EmployerApplicationViewSet(viewsets.ModelViewSet):
         if st:
             qs = qs.filter(status=st)
         return qs
+
+    @action(methods=['get'], url_path='candidate-profile', detail=True)
+    def get_candidate_profile(self, request, pk):
+        application = self.get_object()
+        candidate_profile = CandidateProfile.objects.filter(user_id=application.user_id).first()
+        return Response(CandidateProfileSerializer(candidate_profile).data, status=status.HTTP_200_OK)
 
 
 class CandidateApplicationViewSet(viewsets.ModelViewSet):
