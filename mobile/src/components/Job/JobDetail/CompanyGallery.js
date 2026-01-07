@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Image, TouchableOpacity, Modal, StatusBar, FlatList, Dimensions } from 'react-native';
 import CustomText from '../../CustomText';
-import styles from '../../../styles/Candidate/CandidateJobDetailStyles';
+import styles from '../../../styles/Job/JobDetailStyles';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 const { width } = Dimensions.get('window');

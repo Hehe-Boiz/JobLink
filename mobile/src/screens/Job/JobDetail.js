@@ -5,13 +5,12 @@ import {MaterialCommunityIcons} from '@expo/vector-icons';
 import CustomText from "../../components/CustomText";
 import JobDescriptionTab from "../../components/Job/JobDetail/JobDetailDescription";
 import CompanyTab from "../../components/Job/JobDetail/JobDetailCompany";
-import styles from '../../styles/Candidate/CandidateJobDetailStyles'
+import styles from '../../styles/Job/JobDetailStyles'
 import JobApplicantsTab from "../../components/Job/JobDetail/JobApplicantsTab";
 import {MyUserContext} from "../../utils/contexts/MyContext";
 import {Portal, Dialog, Button} from 'react-native-paper';
 import JobLogo from "../../components/Job/JobLogo";
 import CustomHeader from "../../components/CustomHeader"
-import { useDialog } from "../../hooks/useDialog";
 
 const MOCK_JOB_DETAIL = {
     id: '1',
@@ -91,21 +90,9 @@ const JobDetail = ({navigation, route}) => {
     const toggleSave = () => {
         setIsSaved(!isSaved);
     };
-    const { showDialog } = useDialog();
 
     const handleApply = () => {
-        // Alert.alert("Thành công", "Bạn đã ứng tuyển vào vị trí này!");
-        showDialog({
-            title: "Thành Công!",
-            content: "Hồ sơ của bạn đã được gửi đến nhà tuyển dụng. Chúc bạn may mắn!",
-            type: "success",
-            buttonText: "TUYỆT VỜI",
-            onPress: () => {
-                console.log("Đã đóng dialog");
-                // Có thể navigate về Home nếu muốn
-                // navigation.navigate('Home');
-            }
-        });
+        navigation.navigate('ApplyJob', {job: item});
     };
 
     // const isEmployer = user.role == "EMPLOYER" ? true : false;

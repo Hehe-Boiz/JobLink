@@ -1,5 +1,3 @@
-// src/components/Candidate/JobDetail/JobApplicantsTab.js
-
 import React, { useState, useEffect } from 'react';
 import { View, FlatList, TouchableOpacity, Image, StyleSheet, TouchableNativeFeedbackComponent } from 'react-native';
 import CustomText from '../../CustomText';

@@ -1,7 +1,7 @@
 import { View, Image } from 'react-native';
 import { Dialog, Button, Portal } from 'react-native-paper';
 import CustomText from '../CustomText'; 
-import styles from '../../styles/Candidate/CandidateJobDetailStyles'
+import styles from '../../styles/Job/JobDetailStyles'
 
 const AppDialog = ({ visible, onDismiss, title, content, type = 'success', buttonText = 'ĐÓNG', onButtonPress }) => {
 

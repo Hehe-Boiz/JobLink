@@ -1,7 +1,7 @@
 import React from 'react';
 import {View, StyleSheet, Linking} from 'react-native';
 import CustomText from '../../CustomText';
-import styles from "../../../styles/Candidate/CandidateJobDetailStyles";
+import styles from "../../../styles/Job/JobDetailStyles";
 import {useParsedList} from "../../../hooks/useParsedList";
 import CompanyGallery from './CompanyGallery';
 

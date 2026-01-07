@@ -5,7 +5,7 @@ import {MaterialCommunityIcons} from '@expo/vector-icons';
 import CustomText from "../../components/CustomText";
 import JobDescriptionTab from "../../components/Candidate/JobDetail/CandidateJobDetailDescription";
 import CompanyTab from "../../components/Candidate/JobDetail/CandidateJobDetailCompany";
-import styles from '../../styles/Candidate/CandidateJobDetailStyles'
+import styles from '../../styles/Job/JobDetailStyles'
 
 const MOCK_JOB_DETAIL = {
     id: '1',

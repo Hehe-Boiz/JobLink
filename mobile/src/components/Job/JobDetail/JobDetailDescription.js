@@ -3,7 +3,7 @@ import {View, StyleSheet, Image, TouchableOpacity, Linking} from 'react-native';
 import CustomText from '../../CustomText';
 import ListDots from './ListDots';
 import JobInfoItem from './JobInforItem';
-import styles from '../../../styles/Candidate/CandidateJobDetailStyles'
+import styles from '../../../styles/Job/JobDetailStyles'
 import { useParsedList, useFacilities } from '../../../hooks/useParsedList';
 const MAP_BG = require('../../../../assets/images/Map.png');
 const PIN_ICON = require('../../../../assets/images/Icon_Locations.png');
@@ -28,7 +28,7 @@ const JobDescriptionTab = ({item}) => {
                 onTextLayout={(e) => {
                     if (e.nativeEvent.lines.length > 3) setShowButton(true);
                 }}
-                style={styles.descText}
+                style={styles.contentReq}
             >
                 {item.desc}
             </CustomText>

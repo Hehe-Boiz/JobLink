@@ -5,6 +5,8 @@ export default StyleSheet.create({
     container: {
         paddingBottom: 20,
         flex: 1,
+        backgroundColor: "#F9F9F9"
+
     },
     headerNav: {
         flexDirection: "row",
@@ -16,8 +18,9 @@ export default StyleSheet.create({
     contentLogoContainer: {
         marginTop: 50,
         alignItems: "center",
-        backgroundColor: "#f8f7f7",
+        // backgroundColor: "#f8f7f7",
         paddingBottom: 20,
+        backgroundColor: "#F2F2F2"
     },
     logo: {
         width: 60,
@@ -95,7 +98,7 @@ export default StyleSheet.create({
         color: "#150B3D",
         fontWeight: 600,
         fontSize: 16,
-        marginBottom: 15
+        marginBottom: 10
     },
     btnRead: {
         padding: 12,
