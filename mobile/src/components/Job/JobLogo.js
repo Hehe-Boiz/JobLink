@@ -1,6 +1,6 @@
 import React from 'react';
 import {View, Image, StyleSheet, TouchableOpacity} from 'react-native';
-import CustomText from '../CustomText';
+import CustomText from '../common/CustomText';
 import styles from '../../styles/Job/JobDetailStyles'
 
 const JobLogo = ({item, style}) => {

@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import CustomText from './CustomText'; //
-import styles from '../styles/Job/JobDetailStyles';
+import styles from '../../styles/Job/JobDetailStyles';
 
 const CustomFooter = ({
     onApply,

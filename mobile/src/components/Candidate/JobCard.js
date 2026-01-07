@@ -2,7 +2,7 @@ import {View, Image, Animated, Pressable} from 'react-native';
 import styles from '../../styles/Candidate/CandidateHomeStyles'
 import {MaterialCommunityIcons} from '@expo/vector-icons';
 import {TouchableRipple} from 'react-native-paper';
-import CustomText from "../CustomText";
+import CustomText from "../common/CustomText";
 
 const JobCard = ({item, onSavePress, onApplyPress, variant = 'home'}) => {
     const scaleValue = new Animated.Value(1);

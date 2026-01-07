@@ -2,7 +2,7 @@ import React, {useState, useMemo, useContext} from "react";
 import {SafeAreaView} from "react-native-safe-area-context";
 import {ScrollView, TouchableOpacity, View, StyleSheet, Image, Alert} from "react-native";
 import {MaterialCommunityIcons} from '@expo/vector-icons';
-import CustomText from "../../components/CustomText";
+import CustomText from "../../components/common/CustomText";
 import JobDescriptionTab from "../../components/Job/JobDetail/JobDetailDescription";
 import CompanyTab from "../../components/Job/JobDetail/JobDetailCompany";
 import styles from '../../styles/Job/JobDetailStyles'
@@ -10,8 +10,8 @@ import JobApplicantsTab from "../../components/Job/JobDetail/JobApplicantsTab";
 import {MyUserContext} from "../../utils/contexts/MyContext";
 import {Portal, Dialog, Button} from 'react-native-paper';
 import JobLogo from "../../components/Job/JobLogo";
-import CustomHeader from "../../components/CustomHeader"
-import CustomFooter from "../../components/CustomFooter";
+import CustomHeader from "../../components/common/CustomHeader"
+import CustomFooter from "../../components/common/CustomFooter";
 
 const MOCK_JOB_DETAIL = {
     id: '1',

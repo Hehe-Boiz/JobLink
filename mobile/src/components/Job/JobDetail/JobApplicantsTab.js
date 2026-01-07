@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, FlatList, TouchableOpacity, Image, StyleSheet, TouchableNativeFeedbackComponent } from 'react-native';
-import CustomText from '../../CustomText';
+import CustomText from '../../common/CustomText';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { authApis, endpoints } from '../../../utils/Apis';

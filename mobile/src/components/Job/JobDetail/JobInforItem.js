@@ -1,6 +1,6 @@
 import React from 'react';
 import { View } from 'react-native';
-import CustomText from '../../CustomText';
+import CustomText from '../../common/CustomText';
 import styles from '../../../styles/Job/JobDetailStyles';
 
 const JobInforItem = ({ title, value, isLast }) => {

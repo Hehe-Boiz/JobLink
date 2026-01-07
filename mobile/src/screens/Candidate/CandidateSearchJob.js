@@ -2,9 +2,9 @@ import React, {useState} from "react";
 import {SafeAreaView} from "react-native-safe-area-context";
 import {View, StyleSheet, TextInput, TouchableOpacity, ScrollView, FlatList} from "react-native";
 import BgHeader from '../../../assets/images/Background.svg'
-import CustomHeader from "../../components/CustomHeader";
+import CustomHeader from "../../components/common/CustomHeader";
 import {MaterialCommunityIcons} from '@expo/vector-icons';
-import CustomText from "../../components/CustomText";
+import CustomText from "../../components/common/CustomText";
 import JobCard from "../../components/Candidate/JobCard";
 import MyStyles from "../../styles/MyStyles";
 import styles from '../../styles/Candidate/CandidateSearchJobStyles'

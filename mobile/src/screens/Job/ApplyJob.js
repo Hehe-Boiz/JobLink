@@ -3,12 +3,12 @@ import {View, TouchableOpacity, Image, ScrollView, TextInput, Alert} from 'react
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {MaterialCommunityIcons} from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
-import CustomText from '../../components/CustomText';
+import CustomText from '../../components/common/CustomText';
 import styles from '../../styles/Job/ApplyJobStyles';
-import CustomHeader from "../../components/CustomHeader";
+import CustomHeader from "../../components/common/CustomHeader";
 import stylesJobDetail from "../../styles/Job/JobDetailStyles";
 import JobLogo from "../../components/Job/JobLogo";
-import CustomFooter from "../../components/CustomFooter";
+import CustomFooter from "../../components/common/CustomFooter";
 
 // const SUCCESS_IMG = 'https://cdn-icons-png.flaticon.com/512/7518/7518748.png';
 const SUCCESS_IMG = require('../../../assets/images/illustration.png')

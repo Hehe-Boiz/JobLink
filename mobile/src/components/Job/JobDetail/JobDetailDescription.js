@@ -1,6 +1,6 @@
 import React, {useState} from 'react';
 import {View, StyleSheet, Image, TouchableOpacity, Linking} from 'react-native';
-import CustomText from '../../CustomText';
+import CustomText from '../../common/CustomText';
 import ListDots from './ListDots';
 import JobInfoItem from './JobInforItem';
 import styles from '../../../styles/Job/JobDetailStyles'

@@ -2,7 +2,7 @@ import React, {useState, useMemo} from "react";
 import {SafeAreaView} from "react-native-safe-area-context";
 import {ScrollView, TouchableOpacity, View, StyleSheet, Image} from "react-native";
 import {MaterialCommunityIcons} from '@expo/vector-icons';
-import CustomText from "../../components/CustomText";
+import CustomText from "../../components/common/CustomText";
 import JobDescriptionTab from "../../components/Candidate/JobDetail/CandidateJobDetailDescription";
 import CompanyTab from "../../components/Candidate/JobDetail/CandidateJobDetailCompany";
 import styles from '../../styles/Job/JobDetailStyles'

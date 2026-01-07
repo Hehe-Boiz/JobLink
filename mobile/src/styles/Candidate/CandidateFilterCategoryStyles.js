@@ -55,7 +55,7 @@ export default StyleSheet.create({
     },
 
     listContainer: {
-        paddingBottom: 20,
+        paddingBottom: 100,
     },
     columnWrapper: {
         justifyContent: 'space-between',

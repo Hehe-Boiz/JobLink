@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { View, StyleSheet, TextInput, TouchableOpacity, FlatList} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import CustomText from '../../components/CustomText';
-import CustomHeader from '../../components/CustomHeader';
+import CustomText from '../../components/common/CustomText';
+import CustomHeader from '../../components/common/CustomHeader';
 import styles from '../../styles/Candidate/CandidateFilterCategoryStyles'
+import CustomFooter from "../../components/common/CustomFooter";
 
 const DATA = [
     { id: '1', title: 'Design', count: 140, icon: 'briefcase-edit-outline' },
@@ -91,8 +92,10 @@ const CandidateFilterCategory = ({ navigation }) => {
                     showsVerticalScrollIndicator={false}
                     columnWrapperStyle={styles.columnWrapper}
                     contentContainerStyle={styles.listContainer}
+                    clipToPadding={false}
                 />
             </View>
+            <CustomFooter/>
         </SafeAreaView>
     );
 };
