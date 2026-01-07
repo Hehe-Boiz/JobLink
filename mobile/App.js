@@ -15,6 +15,7 @@ import { DialogProvider } from './src/utils/contexts/DialogContext';
 import ApplyJob from "./src/screens/Job/ApplyJob";
 import CandidateSearchJob from "./src/screens/Candidate/CandidateSearchJob";
 import CandidateHome from "./src/screens/Candidate/CandidateHome";
+import CandidateFilterCategory from "./src/screens/Candidate/CandidateFilterCategory";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -68,7 +69,7 @@ export default function App() {
       <MyUserContext.Provider value={[user, dispatch]}>
         <PaperProvider theme={theme}>
           <DialogProvider>
-            <CandidateSearchJob />
+            <JobDetail />
           </DialogProvider>
         </PaperProvider>
       </MyUserContext.Provider>

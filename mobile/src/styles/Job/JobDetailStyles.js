@@ -355,8 +355,8 @@ export default StyleSheet.create({
         zIndex: 100,
     },
     btnBookmark: {
-        width: 50,
-        height: 50,
+        width: 55,
+        height: 55,
         borderRadius: 16,
         justifyContent: 'center',
         alignItems: 'center',
@@ -368,8 +368,8 @@ export default StyleSheet.create({
     btnApply: {
         flex: 1,
         backgroundColor: '#130160',
-        height: 50,
-        borderRadius: 16,
+        height: 55,
+        borderRadius: 8,
         justifyContent: 'center',
         alignItems: 'center',
         elevation: 5,

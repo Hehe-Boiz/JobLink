@@ -11,6 +11,7 @@ import {MyUserContext} from "../../utils/contexts/MyContext";
 import {Portal, Dialog, Button} from 'react-native-paper';
 import JobLogo from "../../components/Job/JobLogo";
 import CustomHeader from "../../components/CustomHeader"
+import CustomFooter from "../../components/CustomFooter";
 
 const MOCK_JOB_DETAIL = {
     id: '1',
@@ -80,6 +81,7 @@ const MOCK_APPLICANTS = [
     },
 ];
 
+
 const JobDetail = ({navigation, route}) => {
     const [user,] = useContext(MyUserContext)
     const applicants = MOCK_APPLICANTS;
@@ -90,6 +92,16 @@ const JobDetail = ({navigation, route}) => {
     const toggleSave = () => {
         setIsSaved(!isSaved);
     };
+
+    const SaveButton = (
+        <TouchableOpacity style={styles.btnBookmark} onPress={toggleSave}>
+            <MaterialCommunityIcons
+                name={isSaved ? "bookmark" : "bookmark-outline"}
+                size={28}
+                color={isSaved ? "#FF9228" : "#FCA34D"}
+            />
+        </TouchableOpacity>
+    );
 
     const handleApply = () => {
         navigation.navigate('ApplyJob', {job: item});
@@ -143,20 +155,10 @@ const JobDetail = ({navigation, route}) => {
                 </ScrollView>
             </SafeAreaView>
             {!isEmployer && (
-                <View style={styles.footer}>
-                    <TouchableOpacity style={styles.btnBookmark} onPress={toggleSave}>
-                        <MaterialCommunityIcons
-                            name={isSaved ? "bookmark" : "bookmark-outline"}
-                            size={28}
-                            color={isSaved ? "#FF9228" : "#524B6B"}
-                        />
-                    </TouchableOpacity>
-
-                    {/* Nút Apply Now */}
-                    <TouchableOpacity style={styles.btnApply} onPress={handleApply}>
-                        <CustomText style={styles.btnApplyText}>APPLY NOW</CustomText>
-                    </TouchableOpacity>
-                </View>
+                <CustomFooter
+                    onApply={handleApply}
+                    leftContent={SaveButton}
+                />
             )}
         </View>
     );
