@@ -2,7 +2,7 @@
 import React, { useEffect, useReducer } from 'react';
 
 import AppNavigator from './src/navigation/AppNavigator'; // File điều hướng chính
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { MyUserContext } from './src/utils/contexts/MyContext';
 import MyUserReducer from './src/utils/reducers/MyUserReducer';
 
@@ -23,7 +23,6 @@ const theme = {
     error: '#dc3545',
   },
 };
-
 
 export default function App() {
   const [user, dispatch] = useReducer(MyUserReducer, null);
@@ -64,7 +63,7 @@ export default function App() {
     <SafeAreaProvider>
       <MyUserContext.Provider value={[user, dispatch]}>
         <PaperProvider theme={theme}>
-          <AppNavigator />
+          <JobDetail/>
         </PaperProvider>
       </MyUserContext.Provider>
     </SafeAreaProvider>

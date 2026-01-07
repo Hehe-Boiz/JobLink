@@ -1,11 +1,9 @@
-// src/navigation/AppNavigator.js
 import React from 'react';
 import {NavigationContainer} from '@react-navigation/native';
 import {createStackNavigator} from '@react-navigation/stack';
 
 // Import các màn hình Auth
 import Login from '../screens/Auth/Login';
-// Import bộ Tab vừa làm
 import EmployerTabs from './EmployerTabs';
 import { Provider } from 'react-native-paper';
 import CandidateRegister from '../screens/Auth/CandidateRegister';
