@@ -11,6 +11,7 @@ import { Provider as PaperProvider, MD3LightTheme as DefaultTheme } from 'react-
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import JobDetail from "./src/screens/Job/JobDetail";
+import { DialogProvider } from './src/utils/contexts/DialogContext';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -63,7 +64,9 @@ export default function App() {
     <SafeAreaProvider>
       <MyUserContext.Provider value={[user, dispatch]}>
         <PaperProvider theme={theme}>
-          <JobDetail/>
+          <DialogProvider>
+            <AppNavigator />
+          </DialogProvider>
         </PaperProvider>
       </MyUserContext.Provider>
     </SafeAreaProvider>

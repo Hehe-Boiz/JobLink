@@ -11,6 +11,7 @@ import {MyUserContext} from "../../utils/contexts/MyContext";
 import {Portal, Dialog, Button} from 'react-native-paper';
 import JobLogo from "../../components/Job/JobLogo";
 import CustomHeader from "../../components/CustomHeader"
+import { useDialog } from "../../hooks/useDialog";
 
 const MOCK_JOB_DETAIL = {
     id: '1',
@@ -90,14 +91,23 @@ const JobDetail = ({navigation, route}) => {
     const toggleSave = () => {
         setIsSaved(!isSaved);
     };
+    const { showDialog } = useDialog();
+
     const handleApply = () => {
         // Alert.alert("Thành công", "Bạn đã ứng tuyển vào vị trí này!");
-        showDialog();
+        showDialog({
+            title: "Thành Công!",
+            content: "Hồ sơ của bạn đã được gửi đến nhà tuyển dụng. Chúc bạn may mắn!",
+            type: "success",
+            buttonText: "TUYỆT VỜI",
+            onPress: () => {
+                console.log("Đã đóng dialog");
+                // Có thể navigate về Home nếu muốn
+                // navigation.navigate('Home');
+            }
+        });
     };
 
-    const [visibleDialog, setVisibleDialog] = useState(false);
-    const showDialog = () => setVisibleDialog(true);
-    const hideDialog = () => setVisibleDialog(false);
     // const isEmployer = user.role == "EMPLOYER" ? true : false;
     return (
         <View style={{flex: 1}}>
@@ -161,41 +171,6 @@ const JobDetail = ({navigation, route}) => {
                     </TouchableOpacity>
                 </View>
             )}
-            <Portal>
-                <Dialog
-                    visible={visibleDialog}
-                    onDismiss={hideDialog}
-                    style={styles.dialogContainer}
-                >
-                    <View style={styles.dialogContentWrapper}>
-                        <Image
-                            source={{uri: 'https://cdn-icons-png.flaticon.com/512/148/148767.png'}}
-                            style={styles.dialogIcon}
-                        />
-
-                        <CustomText style={styles.dialogTitle}>
-                            Thành Công!
-                        </CustomText>
-
-                        <Dialog.Content>
-                            <CustomText style={styles.dialogText}>
-                                Hồ sơ của bạn đã được gửi đến nhà tuyển dụng. Chúc bạn may mắn!
-                            </CustomText>
-                        </Dialog.Content>
-
-                        <Dialog.Actions style={styles.dialogActions}>
-                            <Button
-                                mode="contained"
-                                onPress={hideDialog}
-                                style={styles.dialogButton}
-                                labelStyle={styles.dialogButtonLabel}
-                            >
-                                TUYỆT VỜI
-                            </Button>
-                        </Dialog.Actions>
-                    </View>
-                </Dialog>
-            </Portal>
         </View>
     );
 };

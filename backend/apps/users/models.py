@@ -13,6 +13,11 @@ class VerificationStatus(models.TextChoices):
     APPROVED = "APPROVED", "Approved"
     REJECTED = "REJECTED", "Rejected"
 
+class EducationStatus(models.TextChoices):
+    STUDYING = "STUDYING", "Đang học"
+    GRADUATED = "GRADUATED", "Đã tốt nghiệp"
+    DROPOUT = "DROPOUT", "Đã nghỉ học / Bảo lưu"
+
 class CustomUserManager(UserManager):
     def create_superuser(self, username, email=None, password=None, **extra_fields):
         extra_fields.setdefault("is_staff", True)
@@ -62,6 +67,14 @@ class CandidateProfile(BaseModel):
     )
     address = models.CharField(max_length=255, blank=True, default="")
     experience_years = models.IntegerField(default=0)
+    dob = models.DateField(null=True, blank=True)  # Ngày sinh
+    specialization = models.CharField(max_length=255, blank=True, null=True)
+    school_name = models.CharField(max_length=255, blank=True, null=True)  # Tên trường
+    education_status = models.CharField(
+        max_length=20,
+        choices=EducationStatus.choices,
+        default=EducationStatus.GRADUATED
+    )
     def __str__(self):
         return self.user.get_full_name() if self.user.get_full_name() else self.user.username
 

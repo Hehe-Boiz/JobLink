@@ -195,6 +195,100 @@ const styles = StyleSheet.create({
 
   // Helpers
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  // ... (Các styles cũ)
+
+  // --- CANDIDATE DETAIL STYLES (MỚI) ---
+  // ... (Các style cũ giữ nguyên)
+
+  // --- THÊM MỚI ĐOẠN NÀY ---
+  
+  // 1. Card chứa thông tin Profile (Màu trắng, nổi lên trên)
+  profileCard: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 20,
+    marginTop: 40, // Đẩy xuống để chừa chỗ cho Avatar nổi lên
+    marginBottom: 20,
+    elevation: 4, // Đổ bóng Android
+    shadowColor: '#000', // Đổ bóng iOS
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    position: 'relative', // Quan trọng để định vị
+  },
+
+  // 2. Avatar (Tròn, có viền trắng, nổi lên)
+  profileAvatar: {
+    width: 100,  
+    height: 100,  
+    borderRadius: 50,
+    borderWidth: 4,
+    borderColor: '#F5F7FA', // Màu trùng với nền màn hình để tạo hiệu ứng cắt
+    marginTop: -70, // Kéo ngược lên trên để "nổi" (Floating)
+    alignSelf: 'center', // Căn giữa
+    backgroundColor: '#FFF', // Nền trắng dự phòng
+  },
+
+  // 3. Tên và Chức vụ
+  profileName: { 
+    fontSize: 22, 
+    fontWeight: 'bold', 
+    color: '#130160',
+    textAlign: 'center',
+    marginTop: 10 
+  },
+  profileJob: { 
+    fontSize: 14, 
+    color: '#524B6B', 
+    textAlign: 'center',
+    marginTop: 4 
+  },
+
+  // 4. Các Card thông tin khác
+  sectionHeader: {
+    fontSize: 16, fontWeight: 'bold', color: '#130160', marginBottom: 12, marginLeft: 5
+  },
+  infoCard: {
+    backgroundColor: 'white', borderRadius: 16, padding: 20, marginBottom: 20,
+    elevation: 2, shadowColor: '#000', shadowOpacity: 0.05
+  },
+  
+  // 5. Icon trong phần Kinh nghiệm/Học vấn
+  iconBox: {
+    width: 44, height: 44, borderRadius: 12, backgroundColor: '#F5F7FA',
+    justifyContent: 'center', alignItems: 'center'
+  },
+  infoLabel: { fontSize: 14, fontWeight: 'bold', color: '#130160' },
+  infoValue: { fontSize: 14, color: '#524B6B', marginTop: 2 },
+  infoSub: { fontSize: 12, color: '#95969D', marginTop: 2, fontStyle: 'italic' },
+
+  // 6. Card CV
+  cvCard: {
+    backgroundColor: 'white', borderRadius: 16, padding: 15, marginBottom: 25,
+    flexDirection: 'row', alignItems: 'center',
+    borderWidth: 1, borderColor: '#EAEAEA',
+    elevation: 2
+  },
+  cvIconContainer: {
+    width: 50, height: 50, borderRadius: 10, backgroundColor: '#FFF4E5',
+    justifyContent: 'center', alignItems: 'center'
+  },
+  cvName: { fontSize: 15, fontWeight: 'bold', color: '#130160' },
+  cvSize: { fontSize: 12, color: '#FF9228', marginTop: 2 },
+
+  // 7. Input Comment
+  commentInputNew: {
+    backgroundColor: '#F9F9F9', borderRadius: 12,
+    borderWidth: 1, borderColor: '#EAEAEA',
+    padding: 15, height: 100, textAlignVertical: 'top',
+    marginBottom: 20, fontSize: 14
+  },
+  btnSave: {
+    backgroundColor: '#130160', borderRadius: 12, paddingVertical: 14, alignItems: 'center',
+    elevation: 3
+  },
+  btnSaveText: { color: 'white', fontWeight: 'bold', fontSize: 15 },
+  statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
 });
 
 export default styles;

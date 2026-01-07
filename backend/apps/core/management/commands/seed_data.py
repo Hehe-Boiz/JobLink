@@ -96,12 +96,20 @@ class Command(BaseCommand):
                         last_name=fake.last_name(),
                         phone=fake.phone_number()
                     )
+                    dob = fake.date_of_birth(minimum_age=18, maximum_age=40)
 
+                    # Random chuyên môn
+                    specializations = ["React Native Dev", "Python Backend", "Digital Marketing", "Business Analyst",
+                                       "Tester", "Designer"]
+                    schools = ["Đại học Bách Khoa", "Đại học CNTT", "Đại học Kinh Tế", "FPT University", "Đại học Mở TPHCM"]
                     # Tạo CandidateProfile
                     CandidateProfile.objects.create(
                         user=user,
                         address=fake.address(),
-                        experience_years=random.randint(0, 10)
+                        experience_years=random.randint(0, 10),
+                        dob = dob,
+                        specialization = random.choice(specializations),
+                        school_name=random.choice(schools)
                     )
 
             # ==========================================

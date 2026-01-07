@@ -68,7 +68,7 @@ class CandidateProfileSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
     class Meta:
         model = CandidateProfile
-        fields = ["user", "address"]
+        fields = ['user', 'address','dob', 'specialization', 'education_status', 'school_name']
 
 
 class EmployerProfileSerializer(MediaURLSerializer):

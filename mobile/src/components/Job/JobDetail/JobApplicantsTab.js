@@ -35,7 +35,7 @@ const JobApplicantsTab = ({ job }) => {
     const renderItem = ({ item }) => (
         <TouchableOpacity
             style={styles.card}
-            onPress={() => navigation.navigate('CandidateDetail', { application_id: item.id })}
+            onPress={() => navigation.navigate('CandidateDetail', { application: item })}
         >
             <Image source={{ uri: item.candidate_avatar || 'https://randomuser.me/api/portraits/men/32.jpg'}} style={styles.avatar} />
             <View style={styles.content}>
@@ -59,8 +59,6 @@ const JobApplicantsTab = ({ job }) => {
             <View style={styles.header}>
                 <CustomText style={styles.title}>Danh sách ứng viên ({applicants.length})</CustomText>
             </View>
-
-            {/* Lưu ý: Dùng map thay vì FlatList nếu nằm trong ScrollView cha để tránh lỗi lồng cuộn */}
             {applicants.map((item) => (
                 <View key={item.id}>
                     {renderItem({ item })}
