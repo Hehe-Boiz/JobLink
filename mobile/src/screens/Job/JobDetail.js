@@ -99,7 +99,6 @@ const JobDetail = ({navigation, route}) => {
             title: "Thành Công!",
             content: "Hồ sơ của bạn đã được gửi đến nhà tuyển dụng. Chúc bạn may mắn!",
             type: "success",
-            buttonText: "TUYỆT VỜI",
             onPress: () => {
                 console.log("Đã đóng dialog");
                 // Có thể navigate về Home nếu muốn

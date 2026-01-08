@@ -9,6 +9,7 @@ import styles from '../../styles/Employer/EmployerStyles';
 import { authApis, endpoints } from '../../utils/Apis';
 import { ActivityIndicator, Divider } from 'react-native-paper';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useDialog } from '../../hooks/useDialog';
 
 const CandidateDetail = ({ route, navigation }) => {
   const application = route.params.application;
@@ -18,13 +19,12 @@ const CandidateDetail = ({ route, navigation }) => {
   const [rating, setRating] = useState(0);
   const [candidate, setCandidate] = useState({});
   const [loading, setLoading] = useState(true);
-
+  const { showDialog } = useDialog();
   // Load Data
   const load_candidate = async () => {
     try {
       const token = await AsyncStorage.getItem('token');
       setLoading(true);
-      // Giả sử API trả về data đầy đủ gồm education, cv_url...
       let res = await authApis(token).get(endpoints['candidate_by_applications_in_employer_jobs'](application.candidate_id));
       setCandidate(res.data);
     } catch (ex) {
@@ -34,7 +34,43 @@ const CandidateDetail = ({ route, navigation }) => {
       setLoading(false);
     }
   }
-
+  const comment_application = async () => {
+    try {
+      setLoading(true);
+      const token = await AsyncStorage.getItem('token');
+      // Giả sử API trả về data đầy đủ gồm education, cv_url...
+      let res = await authApis(token).patch(endpoints['update_application'](application.id), {
+        comment: comment,
+        rating: rating
+      });
+      if (res.status === 200) {
+        showDialog({
+          title: "Thành Công!",
+          content: "Đã lưu đánh giá ứng viên.",
+          type: "success",
+          buttonText: "TUYỆT VỜI",
+          onPress: () => {
+            console.log("Đã đóng dialog");
+            navigation.goBack();
+          }
+        });
+      }
+    } catch (ex) {
+      console.error(ex);
+      showDialog({
+        title: "Thất bại!",
+        content: "Có lỗi xảy ra",
+        type: "failed",
+        buttonText: "ĐÓNG",
+        onPress: () => {
+          console.log("Đã đóng dialog");
+          navigation.goBack();
+        }
+      });
+    } finally {
+      setLoading(false);
+    }
+  }
   useEffect(() => {
     load_candidate();
   }, []);
@@ -56,7 +92,10 @@ const CandidateDetail = ({ route, navigation }) => {
       return;
     }
     // Logic gọi API lưu đánh giá
-    Alert.alert("Thành công", "Đã lưu đánh giá hồ sơ.");
+    console.log(application)
+    console.log(comment);
+    console.log(rating);
+    comment_application();
   };
 
   if (loading) {
