@@ -17,6 +17,7 @@ import CandidateSearchJob from "./src/screens/Candidate/CandidateSearchJob";
 import CandidateHome from "./src/screens/Candidate/CandidateHome";
 import CandidateFilterCategory from "./src/screens/Candidate/CandidateFilterCategory";
 import CandidateSearchAdvance from './src/screens/Candidate/CandidateSearchAdvance'
+import { EmployerProvider } from './src/utils/contexts/EmployerContext';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -69,9 +70,11 @@ export default function App() {
     <SafeAreaProvider>
       <MyUserContext.Provider value={[user, dispatch]}>
         <PaperProvider theme={theme}>
-          <DialogProvider>
-            <CandidateSearchAdvance />
-          </DialogProvider>
+          <EmployerProvider>
+            <DialogProvider>
+              <AppNavigator />
+            </DialogProvider>
+          </EmployerProvider>
         </PaperProvider>
       </MyUserContext.Provider>
     </SafeAreaProvider>

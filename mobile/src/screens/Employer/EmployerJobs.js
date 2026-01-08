@@ -7,6 +7,8 @@ import styles from '../../styles/Employer/EmployerStyles';
 import Apis, { authApis, endpoints } from '../../utils/Apis';
 import JobCard from '../../components/Employer/JobCard';
 import { useDialog } from '../../hooks/useDialog';
+import { useIsFocused } from '@react-navigation/native';
+import { useEmployer } from '../../hooks/useEmployer';
 const EmployerJobs = ({ navigation }) => {
     const [jobs, setJobs] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -14,8 +16,22 @@ const EmployerJobs = ({ navigation }) => {
     const [q, setQ] = useState("");
     const [page, setPage] = useState(1);
     const { showDialog } = useDialog();
+    const isFocused = useIsFocused();
+    const { profile } = useEmployer();
 
     const loadJobs = async () => {
+        if (profile && profile.is_verified === false) {
+            console.log('oke')
+            setLoading(false);
+            showDialog({
+                type: 'error',
+                title: 'Chưa được duyệt',
+                content: 'Tài khoản Nhà tuyển dụng của bạn chưa được Admin phê duyệt. Vui lòng liên hệ quản trị viên để được kích hoạt.',
+                confirmText: 'ĐÃ HIỂU'
+            });
+            setJobs([]);
+            return;
+        }
         try {
             setLoading(true);
             let url = `${endpoints['employer_jobs']}?page=${page}`;
@@ -39,19 +55,25 @@ const EmployerJobs = ({ navigation }) => {
         }
     };
     useEffect(() => {
+        if (isFocused) {
+            setPage(1);
+        }
+    }, [isFocused]);
+    useEffect(() => {
+        console.log(profile);
         let timer = setTimeout(() => {
             if (page > 0)
                 loadJobs();
         }, 500);
 
         return () => clearTimeout(timer);
-    }, [page]);
+    }, [page, profile]);
 
     useEffect(() => {
         setPage(1);
     }, [q]);
     const loadMore = () => {
-        if (page > 0 && !loading)
+        if (page > 0 && !loading && jobs.length > 0)
             setPage(page + 1);
     }
     const deleteJob = async (jobId) => {
@@ -134,8 +156,8 @@ const EmployerJobs = ({ navigation }) => {
                     keyExtractor={item => item.id.toString()}
                     contentContainerStyle={{ padding: 20, paddingBottom: 80 }}
                     refreshControl={
-                        <RefreshControl 
-                            refreshing={loading && page === 1} 
+                        <RefreshControl
+                            refreshing={loading && page === 1}
                             onRefresh={() => setPage(1)} // Reset về trang 1 khi refresh
                         />
                     }

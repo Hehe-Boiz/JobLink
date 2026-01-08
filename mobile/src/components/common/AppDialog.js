@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Image, StyleSheet } from 'react-native';
 import { Dialog, Button, Portal } from 'react-native-paper';
-import CustomText from '../CustomText'; 
+import CustomText from '../../components/common/CustomText' ; 
 import styles from '../../styles/Job/JobDetailStyles'
 
 const AppDialog = ({ 
@@ -102,55 +102,5 @@ const AppDialog = ({
     )
 }
 
-const styles = StyleSheet.create({
-    dialogContainer: {
-        backgroundColor: 'white',
-        borderRadius: 20,
-        paddingBottom: 20,
-        marginHorizontal: 30, // Căn lề cho popup đỡ bị sát viền
-    },
-    dialogContentWrapper: {
-        alignItems: 'center',
-        paddingTop: 20,
-    },
-    dialogIcon: {
-        width: 60,
-        height: 60,
-        marginBottom: 15,
-    },
-    dialogTitle: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        textAlign: 'center',
-        marginBottom: 10,
-    },
-    dialogText: {
-        fontSize: 14,
-        color: '#524B6B',
-        textAlign: 'center',
-        lineHeight: 22,
-    },
-    dialogActions: {
-        flexDirection: 'row', // Xếp ngang 2 nút
-        justifyContent: 'space-between',
-        width: '100%',
-        paddingHorizontal: 20,
-        marginTop: 10,
-    },
-    dialogButton: {
-        borderRadius: 10,
-        width: '100%', // Mặc định full nếu 1 nút
-    },
-    cancelButton: {
-        flex: 1, 
-        borderColor: '#EAEAEA',
-        backgroundColor: 'white'
-    },
-    dialogButtonLabel: {
-        fontSize: 14,
-        fontWeight: 'bold',
-        paddingVertical: 2,
-    },
-});
 
 export default AppDialog;

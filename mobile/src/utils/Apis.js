@@ -1,13 +1,14 @@
 import axios from "axios";
 
-const BASE_URL = 'http://192.168.1.7:8000/';
+const BASE_URL = 'http://192.168.1.14:8000/';
 
 export const endpoints = {
     'register_candidate': '/register/candidate/',
     'register_employer': '/register/employer/',
     'login': '/o/token/',
-    'current_user': '/users/current-user/',
     'logout': '/o/revoke_token/',
+    'current_user': '/users/current-user/',
+    'current_employer': '/employers/me/',
     'employer_jobs': '/employer/jobs/',
     'delete_jobs': (jobId) => `/employer/jobs/${jobId}/`,
     'update_jobs': (jobId) => `/employer/jobs/${jobId}/`,
