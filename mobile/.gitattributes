@@ -1,0 +1,6 @@
+# Mặc định: text file dùng LF trong repo
+* text=auto eol=lf
+
+# Một số file Windows bắt buộc CRLF (nếu có)
+*.bat text eol=crlf
+*.cmd text eol=crlf
