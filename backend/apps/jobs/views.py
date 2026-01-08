@@ -78,7 +78,7 @@ class EmployerJobViewSet(viewsets.ViewSet, generics.ListCreateAPIView, generics.
 
         if not user.is_authenticated:
             return Job.objects.none()
-        return Job.objects.filter(posted_by=user, active=True).select_related("category", "location")
+        return Job.objects.filter(posted_by=user, active=True).select_related("category", "location").order_by('-created_date')
 
     def destroy(self, request, *args, **kwargs):
         job = self.get_object()

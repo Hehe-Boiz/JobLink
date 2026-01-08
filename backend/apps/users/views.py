@@ -34,7 +34,7 @@ class CandidateMeView(generics.RetrieveUpdateAPIView):
     def get_object(self):
         return self.request.user.candidate_profile
 
-class EmployerMeView(viewsets.ViewSet,generics.RetrieveUpdateAPIView):
+class EmployerMeView(generics.RetrieveUpdateAPIView):
     permission_classes = [IsEmployer]
     serializer_class = EmployerProfileSerializer
 
