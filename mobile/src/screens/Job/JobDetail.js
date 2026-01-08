@@ -2,16 +2,16 @@ import React, {useState, useMemo, useContext} from "react";
 import {SafeAreaView} from "react-native-safe-area-context";
 import {ScrollView, TouchableOpacity, View, StyleSheet, Image, Alert} from "react-native";
 import {MaterialCommunityIcons} from '@expo/vector-icons';
-import CustomText from "../../components/CustomText";
+import CustomText from "../../components/common/CustomText";
 import JobDescriptionTab from "../../components/Job/JobDetail/JobDetailDescription";
 import CompanyTab from "../../components/Job/JobDetail/JobDetailCompany";
-import styles from '../../styles/Candidate/CandidateJobDetailStyles'
+import styles from '../../styles/Job/JobDetailStyles'
 import JobApplicantsTab from "../../components/Job/JobDetail/JobApplicantsTab";
 import {MyUserContext} from "../../utils/contexts/MyContext";
 import {Portal, Dialog, Button} from 'react-native-paper';
 import JobLogo from "../../components/Job/JobLogo";
-import CustomHeader from "../../components/CustomHeader"
-import { useDialog } from "../../hooks/useDialog";
+import CustomHeader from "../../components/common/CustomHeader"
+import CustomFooter from "../../components/common/CustomFooter";
 
 const MOCK_JOB_DETAIL = {
     id: '1',
@@ -81,6 +81,7 @@ const MOCK_APPLICANTS = [
     },
 ];
 
+
 const JobDetail = ({navigation, route}) => {
     const [user,] = useContext(MyUserContext)
     const applicants = MOCK_APPLICANTS;
@@ -91,20 +92,19 @@ const JobDetail = ({navigation, route}) => {
     const toggleSave = () => {
         setIsSaved(!isSaved);
     };
-    const { showDialog } = useDialog();
+
+    const SaveButton = (
+        <TouchableOpacity style={styles.btnBookmark} onPress={toggleSave}>
+            <MaterialCommunityIcons
+                name={isSaved ? "bookmark" : "bookmark-outline"}
+                size={28}
+                color={isSaved ? "#FF9228" : "#FCA34D"}
+            />
+        </TouchableOpacity>
+    );
 
     const handleApply = () => {
-        // Alert.alert("Thành công", "Bạn đã ứng tuyển vào vị trí này!");
-        showDialog({
-            title: "Thành Công!",
-            content: "Hồ sơ của bạn đã được gửi đến nhà tuyển dụng. Chúc bạn may mắn!",
-            type: "success",
-            onPress: () => {
-                console.log("Đã đóng dialog");
-                // Có thể navigate về Home nếu muốn
-                // navigation.navigate('Home');
-            }
-        });
+        navigation.navigate('ApplyJob', {job: item});
     };
 
     // const isEmployer = user.role == "EMPLOYER" ? true : false;
@@ -155,20 +155,10 @@ const JobDetail = ({navigation, route}) => {
                 </ScrollView>
             </SafeAreaView>
             {!isEmployer && (
-                <View style={styles.footer}>
-                    <TouchableOpacity style={styles.btnBookmark} onPress={toggleSave}>
-                        <MaterialCommunityIcons
-                            name={isSaved ? "bookmark" : "bookmark-outline"}
-                            size={28}
-                            color={isSaved ? "#FF9228" : "#524B6B"}
-                        />
-                    </TouchableOpacity>
-
-                    {/* Nút Apply Now */}
-                    <TouchableOpacity style={styles.btnApply} onPress={handleApply}>
-                        <CustomText style={styles.btnApplyText}>APPLY NOW</CustomText>
-                    </TouchableOpacity>
-                </View>
+                <CustomFooter
+                    onApply={handleApply}
+                    leftContent={SaveButton}
+                />
             )}
         </View>
     );

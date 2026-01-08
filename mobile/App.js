@@ -12,6 +12,11 @@ import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import JobDetail from "./src/screens/Job/JobDetail";
 import { DialogProvider } from './src/utils/contexts/DialogContext';
+import ApplyJob from "./src/screens/Job/ApplyJob";
+import CandidateSearchJob from "./src/screens/Candidate/CandidateSearchJob";
+import CandidateHome from "./src/screens/Candidate/CandidateHome";
+import CandidateFilterCategory from "./src/screens/Candidate/CandidateFilterCategory";
+import CandidateSearchAdvance from './src/screens/Candidate/CandidateSearchAdvance'
 
 SplashScreen.preventAutoHideAsync();
 
@@ -65,7 +70,7 @@ export default function App() {
       <MyUserContext.Provider value={[user, dispatch]}>
         <PaperProvider theme={theme}>
           <DialogProvider>
-            <AppNavigator />
+            <CandidateSearchAdvance />
           </DialogProvider>
         </PaperProvider>
       </MyUserContext.Provider>

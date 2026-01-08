@@ -8,7 +8,6 @@ export default StyleSheet.create({
         backgroundColor: '#F5F5F5',
     },
 
-    // Header Styles
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
@@ -96,7 +95,6 @@ export default StyleSheet.create({
         marginBottom: 15,
     },
 
-    // Stats Grid
     statsGrid: {
         flexDirection: 'row',
         gap: 15,
@@ -167,35 +165,35 @@ export default StyleSheet.create({
         flex: 1,
     },
     logoContainer: {
-        width: 60,
-        height: 60,
-        borderRadius: 15,
+        width: 50,
+        height: 50,
+        borderRadius: 12,
         backgroundColor: '#F2F2F3',
         justifyContent: 'center',
         alignItems: 'center',
         overflow: 'hidden',
     },
     companyLogo: {
-        width: 40,
-        height: 40,
+        width: 35,
+        height: 35,
     },
     jobInfo: {
         marginLeft: 12,
         flex: 1,
+        justifyContent: 'center'
     },
     jobTitle: {
         fontSize: 16,
-        fontWeight: '700', // Bold
+        fontWeight: '700',
         color: '#0D0140',
-        marginBottom: 5,
+        marginBottom: 4,
     },
     companyInfo: {
         fontSize: 13,
-        fontWeight: '400', // Regular
+        fontWeight: '400',
         color: '#95969D',
     },
 
-    // Salary Container
     salaryContainer: {
         marginBottom: 15,
     },
@@ -210,7 +208,6 @@ export default StyleSheet.create({
         color: '#95969D',
     },
 
-    // Job Footer
     jobFooter: {
         flexDirection: 'row',
         justifyContent: 'space-between',
@@ -245,6 +242,28 @@ export default StyleSheet.create({
         fontSize: 14,
         fontWeight: '700', // Bold
     },
+
+    searchCard: {
+        backgroundColor: '#FFFFFF',
+        borderRadius: 20,
+        padding: 20,
+        marginBottom: 16,
+        elevation: 2,
+        shadowOpacity: 0.05,
+    },
+    searchFooterRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginTop: 5,
+        borderTopWidth: 0
+    },
+    postedTime: {
+        fontSize: 12,
+        color: '#AAA6B9',
+        fontWeight: '400'
+    },
+
     fabSearch: {
         position: "absolute",
         bottom: 20,
@@ -252,5 +271,20 @@ export default StyleSheet.create({
         borderRadius: 28,
         backgroundColor: '#FFFFFF',
         elevation: 8,
-    }
+    },
+    jobLeftSearch:{
+        flexDirection:"column",
+        gap: 10,
+        marginLeft:-10
+    },
+    logoContainerSearch: {
+        width: 50,
+        height: 50,
+        borderRadius: 12,
+        backgroundColor: '#F2F2F3',
+        justifyContent: 'center',
+        alignItems: 'center',
+        overflow: 'hidden',
+        marginLeft: 10
+    },
 });

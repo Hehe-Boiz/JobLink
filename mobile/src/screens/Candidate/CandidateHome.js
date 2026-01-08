@@ -1,7 +1,7 @@
 import React, {useState} from 'react';
 import {View, Image, ScrollView, Pressable, Animated} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import CustomText from '../../components/CustomText';
+import CustomText from '../../components/common/CustomText';
 import styles from '../../styles/Candidate/CandidateHomeStyles';
 import JobCard from '../../components/Candidate/JobCard'
 import {FAB} from 'react-native-paper';

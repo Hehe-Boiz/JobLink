@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Image, StyleSheet } from 'react-native';
 import { Dialog, Button, Portal } from 'react-native-paper';
 import CustomText from '../CustomText'; 
+import styles from '../../styles/Job/JobDetailStyles'
 
 const AppDialog = ({ 
     visible, 
