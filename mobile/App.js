@@ -20,6 +20,7 @@ import CandidateSearchAdvance from './src/screens/Candidate/CandidateSearchAdvan
 import { EmployerProvider } from './src/utils/contexts/EmployerContext';
 import CandidateSearchResults from "./src/screens/Candidate/CandidateSearchResults";
 import CompanyList from './src/screens/Candidate/CompanyList'
+import CompanyDetail from "./src/screens/Candidate/CompanyDetail";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -73,7 +74,7 @@ export default function App() {
       <MyUserContext.Provider value={[user, dispatch]}>
         <PaperProvider theme={theme}>
           <DialogProvider>
-            <CandidateSearchAdvance />
+            <CompanyDetail />
           </DialogProvider>
         </PaperProvider>
       </MyUserContext.Provider>
