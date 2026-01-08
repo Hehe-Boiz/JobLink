@@ -9,14 +9,15 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import styles from '../../styles/Auth/LoginStyles';
 import Apis, { authApis, endpoints } from '../../utils/Apis';
 import { MyUserContext } from '../../utils/contexts/MyContext';
+import { useEmployer } from '../../hooks/useEmployer';
+import { useDialog } from '../../hooks/useDialog';
 
 const Login = ({ route }) => {
     const navigation = useNavigation();
     const theme = useTheme();
-
-    // Lấy dispatch từ Context để cập nhật user toàn cục
+    const { profile, loadEmployerProfile } = useEmployer();
     const [, dispatch] = useContext(MyUserContext);
-
+    const { showDialog } = useDialog();
     // Cấu hình Input
     const info = [
         {
@@ -37,7 +38,7 @@ const Login = ({ route }) => {
     const [loading, setLoading] = useState(false);
     const [showPass, setShowPass] = useState({});
     const [rememberMe, setRememberMe] = useState(false);
-    const [err, setErr] = useState(false); // State lỗi để hiển thị HelperText
+    const [err, setErr] = useState(false);
 
     // Hàm Validate
     const validate = () => {
@@ -48,51 +49,54 @@ const Login = ({ route }) => {
         setErr(false);
         return true;
     }
-
-    // --- HÀM LOGIN CHÍNH (LOGIC CỦA BẠN) ---
     const login = async () => {
         if (validate()) {
             try {
                 setLoading(true);
                 console.log(user);
-                // 1. Gọi API lấy Token (OAuth2)
                 let res = await Apis.post(endpoints['login'], {
                     ...user,
                     'client_id': '5XCmPUvnuXrvqhLbbifhHnPD3fYqiPA6t59KoH45',
                     'client_secret': 'rgRooNUhgQ6oaa5WouYu1WqCc5ZI7mXYyhpGhMODmQua1yvHKNKwhQWJvA1eFmBwJtSfuOvzOrvwIfNsRIamWTUZo70xtvpG21eQpIw3FCz8KkDPhWId7XkTE2bplYqc',
                     'grant_type': 'password'
                 });
-                // 2. Lưu Token vào máy
                 await AsyncStorage.setItem('token', res.data.access_token);
 
-                // 3. Lấy thông tin User hiện tại (Current User)
                 setTimeout(async () => {
                     console.log(res.data.access_token)
                     let userRes = await authApis(res.data.access_token).get(endpoints['current_user']);
-
-                    // 4. Lưu User vào Context (Redux/Context API)
+                    console.log(userRes.data);
                     dispatch({
                         "type": "login",
                         "payload": userRes.data
                     });
-
-                    // 5. Điều hướng thông minh
-                    // Nếu có trang kế tiếp (do bị chặn login) thì quay lại đó
-                    const next = route.params?.next;
-                    if (next) {
-                        navigation.navigate(next);
-                    } else {
-                        // Nếu không, chuyển hướng theo vai trò (Role-based Navigation)
-                        const role = userRes.data.role;
-                        console.log(role); 
-                        if (role === 'EMPLOYER') {
-                            navigation.navigate('EmployerMain'); // Vào màn hình NTD
-                        } else {
-                            navigation.navigate('CandidateMain'); // Vào màn hình Ứng viên
+                    if (userRes.data.role === 'EMPLOYER') {
+                        console.log("Đang tải hồ sơ công ty...");
+                        let res_emp = await loadEmployerProfile(res.data.access_token);
+                        if (res_emp && res_emp.is_verified === false) {
+                            showDialog({
+                                type: 'error',
+                                title: 'Chưa được duyệt',
+                                content: 'Tài khoản Nhà tuyển dụng của bạn chưa được Admin phê duyệt. Vui lòng liên hệ quản trị viên để được kích hoạt.',
+                                confirmText: 'ĐÃ HIỂU'
+                            });
+                            await AsyncStorage.removeItem('token');
+                            return ;
                         }
-                    }
-                }, 100);
+                        const next = route.params?.next;
+                        if (next) {
+                            navigation.navigate(next);
+                        } else {
+                            const role = userRes.data.role;
+                            console.log(role);
+                            if (role === 'EMPLOYER') {
+                                    navigation.navigate('EmployerMain');
 
+                            } else {
+                                navigation.navigate('CandidateMain');
+                            }
+                        }
+                    }}, 100);
             } catch (ex) {
                 console.error(ex);
                 let msg = "Tên đăng nhập hoặc mật khẩu không đúng!";
@@ -110,7 +114,7 @@ const Login = ({ route }) => {
 
     return (
         <View style={styles.container}>
-            {/* Header JobLink */}
+
             <View style={styles.headerContainer}>
                 <Text style={styles.appName}>
                     Job<Text style={styles.brandHighlight}>Link</Text>
@@ -122,12 +126,10 @@ const Login = ({ route }) => {
 
             <ScrollView showsVerticalScrollIndicator={false}>
 
-                {/* Thông báo lỗi */}
                 <HelperText type="error" visible={err} style={{ textAlign: 'center' }}>
                     Vui lòng nhập đầy đủ thông tin!
                 </HelperText>
 
-                {/* Form Inputs */}
                 <View style={styles.inputContainer}>
                     {info.map(i => (
                         <TextInput
@@ -158,7 +160,6 @@ const Login = ({ route }) => {
                     ))}
                 </View>
 
-                {/* Options: Remember Me */}
                 <View style={styles.rowOptions}>
                     <TouchableOpacity
                         style={styles.checkboxContainer}
@@ -178,7 +179,6 @@ const Login = ({ route }) => {
                     </TouchableOpacity>
                 </View>
 
-                {/* Login Button */}
                 <Button
                     loading={loading}
                     disabled={loading}
@@ -191,17 +191,17 @@ const Login = ({ route }) => {
                     LOGIN
                 </Button>
 
-            <Button
-                mode="contained"
-                onPress={() => console.log('Google Login')}
-                style={styles.googleBtn}
-                labelStyle={styles.googleBtnLabel}
-                icon={({ size, color }) => (
+                <Button
+                    mode="contained"
+                    onPress={() => console.log('Google Login')}
+                    style={styles.googleBtn}
+                    labelStyle={styles.googleBtnLabel}
+                    icon={({ size, color }) => (
                         <MaterialCommunityIcons name="google" size={20} color="#EA4335" />
-                )}
-            >
-                SIGN IN WITH GOOGLE
-            </Button>
+                    )}
+                >
+                    SIGN IN WITH GOOGLE
+                </Button>
 
                 {/* Footer */}
                 <View style={styles.footer}>

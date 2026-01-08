@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
 
 
-class EmployerApplicationViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
+class EmployerApplicationViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveUpdateAPIView):
     serializer_class = EmployerApplicationSerializer
     permission_classes = [IsEmployerApproved]
 

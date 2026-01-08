@@ -17,6 +17,7 @@ import CandidateSearchJob from "./src/screens/Candidate/CandidateSearchJob";
 import CandidateHome from "./src/screens/Candidate/CandidateHome";
 import CandidateFilterCategory from "./src/screens/Candidate/CandidateFilterCategory";
 import CandidateSearchAdvance from './src/screens/Candidate/CandidateSearchAdvance'
+import { EmployerProvider } from './src/utils/contexts/EmployerContext';
 import CandidateSearchResults from "./src/screens/Candidate/CandidateSearchResults";
 import CompanyList from './src/screens/Candidate/CompanyList'
 
@@ -72,7 +73,7 @@ export default function App() {
       <MyUserContext.Provider value={[user, dispatch]}>
         <PaperProvider theme={theme}>
           <DialogProvider>
-            <JobDetail />
+            <CandidateSearchAdvance />
           </DialogProvider>
         </PaperProvider>
       </MyUserContext.Provider>

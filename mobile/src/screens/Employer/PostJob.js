@@ -19,7 +19,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import AppDatePicker from '../../components/common/AppDatePicker';
 import { validateForm } from '../../utils/validate/Employer/ValidatePostJob';
 
-const PostJob = ({ navigation }) => {
+const PostJob = ({ navigation, route }) => {
     // 1. State
     const [jobData, setJobData] = useState({
         title: '', location: '', address: '', salaryMin: '', salaryMax: '',

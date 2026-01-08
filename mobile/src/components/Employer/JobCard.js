@@ -3,58 +3,75 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { formatCurrencyShort, formatDate, getJobStatus } from '../../utils/Helper';
 
-const JobCard = ({ job, onPress }) => {
+const JobCard = ({ job, onPress, onEdit, onDelete }) => {
   const status = getJobStatus(job.deadline);
 
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
-      
+
       {/* 1. Header: Title & Status */}
       <View style={styles.rowBetween}>
         <View style={{ flex: 1, marginRight: 10 }}>
-            <Text style={styles.title} numberOfLines={1}>{job.title}</Text>
-            <Text style={styles.idText}>ID: #{job.id}</Text>
+          <Text style={styles.title} numberOfLines={1}>{job.title}</Text>
+          <Text style={styles.idText}>ID: #{job.id}</Text>
         </View>
         <View style={[styles.badge, { backgroundColor: status.bg }]}>
-            <Text style={[styles.badgeText, { color: status.color }]}>{status.label}</Text>
+          <Text style={[styles.badgeText, { color: status.color }]}>{status.label}</Text>
         </View>
       </View>
 
       {/* 2. Info: Location & Type */}
       <View style={styles.infoRow}>
         <View style={styles.infoItem}>
-            <MaterialCommunityIcons name="map-marker-outline" size={16} color="#95969D" />
-            <Text style={styles.infoText} numberOfLines={1}>
-                {job.location_name || "Chưa cập nhật"}
-            </Text>
+          <MaterialCommunityIcons name="map-marker-outline" size={16} color="#95969D" />
+          <Text style={styles.infoText} numberOfLines={1}>
+            {job.location_name || "Chưa cập nhật"}
+          </Text>
         </View>
         <View style={[styles.infoItem, { marginLeft: 15 }]}>
-            <MaterialCommunityIcons name="briefcase-outline" size={16} color="#95969D" />
-            <Text style={styles.infoText}>
-                {job.employment_type ? job.employment_type.replace('_', ' ') : 'Full-time'}
-            </Text>
+          <MaterialCommunityIcons name="briefcase-outline" size={16} color="#95969D" />
+          <Text style={styles.infoText}>
+            {job.employment_type ? job.employment_type.replace('_', ' ') : 'Full-time'}
+          </Text>
         </View>
       </View>
 
 
       <View style={styles.salaryContainer}>
-         <Text style={styles.salaryLabel}>Mức lương:</Text>
-         <Text style={styles.salaryValue}>
-            {formatCurrencyShort(job.salary_min)} - {formatCurrencyShort(job.salary_max)} VNĐ
-         </Text>
+        <Text style={styles.salaryLabel}>Mức lương:</Text>
+        <Text style={styles.salaryValue}>
+          {formatCurrencyShort(job.salary_min)} - {formatCurrencyShort(job.salary_max)} VNĐ
+        </Text>
       </View>
 
 
       <View style={styles.footer}>
-         <View style={styles.dateContainer}>
-            <MaterialCommunityIcons name="clock-outline" size={14} color="#524B6B" />
-            <Text style={styles.dateText}>Hạn: {formatDate(job.deadline)}</Text>
-         </View>
+        {/* Bên trái: Hạn nộp */}
+        <View style={styles.dateContainer}>
+          <MaterialCommunityIcons name="clock-outline" size={14} color="#524B6B" />
+          <Text style={styles.dateText}>Hạn: {formatDate(job.deadline)}</Text>
+        </View>
 
-         <View style={styles.statsContainer}>
+        {/* Bên phải: Group Action (Stats + Edit + Delete) */}
+        <View style={styles.actionRow}>
+
+          {/* Stats (Số lượng HS) */}
+          <View style={styles.statsContainer}>
             <MaterialCommunityIcons name="account-group" size={16} color="#130160" />
-            <Text style={styles.statText}>Number HS</Text> 
-         </View>
+            <Text style={styles.statText}>12</Text>
+          </View>
+
+          {/* Nút Sửa */}
+          <TouchableOpacity style={styles.iconBtn} onPress={onEdit}>
+            <MaterialCommunityIcons name="pencil-outline" size={20} color="#2E5CFF" />
+          </TouchableOpacity>
+
+          {/* Nút Xóa */}
+          <TouchableOpacity style={styles.iconBtn} onPress={onDelete}>
+            <MaterialCommunityIcons name="trash-can-outline" size={20} color="#FF4D4D" />
+          </TouchableOpacity>
+
+        </View>
       </View>
 
     </TouchableOpacity>
@@ -138,7 +155,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderTopWidth: 1,
     borderTopColor: '#F5F5F5',
-    paddingTop: 10,
+    paddingTop: 12,
+    marginTop: 5
   },
   dateContainer: {
     flexDirection: 'row',
@@ -162,6 +180,31 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#130160',
     marginLeft: 4,
+  },
+  actionRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E6E1FF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginRight: 10, // Cách nút sửa ra 1 chút
+  },
+  statText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#130160',
+    marginLeft: 4,
+  },
+  iconBtn: {
+      padding: 5,
+      marginLeft: 5, // Khoảng cách giữa các nút
+      backgroundColor: '#F5F7FA',
+      borderRadius: 8,
   },
 });
 

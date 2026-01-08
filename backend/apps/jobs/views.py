@@ -31,7 +31,7 @@ class JobViewCandidate(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        return qs.filter(deadline__gte=timezone.now().date())
+        return qs.filter(deadline__gte=timezone.now().date(), active=True)
 
     def get_serializer_class(self):
         if self.action == 'retrieve':
@@ -68,16 +68,26 @@ class JobViewCandidate(viewsets.ReadOnlyModelViewSet):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
-class EmployerJobViewSet(viewsets.ViewSet, generics.ListCreateAPIView, generics.UpdateAPIView):
+class EmployerJobViewSet(viewsets.ViewSet, generics.ListCreateAPIView, generics.UpdateAPIView,
+                         generics.DestroyAPIView):
     serializer_class = EmployerJobSerializer
     permission_classes = [IsEmployerApproved]
-
+    pagination_class = StandardResultsSetPagination
     def get_queryset(self):
         user = self.request.user
 
         if not user.is_authenticated:
             return Job.objects.none()
-        return Job.objects.filter(posted_by=user).select_related("category", "location")
+        return Job.objects.filter(posted_by=user, active=True).select_related("category", "location").order_by('-created_date')
+
+    def destroy(self, request, *args, **kwargs):
+        job = self.get_object()
+        job.active = False
+        job.save()
+        return Response(
+            {"detail": "Đã xóa tin tuyển dụng (Soft Delete)"},
+            status=status.HTTP_200_OK
+        )
 
     def perform_create(self, serializer):
         ep = self.request.user.employer_profile

@@ -412,7 +412,8 @@ export default StyleSheet.create({
         lineHeight: 24,
     },
     dialogActions: {
-        justifyContent: 'center',
+        flexDirection: 'row', // Xếp ngang 2 nút
+        justifyContent: 'space-between',
         width: '100%',
         paddingHorizontal: 20,
         marginTop: 10,
@@ -420,7 +421,12 @@ export default StyleSheet.create({
     dialogButton: {
         flex: 1,
         borderRadius: 10,
-        backgroundColor: '#130160',
+        width: '100%', // Mặc định full nếu 1 nút
+    },
+    cancelButton: {
+        flex: 1,
+        borderColor: '#EAEAEA',
+        backgroundColor: 'white'
     },
     dialogButtonLabel: {
         fontSize: 16,
