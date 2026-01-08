@@ -1,3 +1,4 @@
+import React, {useRef, useState, useEffect} from "react";
 import {View, Image, Animated, Pressable} from 'react-native';
 import styles from '../../styles/Candidate/CandidateHomeStyles'
 import {MaterialCommunityIcons} from '@expo/vector-icons';
@@ -5,8 +6,18 @@ import {TouchableRipple} from 'react-native-paper';
 import CustomText from "../common/CustomText";
 
 const JobCard = ({item, onSavePress, onApplyPress, variant = 'home'}) => {
-    const scaleValue = new Animated.Value(1);
-    const bookmarkScale = new Animated.Value(1);
+    const scaleValue = useRef(new Animated.Value(1)).current;
+    const bookmarkScale = useRef(new Animated.Value(1)).current;
+    const [isSaved, setIsSaved] = useState(item.saved);
+
+    useEffect(() => {
+        setIsSaved(item.saved);
+    }, [item.saved]);
+
+    const handleBookmarkPress = () => {
+        setIsSaved(!isSaved);
+        onSavePress(item.id);
+    };
 
     const animateBookmark = (toValue) => {
         Animated.spring(bookmarkScale, {
@@ -31,7 +42,6 @@ const JobCard = ({item, onSavePress, onApplyPress, variant = 'home'}) => {
         }).start();
     };
 
-    // --- RENDER CHO CHẾ ĐỘ HOME (CÓ NÚT APPLY) ---
     const renderHomeVariant = () => (
         <View>
             <View style={styles.jobCardHeader}>
@@ -116,7 +126,8 @@ const JobCard = ({item, onSavePress, onApplyPress, variant = 'home'}) => {
             <TouchableRipple
                 borderless
                 centered
-                onPress={() => onSavePress(item.id)}
+                // onPress={() => onSavePress(item.id)}
+                onPress={handleBookmarkPress}
                 onPressIn={() => animateBookmark(1.2)}
                 onPressOut={() => animateBookmark(1)}
                 rippleColor="rgba(16, 91, 230, 0.2)"

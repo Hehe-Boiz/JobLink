@@ -190,9 +190,9 @@ const styles = StyleSheet.create({
         marginBottom: 15
     },
     label: {
-        fontSize: 14,
+        fontSize: 16,
         fontWeight: '600',
-        color: '#524B6B',
+        color: '#150B3D',
         marginBottom: 8
     },
     selectorBox: {

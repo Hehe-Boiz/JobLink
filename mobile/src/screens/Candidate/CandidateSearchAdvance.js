@@ -6,6 +6,7 @@ import CustomText from '../../components/common/CustomText';
 import CustomFooter from '../../components/common/CustomFooter';
 import CustomSelector from '../../components/common/CustomSelector';
 import styles from '../../styles/Candidate/CandidateSearchAdvanceStyles';
+import stylesJD from '../../styles/Job/JobDetailStyles';
 
 const CATEGORIES = [
     {id: '1', name: 'Design'},
@@ -35,8 +36,40 @@ const JOB_TYPES = [
     {id: 'contract', label: 'Contract'},
 ];
 
-// --- RANGE SLIDER ĐÃ FIX ---
-const RangeSlider = ({min = 0, max = 50, initialLow = 10, initialHigh = 40, onValuesChange}) => {
+const UPDATE_TIMES = [
+    {id: 'recent', label: 'Recent'},
+    {id: 'week', label: 'Last week'},
+    {id: 'month', label: 'Last month'},
+    {id: 'any', label: 'Any time'},
+];
+
+const EXPERIENCE_LEVELS = [
+    {id: 'no_experience', label: 'No experience'},
+    {id: 'less_than_1', label: 'Less than a year'},
+    {id: '1_3', label: '1-3 years'},
+    {id: '3_5', label: '3-5 years'},
+    {id: '5_10', label: '5-10 years'},
+    {id: 'more_than_10', label: 'More than 10 years'},
+];
+
+const ResetButton = ({onPress}) => {
+    return (
+        <TouchableOpacity
+            onPress={onPress}
+            style={[
+                stylesJD.btnBookmark,
+                stylesJD.resetTextContainer
+            ]}
+        >
+            <CustomText style={stylesJD.resetText}>
+                Reset
+            </CustomText>
+        </TouchableOpacity>
+    );
+};
+
+
+const RangeSlider = ({min = 0, max = 50, initialLow = 0, initialHigh = 50, onValuesChange}) => {
     const [sliderWidth, setSliderWidth] = useState(0);
     const [low, setLow] = useState(initialLow);
     const [high, setHigh] = useState(initialHigh);
@@ -46,6 +79,7 @@ const RangeSlider = ({min = 0, max = 50, initialLow = 10, initialHigh = 40, onVa
     const sliderWidthRef = useRef(sliderWidth);
     const startLowRef = useRef(0);
     const startHighRef = useRef(0);
+
 
     useEffect(() => {
         lowRef.current = low;
@@ -140,10 +174,10 @@ const RangeSlider = ({min = 0, max = 50, initialLow = 10, initialHigh = 40, onVa
                 {...panHigh.panHandlers}
             />
 
-            <View style={[styles.priceLabel, {left: lowPos - 20}]}>
+            <View style={[styles.priceLabel, {left: lowPos - 27}]}>
                 <CustomText style={styles.priceText}>${low}k</CustomText>
             </View>
-            <View style={[styles.priceLabel, {left: highPos - 20}]}>
+            <View style={[styles.priceLabel, {left: highPos - 27}]}>
                 <CustomText style={styles.priceText}>${high}k</CustomText>
             </View>
         </View>
@@ -155,8 +189,10 @@ const CandidateSearchAdvance = ({navigation}) => {
     const [category, setCategory] = useState(null);
     const [subCategory, setSubCategory] = useState(null);
     const [location, setLocation] = useState(null);
-    const [salary, setSalary] = useState({min: 10, max: 40});
+    const [salary, setSalary] = useState({min: 0, max: 50});
     const [selectedJobTypes, setSelectedJobTypes] = useState(['full', 'remote']);
+    const [lastUpdate, setLastUpdate] = useState('any');
+    const [experience, setExperience] = useState('5_10');
 
     const toggleJobType = (id) => {
         if (selectedJobTypes.includes(id)) {
@@ -165,10 +201,23 @@ const CandidateSearchAdvance = ({navigation}) => {
             setSelectedJobTypes(prev => [...prev, id]);
         }
     };
+    const handleReset = () => {
+        console.log("Đã bấm Reset!");
+    };
 
     const handleApply = () => {
-        console.log("Apply:", {category, subCategory, location, salary, selectedJobTypes});
-        navigation.goBack();
+        const filterParams = {
+            category,
+            subCategory,
+            location,
+            salary,
+            selectedJobTypes,
+            lastUpdate,
+            experience
+        };
+
+        console.log("Applying filters:", filterParams);
+        navigation.navigate('CandidateSearchResults', { filterParams });
     };
 
     return (
@@ -199,6 +248,7 @@ const CandidateSearchAdvance = ({navigation}) => {
                         selectedValue={category}
                         onSelect={setCategory}
                     />
+                    <View style={styles.separator}/>
                 </View>
 
                 <View style={styles.sectionWrapper}>
@@ -209,6 +259,7 @@ const CandidateSearchAdvance = ({navigation}) => {
                         selectedValue={subCategory}
                         onSelect={setSubCategory}
                     />
+                    <View style={styles.separator}/>
                 </View>
 
                 <View style={styles.sectionWrapper}>
@@ -219,6 +270,40 @@ const CandidateSearchAdvance = ({navigation}) => {
                         selectedValue={location}
                         onSelect={setLocation}
                     />
+                    <View style={styles.separator}/>
+                </View>
+
+                <View style={styles.sectionWrapper}>
+                    <View style={styles.accordionHeader}>
+                        <CustomText style={styles.sectionTitle}>Last update</CustomText>
+                    </View>
+
+                    <View style={styles.radioGroup}>
+                        {UPDATE_TIMES.map((item) => {
+                            const isSelected = lastUpdate === item.id;
+                            return (
+                                <TouchableOpacity
+                                    key={item.id}
+                                    style={styles.radioRow}
+                                    onPress={() => setLastUpdate(item.id)}
+                                    activeOpacity={0.7}
+                                >
+                                    <MaterialCommunityIcons
+                                        name={isSelected ? "record-circle-outline" : "circle-outline"}
+                                        size={24}
+                                        color={isSelected ? "#FCA34D" : "#524B6B"}
+                                    />
+                                    <CustomText style={[
+                                        styles.radioText,
+                                        isSelected && styles.radioTextSelected
+                                    ]}>
+                                        {item.label}
+                                    </CustomText>
+                                </TouchableOpacity>
+                            )
+                        })}
+                    </View>
+                    <View style={styles.separator}/>
                 </View>
 
                 <View style={styles.sectionWrapper}>
@@ -231,6 +316,7 @@ const CandidateSearchAdvance = ({navigation}) => {
                         onValuesChange={(min, max) => setSalary({min, max})}
                     />
                     <View style={{height: 5}}/>
+                    <View style={styles.separator}/>
                 </View>
 
                 <View style={styles.sectionWrapper}>
@@ -252,10 +338,42 @@ const CandidateSearchAdvance = ({navigation}) => {
                         })}
                     </View>
                 </View>
+                <View style={styles.sectionWrapper}>
+                    <View style={styles.accordionHeader}>
+                        <CustomText style={styles.sectionTitle}>Experience</CustomText>
+                    </View>
+
+                    <View style={styles.radioGroup}>
+                        {EXPERIENCE_LEVELS.map((item) => {
+                            const isSelected = experience === item.id;
+                            return (
+                                <TouchableOpacity
+                                    key={item.id}
+                                    style={styles.radioRow}
+                                    onPress={() => setExperience(item.id)}
+                                    activeOpacity={0.7}
+                                >
+                                    <MaterialCommunityIcons
+                                        name={isSelected ? "record-circle-outline" : "circle-outline"}
+                                        size={24}
+                                        color={isSelected ? "#FCA34D" : "#524B6B"}
+                                    />
+                                    <CustomText style={[
+                                        styles.radioText,
+                                        isSelected && styles.radioTextSelected
+                                    ]}>
+                                        {item.label}
+                                    </CustomText>
+                                </TouchableOpacity>
+                            )
+                        })}
+                    </View>
+                </View>
 
             </ScrollView>
 
-            <CustomFooter applyTitle="APPLY NOW" onApply={handleApply}/>
+            <CustomFooter applyTitle="APPLY NOW" onApply={handleApply}
+                          leftContent={<ResetButton onPress={handleReset}/>}/>
         </SafeAreaView>
     );
 };

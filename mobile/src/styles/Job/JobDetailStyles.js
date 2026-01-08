@@ -428,4 +428,39 @@ export default StyleSheet.create({
         paddingVertical: 5,
         color: 'white',
     },
+    resetTextContainer: {
+        width: 'auto',
+        paddingHorizontal: 25,
+        marginRight: 0,
+        aspectRatio: undefined,
+    },
+    resetText: {
+        color: '#FF9228',
+        fontWeight: '600',
+        fontSize: 16
+    },
+    actionButtonsRow: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: 15,
+        marginTop: 25,
+        width: '100%',
+        paddingHorizontal: 20,
+    },
+    actionBtn: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#FFF0F3',
+        paddingVertical: 14,
+        borderRadius: 14,
+    },
+    actionBtnText: {
+        color: '#FF4D4D',
+        fontSize: 14,
+        fontWeight: '500',
+        marginLeft: 8,
+    },
 });

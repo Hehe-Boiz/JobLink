@@ -1,4 +1,4 @@
-import { StyleSheet } from "react-native";
+import {StyleSheet} from "react-native";
 
 export default StyleSheet.create({
     container: {
@@ -16,7 +16,7 @@ export default StyleSheet.create({
         paddingBottom: 120,
     },
     sectionWrapper: {
-        marginBottom: 25,
+        marginBottom: 15,
     },
     sectionTitle: {
         fontSize: 16,
@@ -33,7 +33,7 @@ export default StyleSheet.create({
         position: 'relative',
     },
     trackBg: {
-        height: 4,
+        height: 3,
         backgroundColor: '#EAEAEA',
         borderRadius: 3,
         width: '100%',
@@ -41,7 +41,7 @@ export default StyleSheet.create({
         top: 25,
     },
     trackActive: {
-        height: 4,
+        height: 3,
         backgroundColor: '#FF9228',
         borderRadius: 3,
         position: 'absolute',
@@ -58,7 +58,7 @@ export default StyleSheet.create({
         top: 14,
         elevation: 4,
         shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
+        shadowOffset: {width: 0, height: 2},
         shadowOpacity: 0.2,
         shadowRadius: 4,
         zIndex: 2,
@@ -83,11 +83,11 @@ export default StyleSheet.create({
     chipBtn: {
         paddingHorizontal: 20,
         paddingVertical: 12,
-        borderRadius: 12,
-        backgroundColor: '#FFF4E5',
+        borderRadius: 9,
+        backgroundColor: '#ececec',
     },
     chipBtnSelected: {
-        backgroundColor: '#FF9228',
+        backgroundColor: '#FCA34D',
     },
     chipText: {
         color: '#524B6B',
@@ -96,6 +96,35 @@ export default StyleSheet.create({
     },
     chipTextSelected: {
         color: '#FFFFFF',
-        fontWeight: 'bold',
+        fontWeight: '600',
+    },
+    accordionHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 10
+    },
+    radioGroup: {
+        gap: 15,
+        paddingLeft: 5
+    },
+    radioRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    radioText: {
+        fontSize: 14,
+        color: '#524B6B',
+        marginLeft: 12,
+    },
+    radioTextSelected: {
+        color: '#130160',
+        fontWeight: '500'
+    },
+    separator: {
+        height: 1.5,
+        backgroundColor: '#EAEAEA',
+        marginTop: 15,
+        marginBottom: 5
     },
 });
