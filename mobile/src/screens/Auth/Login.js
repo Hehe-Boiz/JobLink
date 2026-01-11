@@ -11,7 +11,8 @@ import Apis, { authApis, endpoints } from '../../utils/Apis';
 import { MyUserContext } from '../../utils/contexts/MyContext';
 import { useEmployer } from '../../hooks/useEmployer';
 import { useDialog } from '../../hooks/useDialog';
-
+//update ô kê
+import { CLIENT_ID, CLIENT_SECRET } from '@env';
 const Login = ({ route }) => {
     const navigation = useNavigation();
     const theme = useTheme();
@@ -52,15 +53,16 @@ const Login = ({ route }) => {
     const login = async () => {
         if (validate()) {
             try {
+                console.log(CLIENT_ID);
+                console.log(CLIENT_SECRET);
                 setLoading(true);
                 console.log(user);
                 let res = await Apis.post(endpoints['login'], {
                     ...user,
-                    'client_id': '5XCmPUvnuXrvqhLbbifhHnPD3fYqiPA6t59KoH45',
-                    'client_secret': 'rgRooNUhgQ6oaa5WouYu1WqCc5ZI7mXYyhpGhMODmQua1yvHKNKwhQWJvA1eFmBwJtSfuOvzOrvwIfNsRIamWTUZo70xtvpG21eQpIw3FCz8KkDPhWId7XkTE2bplYqc',
+                    'client_id': CLIENT_ID,
+                    'client_secret': CLIENT_SECRET,
                     'grant_type': 'password'
                 });
-                await AsyncStorage.setItem('token', res.data.access_token);
 
                 setTimeout(async () => {
                     console.log(res.data.access_token)
@@ -78,11 +80,26 @@ const Login = ({ route }) => {
                                 type: 'error',
                                 title: 'Chưa được duyệt',
                                 content: 'Tài khoản Nhà tuyển dụng của bạn chưa được Admin phê duyệt. Vui lòng liên hệ quản trị viên để được kích hoạt.',
-                                confirmText: 'ĐÃ HIỂU'
+                                confirmText: 'ĐÃ HIỂU',
                             });
-                            await AsyncStorage.removeItem('token');
-                            return ;
+                            try {
+                                await Apis.post(endpoints['logout'], {
+                                    'token': res.data.access_token,
+                                    'client_id': CLIENT_ID,
+                                    'client_secret': CLIENT_SECRET,
+                                });
+                            }
+                            catch (ex) {
+                                showDialog({
+                                    type: 'error',
+                                    title: 'Lỗi',
+                                    content: 'Có lỗi xảy ra. Vui lòng thử lại sau.',
+                                    confirmText: 'ĐÃ HIỂU',
+                                });
+                            }
+                            return;
                         }
+                        await AsyncStorage.setItem('token', res.data.access_token);
                         const next = route.params?.next;
                         if (next) {
                             navigation.navigate(next);
@@ -90,13 +107,14 @@ const Login = ({ route }) => {
                             const role = userRes.data.role;
                             console.log(role);
                             if (role === 'EMPLOYER') {
-                                    navigation.navigate('EmployerMain');
+                                navigation.navigate('EmployerMain');
 
                             } else {
                                 navigation.navigate('CandidateMain');
                             }
                         }
-                    }}, 100);
+                    }
+                }, 100);
             } catch (ex) {
                 console.error(ex);
                 let msg = "Tên đăng nhập hoặc mật khẩu không đúng!";

@@ -24,8 +24,9 @@ const CandidateDetail = ({ route, navigation }) => {
   const load_candidate = async () => {
     try {
       const token = await AsyncStorage.getItem('token');
+      console.log(application.candidate_id);
       setLoading(true);
-      let res = await authApis(token).get(endpoints['candidate_by_applications_in_employer_jobs'](application.candidate_id));
+      let res = await authApis(token).get(endpoints['candidate_by_applications_in_employer_jobs'](application.id));
       setCandidate(res.data);
     } catch (ex) {
       console.error(ex);
