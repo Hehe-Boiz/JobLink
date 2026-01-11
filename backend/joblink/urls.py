@@ -23,6 +23,7 @@ urlpatterns = [
     path('', include('apps.applications.urls')),
     path('', include('apps.jobs.urls')),
     path('', include('apps.users.urls')),
+    path('', include('apps.reports.urls')),
     path('admin/', admin.site.urls),
     re_path(r'^ckeditor/', include('ckeditor_uploader.urls')),
     re_path(r'^swagger(?P<format>\.json|\.yaml)$',

@@ -7,6 +7,8 @@ from ..core.models import BaseModel
 from django.contrib.auth import get_user_model
 from django.conf import settings
 
+from ..users.models import EmployerProfile
+
 User = get_user_model()
 
 
@@ -48,7 +50,7 @@ class Tag(BaseModel):
 
 
 class Job(BaseModel):
-    posted_by = models.ForeignKey(User, related_name='posted_jobs', on_delete=models.CASCADE)
+    posted_by = models.ForeignKey(EmployerProfile, related_name='posted_jobs', on_delete=models.CASCADE)
     title = models.CharField(max_length=255, db_index=True)
     description = RichTextField()
     requirements = RichTextField()
@@ -65,7 +67,7 @@ class Job(BaseModel):
     experience_level = models.CharField(
         max_length=20, choices=ExperienceLevel.choices, default=ExperienceLevel.JUNIOR
     )
-
+    views = models.IntegerField(default=0)
     salary_min = models.PositiveIntegerField(null=True, blank=True)
     salary_max = models.PositiveIntegerField(null=True, blank=True)
     deadline = models.DateField(null=True, blank=True)

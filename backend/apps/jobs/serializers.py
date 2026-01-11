@@ -126,7 +126,7 @@ class EmployerJobSerializer(serializers.ModelSerializer):
         validated_data.pop("posted_by", None)
         validated_data.pop("company_name", None)
         job = Job.objects.create(
-            posted_by=request.user,
+            posted_by=ep,
             company_name=ep.company_name,
             **validated_data
         )

@@ -16,10 +16,11 @@ class EmployerApplicationViewSet(viewsets.ViewSet, generics.ListAPIView, generic
 
     def get_queryset(self):
         user = self.request.user
+        ep = user.employer_profile
 
         if not user.is_authenticated:
             return Application.objects.none()
-        qs = Application.objects.filter(job__posted_by=user).select_related("job", "user")
+        qs = Application.objects.filter(job__posted_by=ep).select_related("job", "candidate")
         job_id = self.request.query_params.get("job_id")
         st = self.request.query_params.get("status")
         if job_id:
@@ -31,8 +32,7 @@ class EmployerApplicationViewSet(viewsets.ViewSet, generics.ListAPIView, generic
     @action(methods=['get'], url_path='candidate-profile', detail=True)
     def get_candidate_profile(self, request, pk):
         application = self.get_object()
-        candidate_profile = CandidateProfile.objects.filter(user_id=application.user_id).first()
-        return Response(CandidateProfileSerializer(candidate_profile).data, status=status.HTTP_200_OK)
+        return Response(CandidateProfileSerializer(application.candidate).data, status=status.HTTP_200_OK)
 
 
 class CandidateApplicationViewSet(viewsets.ModelViewSet):

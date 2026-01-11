@@ -15,7 +15,7 @@ class UserSerializer(MediaURLSerializer):
         model = User
         # bạn có thể bỏ bớt field nếu muốn ngắn hơn
         fields = [
-            # "id",
+            "id",
             "username",
             "email",
             "password",

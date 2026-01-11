@@ -5,31 +5,22 @@ from ..core.serializers import MediaURLSerializer
 from ..jobs.serializers import CandidateJobSerializer, CandidateJobDetailSerializer
 from django.utils import timezone
 from cloudinary.models import CloudinaryField
-
+from apps.users.serializers import CandidateProfileSerializer
+from apps.jobs.serializers import EmployerJobSerializer
 class EmployerApplicationSerializer(serializers.ModelSerializer):
-    # Đổi cách hiển thị candidate rõ ràng hơn
-    candidate_id = serializers.IntegerField(source="user.id", read_only=True)
-    candidate_email = serializers.EmailField(source="user.email", read_only=True)
-    candidate_name = serializers.CharField(source="user.display_name", read_only=True)
+    candidate_id = serializers.IntegerField(source="candidate.user.id", read_only=True)
+    candidate_email = serializers.EmailField(source="candidate.user.email", read_only=True)
+    candidate_name = serializers.CharField(source="candidate.user.full_name", read_only=True)
     candidate_avatar = serializers.SerializerMethodField()
     job_id = serializers.IntegerField(source="job.id", read_only=True)
     job_title = serializers.CharField(source="job.title", read_only=True)
     company_name = serializers.CharField(source="job.company_name", read_only=True)
 
     def get_candidate_avatar(self, obj):
-        avatar = getattr(obj.user, 'avatar', None)  # nếu avatar nằm ở profile thì đổi thành obj.user.profile.avatar
-        if not avatar:
-            return None
-
-        # CloudinaryField / ImageField thường đều có .url
-        try:
-            url = avatar.url
-        except Exception:
-            return None
-
-        # Nếu muốn absolute url
-        request = self.context.get('request')
-        return request.build_absolute_uri(url) if request else url
+        user = obj.candidate.user
+        if user.avatar:
+            return user.avatar.url
+        return MediaURLSerializer().get_default_avatar(user)
 
     class Meta:
         model = Application
