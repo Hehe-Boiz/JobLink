@@ -1,7 +1,7 @@
 import React, {useState} from "react";
 import {SafeAreaView} from "react-native-safe-area-context";
 import {View, StyleSheet, TextInput, TouchableOpacity, ScrollView, FlatList} from "react-native";
-import BgHeader from '../../../assets/images/Background.svg'
+import BgHeader from '../../../assets/images/Background_1.svg'
 import CustomHeader from "../../components/common/CustomHeader";
 import {MaterialCommunityIcons} from '@expo/vector-icons';
 import CustomText from "../../components/common/CustomText";
