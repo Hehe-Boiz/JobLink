@@ -153,7 +153,9 @@ const CustomSelector = ({label, placeholder, data, selectedValue, onSelect, requ
 
                                 <FlatList
                                     data={filteredData}
-                                    keyExtractor={(item) => item.id.toString()}
+                                    keyExtractor={(item, index) => {
+                                        return item.id ? item.id.toString() : (item.value ? item.value.toString() : index.toString());
+                                    }}
                                     contentContainerStyle={styles.listContent}
                                     renderItem={({item}) => {
                                         const isSelected = selectedValue?.id === item.id;

@@ -1,4 +1,3 @@
-// App.js
 import React, { useEffect, useReducer } from 'react';
 
 import AppNavigator from './src/navigation/AppNavigator'; // File điều hướng chính
@@ -21,6 +20,10 @@ import { EmployerProvider } from './src/utils/contexts/EmployerContext';
 import CandidateSearchResults from "./src/screens/Candidate/CandidateSearchResults";
 import CompanyList from './src/screens/Candidate/CompanyList'
 import CompanyDetail from "./src/screens/Candidate/CompanyDetail";
+import CandidateProfile from "./src/screens/CandidateProfile/CandidateProfile";
+import EditAboutMe from "./src/screens/CandidateProfile/EditAboutMe";
+import AddWorkExperience from "./src/screens/CandidateProfile/AddWorkExperience";
+import AddEducation from "./src/screens/CandidateProfile/AddEducation";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -74,7 +77,7 @@ export default function App() {
       <MyUserContext.Provider value={[user, dispatch]}>
         <PaperProvider theme={theme}>
           <DialogProvider>
-            <CompanyDetail />
+            <AddWorkExperience />
           </DialogProvider>
         </PaperProvider>
       </MyUserContext.Provider>
