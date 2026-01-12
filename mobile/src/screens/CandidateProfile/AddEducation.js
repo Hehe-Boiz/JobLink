@@ -1,4 +1,4 @@
-import React, {useState, useMemo} from 'react';
+import React, { useState } from 'react';
 import {
     View,
     TouchableOpacity,
@@ -6,18 +6,38 @@ import {
     Platform,
     TouchableWithoutFeedback,
     Keyboard,
-    ScrollView, TextInput,
+    ScrollView,
+    TextInput,
 } from 'react-native';
-import {SafeAreaView} from 'react-native-safe-area-context';
-import {MaterialCommunityIcons} from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import CustomText from '../../components/common/CustomText';
 import ConfirmationSheet from '../../components/common/ConfirmationSheet';
-import AppInput from '../../components/common/AppInput';
-import AppDatePicker from '../../components/common/AppDatePicker';
 import CustomSelector from '../../components/common/CustomSelector';
 import styles from '../../styles/CandidateProfile/AddWorkExperienceStyles';
 
-const AddEducation = ({navigation, route}) => {
+import MonthYearInput from '../../components/common/MonthYearInput';
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+const parseDateToPickerValue = (dateInput) => {
+    if (!dateInput) return null;
+    const d = new Date(dateInput);
+    if (isNaN(d.getTime())) return null;
+    return {
+        month: MONTHS[d.getMonth()],
+        year: d.getFullYear()
+    };
+};
+
+const convertPickerToDate = (pickerValue) => {
+    if (!pickerValue) return null;
+    const monthIndex = MONTHS.indexOf(pickerValue.month);
+    return new Date(pickerValue.year, monthIndex, 1);
+};
+
+
+const AddEducation = ({ navigation, route }) => {
     const initialData = route?.params?.data || {};
     const isEdit = !!initialData.id;
 
@@ -30,16 +50,6 @@ const AddEducation = ({navigation, route}) => {
         {id: '6', name: 'National University of Singapore'},
         {id: 'OTHER_OPTION', name: 'Other / Tự nhập trường khác'}
     ];
-
-    const [formData, setFormData] = useState({
-        level: initialData.level || '',
-        institution: initialData.institution || '',
-        fieldOfStudy: initialData.fieldOfStudy || '',
-        startDate: initialData.startDate ? new Date(initialData.startDate) : null,
-        endDate: initialData.endDate ? new Date(initialData.endDate) : null,
-        description: initialData.description || '',
-    });
-
     const levelList = [
         {id: '1', name: 'High School Diploma'},
         {id: '2', name: 'Associate Degree'},
@@ -48,6 +58,15 @@ const AddEducation = ({navigation, route}) => {
         {id: '5', name: 'Ph.D.'},
         {id: 'OTHER_OPTION', name: 'Other / Tự nhập cấp bậc khác'}
     ];
+
+    const [formData, setFormData] = useState({
+        level: initialData.level || '',
+        institution: initialData.institution || '',
+        fieldOfStudy: initialData.fieldOfStudy || '',
+        startDate: parseDateToPickerValue(initialData.startDate),
+        endDate: parseDateToPickerValue(initialData.endDate),
+        description: initialData.description || '',
+    });
 
     const [isCurrentPosition, setIsCurrentPosition] = useState(
         initialData.isCurrentPosition || false
@@ -67,71 +86,45 @@ const AddEducation = ({navigation, route}) => {
     );
 
     const handleChange = (field, value) => {
-        setFormData(prev => ({...prev, [field]: value}));
+        setFormData(prev => ({ ...prev, [field]: value }));
     };
 
     const handleInstitutionSelect = (item) => {
-        if (!item) {
-            handleChange('institution', '');
-            return;
-        }
-        if (item.id === 'OTHER_OPTION') {
-            setIsManualInstitution(true);
-            handleChange('institution', '');
-        } else {
-            handleChange('institution', item.name);
-            setIsManualInstitution(false);
-        }
+        if (!item) { handleChange('institution', ''); return; }
+        if (item.id === 'OTHER_OPTION') { setIsManualInstitution(true); handleChange('institution', ''); }
+        else { handleChange('institution', item.name); setIsManualInstitution(false); }
     };
 
     const handleLevelSelect = (item) => {
-        if (!item) {
-            handleChange('level', '');
-            return;
-        }
-        if (item.id === 'OTHER_OPTION') {
-            setIsManualLevel(true);
-            handleChange('level', '');
-        } else {
-            handleChange('level', item.name);
-            setIsManualLevel(false);
-        }
+        if (!item) { handleChange('level', ''); return; }
+        if (item.id === 'OTHER_OPTION') { setIsManualLevel(true); handleChange('level', ''); }
+        else { handleChange('level', item.name); setIsManualLevel(false); }
     };
 
     const handleToggleCurrentPosition = () => {
         const newValue = !isCurrentPosition;
         setIsCurrentPosition(newValue);
-
-        // (Tuỳ chọn) Nếu tích vào thì clear End Date
         if (newValue) {
             handleChange('endDate', null);
         }
     };
 
     const checkHasChanges = () => {
-        // Chuẩn hóa dữ liệu để so sánh
         const currentLevel = formData.level || '';
         const initialLevel = initialData.level || '';
         const currentInstitution = formData.institution || '';
         const initialInstitution = initialData.institution || '';
-
         const currentField = formData.fieldOfStudy || '';
         const initialField = initialData.fieldOfStudy || '';
-
         const currentDesc = formData.description || '';
         const initialDesc = initialData.description || '';
 
-        // So sánh ngày tháng (Chuyển về timestamp hoặc string để so sánh chính xác)
-        const currentStart = formData.startDate ? formData.startDate.getTime() : 0;
-        const initialStart = initialData.startDate ? new Date(initialData.startDate).getTime() : 0;
+        const currentStart = JSON.stringify(formData.startDate);
+        const initialStart = JSON.stringify(parseDateToPickerValue(initialData.startDate));
 
-        const currentEnd = formData.endDate ? formData.endDate.getTime() : 0;
-        const initialEnd = initialData.endDate ? new Date(initialData.endDate).getTime() : 0;
+        const currentEnd = JSON.stringify(formData.endDate);
+        const initialEnd = JSON.stringify(parseDateToPickerValue(initialData.endDate));
 
-        const currentIsPos = isCurrentPosition;
-        const initialIsPos = initialData.isCurrentPosition || false;
-
-        // Trả về true nếu CÓ BẤT KỲ trường nào khác nhau
         return (
             currentLevel !== initialLevel ||
             currentInstitution !== initialInstitution ||
@@ -146,11 +139,14 @@ const AddEducation = ({navigation, route}) => {
         const payload = {
             ...formData,
             isCurrentPosition,
-            endDate: isCurrentPosition ? null : formData.endDate
-            // Format date sang string nếu cần (ví dụ YYYY-MM-DD)
-            // startDate: formData.startDate?.toISOString().split('T')[0],
+            startDate: convertPickerToDate(formData.startDate), // Convert về Date object
+            endDate: isCurrentPosition ? null : convertPickerToDate(formData.endDate),
         };
-        console.log('Saving Education:', payload);
+
+        // Lưu ý: Nếu Backend cần string 'YYYY-MM-DD', bạn dùng:
+        // startDate: convertPickerToDate(formData.startDate)?.toISOString().split('T')[0],
+
+        console.log('Saving Education Payload:', payload);
         navigation.goBack();
     };
 
@@ -166,7 +162,6 @@ const AddEducation = ({navigation, route}) => {
 
     const onConfirmAction = () => {
         setShowSheet(false);
-
         if (sheetType === 'undo') {
             navigation.goBack();
         } else if (sheetType === 'remove') {
@@ -181,23 +176,17 @@ const AddEducation = ({navigation, route}) => {
                 <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                     <View style={styles.content}>
 
-                        <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 10}}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10 }}>
                             <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-                                <MaterialCommunityIcons name="arrow-left" size={28} color="#150B3D"/>
+                                <MaterialCommunityIcons name="arrow-left" size={28} color="#150B3D" />
                             </TouchableOpacity>
-                            <CustomText style={[styles.title, {
-                                marginBottom: 0,
-                                flex: 1,
-                                textAlign: 'center',
-                                marginRight: 44
-                            }]}>
+                            <CustomText style={[styles.title, { marginBottom: 0, flex: 1, textAlign: 'center', marginRight: 44 }]}>
                                 {isEdit ? 'Change Education' : 'Add Education'}
                             </CustomText>
                         </View>
 
-                        <ScrollView showsVerticalScrollIndicator={false}
-                                    contentContainerStyle={[styles.scrollContent, {paddingTop: 20}]}>
-                            {isManualLevel ? (
+                        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scrollContent, { paddingTop: 20 }]}>
+                             {isManualLevel ? (
                                 <View style={{marginBottom: 15}}>
                                     <View style={styles.inputGroup}>
                                         <CustomText style={styles.label}>Level of education</CustomText>
@@ -230,7 +219,8 @@ const AddEducation = ({navigation, route}) => {
                                     />
                                 </View>
                             )}
-                            {isManualInstitution ? (
+
+                             {isManualInstitution ? (
                                 <View style={{marginBottom: 15}}>
                                     <View style={styles.inputGroup}>
                                         <CustomText style={styles.label}>Institution name</CustomText>
@@ -242,12 +232,6 @@ const AddEducation = ({navigation, route}) => {
                                             placeholderTextColor="#AAA6B9"
                                         />
                                     </View>
-                                    {/*<AppInput*/}
-                                    {/*    label="Institution name"*/}
-                                    {/*    value={formData.institution}*/}
-                                    {/*    onChangeText={(val) => handleChange('institution', val)}*/}
-                                    {/*    placeholder="Enter your institution name"*/}
-                                    {/*/>*/}
                                     <TouchableOpacity
                                         onPress={() => setIsManualInstitution(false)}
                                         style={{alignSelf: 'flex-end', marginTop: 0}}
@@ -274,23 +258,24 @@ const AddEducation = ({navigation, route}) => {
                                 <CustomText style={styles.label}>Field of study</CustomText>
                                 <TextInput
                                     style={styles.input}
-                                    label="Field of study"
                                     value={formData.fieldOfStudy}
                                     onChangeText={(val) => handleChange('fieldOfStudy', val)}
                                     placeholder="e.g. Information Technology"
+                                    placeholderTextColor="#AAA6B9"
                                 />
                             </View>
 
                             <View style={styles.dateRow}>
-                                <View style={{flex: 1}}>
-                                    <AppDatePicker
+                                <View style={{ flex: 1, marginRight: 10 }}>
+                                    <MonthYearInput
                                         label="Start date"
                                         value={formData.startDate}
-                                        onDateChange={(date) => handleChange('startDate', date)}
+                                        onChange={(val) => handleChange('startDate', val)}
+                                        placeholder="Select Date"
                                     />
                                 </View>
-                                {/*<View style={{width: 15}} />*/}
-                                <View style={{flex: 1}}>
+
+                                <View style={{ flex: 1, marginLeft: 10 }}>
                                     {isCurrentPosition ? (
                                         <View>
                                             <CustomText style={styles.label}>End date</CustomText>
@@ -304,10 +289,11 @@ const AddEducation = ({navigation, route}) => {
                                             </View>
                                         </View>
                                     ) : (
-                                        <AppDatePicker
+                                        <MonthYearInput
                                             label="End date"
                                             value={formData.endDate}
-                                            onDateChange={(date) => handleChange('endDate', date)}
+                                            onChange={(val) => handleChange('endDate', val)}
+                                            placeholder="Select Date"
                                         />
                                     )}
                                 </View>
@@ -320,7 +306,7 @@ const AddEducation = ({navigation, route}) => {
                             >
                                 <View style={[styles.checkbox, isCurrentPosition && styles.checkboxChecked]}>
                                     {isCurrentPosition && (
-                                        <MaterialCommunityIcons name="check" size={14} color="#FFF"/>
+                                        <MaterialCommunityIcons name="check" size={14} color="#FFF" />
                                     )}
                                 </View>
                                 <CustomText style={styles.checkboxLabel}>This is my position now</CustomText>
@@ -343,7 +329,7 @@ const AddEducation = ({navigation, route}) => {
 
                         </ScrollView>
 
-                        <View style={[styles.buttonContainer, {marginBottom: 0}]}>
+                        <View style={[styles.buttonContainer, { marginBottom: 0 }]}>
                             {isEdit && (
                                 <TouchableOpacity style={styles.removeButton}>
                                     <CustomText style={styles.removeButtonText}>REMOVE</CustomText>

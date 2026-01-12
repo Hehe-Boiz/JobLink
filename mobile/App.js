@@ -77,7 +77,7 @@ export default function App() {
       <MyUserContext.Provider value={[user, dispatch]}>
         <PaperProvider theme={theme}>
           <DialogProvider>
-            <AddEducation />
+            <AddWorkExperience />
           </DialogProvider>
         </PaperProvider>
       </MyUserContext.Provider>
