@@ -1,25 +1,20 @@
-import React, {useState, useRef} from 'react';
+import React, {useState} from 'react';
 import {
     View,
-    StyleSheet,
     TextInput,
     TouchableOpacity,
-    Modal,
-    Dimensions,
     KeyboardAvoidingView,
     Platform,
     TouchableWithoutFeedback,
     Keyboard,
     ScrollView,
-    PanResponder,
-    Animated
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {MaterialCommunityIcons} from '@expo/vector-icons';
 import CustomText from '../../components/common/CustomText';
-import styles from '../../styles/CandidateProfile/AddWorkExperienceStyles'
+import styles from '../../styles/CandidateProfile/AddWorkExperienceStyles';
+import ConfirmationSheet from '../../components/common/ConfirmationSheet';
 
-const {height: screenHeight} = Dimensions.get('window');
 const AddWorkExperience = ({navigation, route}) => {
     const initialData = route?.params?.data || {};
     const isEdit = !!initialData.id;
@@ -31,35 +26,8 @@ const AddWorkExperience = ({navigation, route}) => {
     const [isCurrentPosition, setIsCurrentPosition] = useState(initialData.isCurrentPosition || false);
     const [description, setDescription] = useState(initialData.description || '');
 
-    const [showUndoSheet, setShowUndoSheet] = useState(false);
-
-    const translateY = useRef(new Animated.Value(0)).current;
-
-    const panResponder = useRef(
-        PanResponder.create({
-            onStartShouldSetPanResponder: () => true,
-            onMoveShouldSetPanResponder: (_, gesture) => {
-                return Math.abs(gesture.dy) > Math.abs(gesture.dx);
-            },
-            onPanResponderMove: (_, gesture) => {
-                if (gesture.dy > 0) {
-                    translateY.setValue(gesture.dy);
-                }
-            },
-            onPanResponderRelease: (_, gesture) => {
-                if (gesture.dy > 100) {
-                    closeSheet();
-                } else {
-                    Animated.spring(translateY, {
-                        toValue: 0,
-                        useNativeDriver: true,
-                        tension: 100,
-                        friction: 10,
-                    }).start();
-                }
-            },
-        })
-    ).current;
+    const [showSheet, setShowSheet] = useState(false);
+    const [sheetType, setSheetType] = useState('undo'); // 'undo' | 'remove'
 
     const hasChanges = () => {
         return jobTitle !== (initialData.title || '') ||
@@ -70,32 +38,13 @@ const AddWorkExperience = ({navigation, route}) => {
             description !== (initialData.description || '');
     };
 
-    const openSheet = () => {
-        translateY.setValue(0);
-        setShowUndoSheet(true);
-    };
-
-    const closeSheet = () => {
-        Animated.timing(translateY, {
-            toValue: screenHeight,
-            duration: 200,
-            useNativeDriver: true,
-        }).start(() => {
-            setShowUndoSheet(false);
-            translateY.setValue(0);
-        });
-    };
-
     const handleBack = () => {
         if (hasChanges()) {
             Keyboard.dismiss();
-            openSheet();
+            setSheetType('undo');
+            setShowSheet(true);
         } else {
-            if (navigation?.goBack) {
-                navigation.goBack();
-            } else {
-                console.log('Go back');
-            }
+            navigation?.goBack ? navigation.goBack() : console.log('Go back');
         }
     };
 
@@ -109,36 +58,33 @@ const AddWorkExperience = ({navigation, route}) => {
             description
         };
         console.log('Saving work experience:', data);
-        if (navigation?.goBack) {
-            navigation.goBack();
-        } else {
-            console.log('Saved and go back');
-        }
+        navigation?.goBack ? navigation.goBack() : console.log('Saved and go back');
     };
 
-    const handleContinueFilling = () => {
-        closeSheet();
-    };
+    const onConfirmAction = () => {
+        setShowSheet(false);
 
-    const handleUndoChanges = () => {
-        closeSheet();
-        setTimeout(() => {
+        if (sheetType === 'undo') {
             if (navigation?.goBack) {
                 navigation.goBack();
             } else {
                 console.log('Undo and go back');
             }
-        }, 250);
+        } else {
+            // TODO: Gọi API xóa work experience
+            console.log('Removing work experience:', initialData.id);
+            if (navigation?.goBack) {
+                navigation.goBack();
+            } else {
+                console.log('Removed and go back');
+            }
+        }
     };
 
-    const handleRemove = () => {
-        // TODO: Gọi API xóa work experience
-        console.log('Removing work experience:', initialData.id);
-        if (navigation?.goBack) {
-            navigation.goBack();
-        } else {
-            console.log('Removed and go back');
-        }
+    const handleRemovePress = () => {
+        Keyboard.dismiss();
+        setSheetType('remove');
+        setShowSheet(true);
     };
 
     return (
@@ -149,19 +95,16 @@ const AddWorkExperience = ({navigation, route}) => {
             >
                 <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                     <View style={styles.content}>
-                        {!showUndoSheet && (
-                            <TouchableOpacity
-                                onPress={handleBack}
-                                style={styles.backButton}
-                            >
-                                <MaterialCommunityIcons
-                                    name="arrow-left"
-                                    size={28}
-                                    color="#150B3D"
-                                />
-                            </TouchableOpacity>
-                        )}
-                        {showUndoSheet && <View style={styles.backButtonPlaceholder}/>}
+                        <TouchableOpacity
+                            onPress={handleBack}
+                            style={styles.backButton}
+                        >
+                            <MaterialCommunityIcons
+                                name="arrow-left"
+                                size={28}
+                                color="#150B3D"
+                            />
+                        </TouchableOpacity>
 
                         <CustomText style={styles.title}>
                             {isEdit ? 'Edit work experience' : 'Add work experience'}
@@ -181,6 +124,7 @@ const AddWorkExperience = ({navigation, route}) => {
                                     placeholderTextColor="#AAA6B9"
                                 />
                             </View>
+
 
                             <View style={styles.inputGroup}>
                                 <CustomText style={styles.label}>Company</CustomText>
@@ -224,7 +168,6 @@ const AddWorkExperience = ({navigation, route}) => {
                                 </View>
                             </View>
 
-                            {/* Checkbox */}
                             <TouchableOpacity
                                 style={styles.checkboxRow}
                                 onPress={() => setIsCurrentPosition(!isCurrentPosition)}
@@ -238,7 +181,6 @@ const AddWorkExperience = ({navigation, route}) => {
                                 <CustomText style={styles.checkboxLabel}>This is my position now</CustomText>
                             </TouchableOpacity>
 
-                            {/* Description */}
                             <View style={styles.inputGroup}>
                                 <CustomText style={styles.label}>Description</CustomText>
                                 <View style={styles.textAreaContainer}>
@@ -253,13 +195,14 @@ const AddWorkExperience = ({navigation, route}) => {
                                     />
                                 </View>
                             </View>
+
                         </ScrollView>
 
                         <View style={styles.buttonContainer}>
-                            {isEdit && (
+                             {isEdit && (
                                 <TouchableOpacity
                                     style={styles.removeButton}
-                                    onPress={handleRemove}
+                                    onPress={handleRemovePress}
                                     activeOpacity={0.8}
                                 >
                                     <CustomText style={styles.removeButtonText}>REMOVE</CustomText>
@@ -277,60 +220,12 @@ const AddWorkExperience = ({navigation, route}) => {
                 </TouchableWithoutFeedback>
             </KeyboardAvoidingView>
 
-            <Modal
-                visible={showUndoSheet}
-                animationType="slide"
-                transparent={true}
-                onRequestClose={closeSheet}
-            >
-                <TouchableWithoutFeedback onPress={closeSheet}>
-                    <View style={styles.modalOverlay}>
-                        {/* Header trong modal */}
-                        <SafeAreaView edges={['top']} style={styles.modalHeader}>
-                            <TouchableOpacity onPress={closeSheet} style={styles.closeButton}>
-                                <MaterialCommunityIcons name="close" size={28} color="#FFF"/>
-                            </TouchableOpacity>
-                        </SafeAreaView>
-
-                        <TouchableWithoutFeedback>
-                            <Animated.View
-                                style={[
-                                    styles.bottomSheet,
-                                    {transform: [{translateY}]}
-                                ]}
-                            >
-                                <View
-                                    style={styles.handleBarContainer}
-                                    {...panResponder.panHandlers}
-                                >
-                                    <View style={styles.sheetHandle}/>
-                                </View>
-
-                                <CustomText style={styles.sheetTitle}>Undo Changes ?</CustomText>
-                                <CustomText style={styles.sheetSubtitle}>
-                                    Are you sure you want to change what you entered?
-                                </CustomText>
-
-                                <TouchableOpacity
-                                    style={styles.continueButton}
-                                    onPress={handleContinueFilling}
-                                    activeOpacity={0.8}
-                                >
-                                    <CustomText style={styles.continueButtonText}>CONTINUE FILLING</CustomText>
-                                </TouchableOpacity>
-
-                                <TouchableOpacity
-                                    style={styles.undoButton}
-                                    onPress={handleUndoChanges}
-                                    activeOpacity={0.8}
-                                >
-                                    <CustomText style={styles.undoButtonText}>UNDO CHANGES</CustomText>
-                                </TouchableOpacity>
-                            </Animated.View>
-                        </TouchableWithoutFeedback>
-                    </View>
-                </TouchableWithoutFeedback>
-            </Modal>
+            <ConfirmationSheet
+                visible={showSheet}
+                type={sheetType}
+                onClose={() => setShowSheet(false)}
+                onConfirm={onConfirmAction}
+            />
         </SafeAreaView>
     );
 };

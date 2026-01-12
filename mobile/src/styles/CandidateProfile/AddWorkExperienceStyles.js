@@ -15,7 +15,7 @@ export default StyleSheet.create({
         paddingHorizontal: 20,
     },
     scrollContent: {
-        paddingBottom: 20,
+        paddingBottom: 10,
     },
 
     backButton: {
@@ -44,7 +44,7 @@ export default StyleSheet.create({
         marginBottom: 20,
     },
     label: {
-        fontSize: 13,
+        fontSize: 16,
         fontWeight: '600',
         color: '#150B3D',
         marginBottom: 10,
@@ -110,10 +110,11 @@ export default StyleSheet.create({
     textAreaContainer: {
         backgroundColor: '#FFF',
         borderRadius: 12,
-        padding: 16,
+        padding: 13,
         minHeight: 120,
         borderWidth: 1,
         borderColor: '#E8E8E8',
+        paddingTop: 8,
     },
     textArea: {
         flex: 1,
@@ -124,13 +125,19 @@ export default StyleSheet.create({
     },
 
     buttonContainer: {
-        marginBottom: 20,
+        marginBottom: 80,
+        flexDirection: "row",
+        gap: 15,
+        justifyContent: "space-between",
+        padding: 20,
     },
     saveButton: {
+        flex: 1,
         backgroundColor: '#130160',
         borderRadius: 10,
         paddingVertical: 18,
         alignItems: 'center',
+        justifyContent: 'center',
     },
     saveButtonText: {
         fontSize: 15,
@@ -139,11 +146,13 @@ export default StyleSheet.create({
         letterSpacing: 1,
     },
     removeButton: {
+        flex: 1,
         backgroundColor: '#D6CDFE',
         borderRadius: 10,
         paddingVertical: 18,
         alignItems: 'center',
-        marginTop: 15,
+        justifyContent: 'center',
+
     },
     removeButtonText: {
         fontSize: 15,
