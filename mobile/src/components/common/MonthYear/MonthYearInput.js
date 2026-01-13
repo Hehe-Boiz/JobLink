@@ -1,7 +1,7 @@
 import React, {useState} from 'react';
 import {View, TouchableOpacity, StyleSheet} from 'react-native';
 import {MaterialCommunityIcons} from '@expo/vector-icons';
-import CustomText from './CustomText';
+import CustomText from '../CustomText';
 import MonthYearPickerModal from './MonthYearPickerModal';
 
 const MonthYearInput = ({

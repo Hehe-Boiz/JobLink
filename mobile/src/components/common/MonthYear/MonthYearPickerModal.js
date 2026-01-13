@@ -9,8 +9,8 @@ import {
     Dimensions,
     PanResponder,
 } from 'react-native';
-import CustomText from './CustomText';
-import WheelColumn from './WheelColumn';
+import CustomText from '../CustomText';
+import WheelColumn from '../WheelColumn';
 
 const {height: SCREEN_HEIGHT} = Dimensions.get('window');
 

@@ -12,7 +12,7 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {MaterialCommunityIcons} from '@expo/vector-icons';
 import CustomText from '../../components/common/CustomText';
 import ConfirmationSheet from '../../components/common/ConfirmationSheet';
-import MonthYearInput from "../../components/common/MonthYearInput";
+import MonthYearInput from "../../components/common/MonthYear/MonthYearInput";
 
 const AppreciationForm = ({navigation, route}) => {
     const initial = route?.params?.data || null;

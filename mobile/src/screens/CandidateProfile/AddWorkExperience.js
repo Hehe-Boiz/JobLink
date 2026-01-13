@@ -15,7 +15,7 @@ import CustomText from '../../components/common/CustomText';
 import styles from '../../styles/CandidateProfile/AddWorkExperienceStyles';
 import ConfirmationSheet from '../../components/common/ConfirmationSheet';
 
-import MonthYearInput from '../../components/common/MonthYearInput';
+import MonthYearInput from '../../components/common/MonthYear/MonthYearInput';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
