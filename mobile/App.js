@@ -29,6 +29,7 @@ import SkillList from "./src/screens/CandidateProfile/SkillList";
 import LanguageList from "./src/screens/CandidateProfile/LanguageList";
 import AddLanguage from "./src/screens/CandidateProfile/AddLanguage";
 import LanguageDetail from "./src/screens/CandidateProfile/LanguageDetail";
+import AppreciationForm from "./src/screens/CandidateProfile/AppreciationForm";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -82,7 +83,7 @@ export default function App() {
       <MyUserContext.Provider value={[user, dispatch]}>
         <PaperProvider theme={theme}>
           <DialogProvider>
-            <LanguageList />
+            <AppreciationForm />
           </DialogProvider>
         </PaperProvider>
       </MyUserContext.Provider>
