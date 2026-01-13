@@ -24,6 +24,11 @@ import CandidateProfile from "./src/screens/CandidateProfile/CandidateProfile";
 import EditAboutMe from "./src/screens/CandidateProfile/EditAboutMe";
 import AddWorkExperience from "./src/screens/CandidateProfile/AddWorkExperience";
 import AddEducation from "./src/screens/CandidateProfile/AddEducation";
+import AddSkill from "./src/screens/CandidateProfile/AddSkill";
+import SkillList from "./src/screens/CandidateProfile/SkillList";
+import LanguageList from "./src/screens/CandidateProfile/LanguageList";
+import AddLanguage from "./src/screens/CandidateProfile/AddLanguage";
+import LanguageDetail from "./src/screens/CandidateProfile/LanguageDetail";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -77,7 +82,7 @@ export default function App() {
       <MyUserContext.Provider value={[user, dispatch]}>
         <PaperProvider theme={theme}>
           <DialogProvider>
-            <AddWorkExperience />
+            <LanguageList />
           </DialogProvider>
         </PaperProvider>
       </MyUserContext.Provider>
