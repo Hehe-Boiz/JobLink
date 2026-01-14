@@ -1,7 +1,7 @@
 from rest_framework import viewsets, permissions, status, generics
 from rest_framework.decorators import action
-from apps.users.models import CandidateProfile
-from apps.users.serializers import CandidateProfileSerializer
+from ..users.models import CandidateProfile
+from ..users.serializers import CandidateProfileSerializer
 from .models import Application
 from .serializers import EmployerApplicationSerializer, CandidateApplicationListSerializer, \
     CandidateApplicationWriteSerializer, CandidateApplicationDetailSerializer

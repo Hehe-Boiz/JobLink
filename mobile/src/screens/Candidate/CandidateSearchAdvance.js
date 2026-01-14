@@ -1,39 +1,20 @@
-import React, {useState, useRef, useEffect, useCallback} from 'react';
-import {View, TouchableOpacity, ScrollView, PanResponder} from 'react-native';
+import React, {useState, useRef, useEffect} from 'react';
+import {View, TouchableOpacity, ScrollView, PanResponder, ActivityIndicator} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {MaterialCommunityIcons} from '@expo/vector-icons';
+import AsyncStorage from "@react-native-async-storage/async-storage"; // Import thêm
 import CustomText from '../../components/common/CustomText';
 import CustomFooter from '../../components/common/CustomFooter';
 import CustomSelector from '../../components/common/CustomSelector';
 import styles from '../../styles/Candidate/CandidateSearchAdvanceStyles';
 import stylesJD from '../../styles/Job/JobDetailStyles';
-
-const CATEGORIES = [
-    {id: '1', name: 'Design'},
-    {id: '2', name: 'Finance'},
-    {id: '3', name: 'Technology'},
-    {id: '4', name: 'Marketing'},
-];
-
-const SUB_CATEGORIES = [
-    {id: '1', name: 'UI/UX Design'},
-    {id: '2', name: 'Graphic Design'},
-    {id: '3', name: 'Motion Design'},
-    {id: '4', name: 'Web Design'},
-];
-
-const LOCATIONS = [
-    {id: '1', name: 'California, USA'},
-    {id: '2', name: 'New York, USA'},
-    {id: '3', name: 'Hanoi, Vietnam'},
-    {id: '4', name: 'Ho Chi Minh'},
-];
+import API, {endpoints} from "../../utils/Apis";
 
 const JOB_TYPES = [
     {id: 'full', label: 'Full time'},
     {id: 'part', label: 'Part time'},
     {id: 'remote', label: 'Remote'},
-    {id: 'contract', label: 'Contract'},
+    {id: 'intern', label: 'Internship'},
 ];
 
 const UPDATE_TIMES = [
@@ -56,23 +37,22 @@ const ResetButton = ({onPress}) => {
     return (
         <TouchableOpacity
             onPress={onPress}
-            style={[
-                stylesJD.btnBookmark,
-                stylesJD.resetTextContainer
-            ]}
+            style={[stylesJD.btnBookmark, stylesJD.resetTextContainer]}
         >
-            <CustomText style={stylesJD.resetText}>
-                Reset
-            </CustomText>
+            <CustomText style={stylesJD.resetText}>Reset</CustomText>
         </TouchableOpacity>
     );
 };
 
-
-const RangeSlider = ({min = 0, max = 50, initialLow = 0, initialHigh = 50, onValuesChange}) => {
+const RangeSlider = ({min = 0, max = 50, initialLow = 0, initialHigh = 50, onValuesChange, resetTrigger}) => {
     const [sliderWidth, setSliderWidth] = useState(0);
     const [low, setLow] = useState(initialLow);
     const [high, setHigh] = useState(initialHigh);
+
+    useEffect(() => {
+        setLow(initialLow);
+        setHigh(initialHigh);
+    }, [initialLow, initialHigh, resetTrigger]);
 
     const lowRef = useRef(low);
     const highRef = useRef(high);
@@ -80,15 +60,12 @@ const RangeSlider = ({min = 0, max = 50, initialLow = 0, initialHigh = 50, onVal
     const startLowRef = useRef(0);
     const startHighRef = useRef(0);
 
-
     useEffect(() => {
         lowRef.current = low;
     }, [low]);
-
     useEffect(() => {
         highRef.current = high;
     }, [high]);
-
     useEffect(() => {
         sliderWidthRef.current = sliderWidth;
     }, [sliderWidth]);
@@ -103,12 +80,10 @@ const RangeSlider = ({min = 0, max = 50, initialLow = 0, initialHigh = 50, onVal
             onPanResponderMove: (_, gesture) => {
                 const width = sliderWidthRef.current;
                 if (!width) return;
-
                 const diff = (gesture.dx / width) * (max - min);
                 let newVal = startLowRef.current + diff;
-                newVal = Math.max(min, Math.min(newVal, highRef.current - 2));
+                newVal = Math.max(min, Math.min(newVal, highRef.current - 1));
                 const roundedVal = Math.round(newVal);
-
                 if (roundedVal !== lowRef.current) {
                     setLow(roundedVal);
                     onValuesChange && onValuesChange(roundedVal, highRef.current);
@@ -130,12 +105,10 @@ const RangeSlider = ({min = 0, max = 50, initialLow = 0, initialHigh = 50, onVal
             onPanResponderMove: (_, gesture) => {
                 const width = sliderWidthRef.current;
                 if (!width) return;
-
                 const diff = (gesture.dx / width) * (max - min);
                 let newVal = startHighRef.current + diff;
-                newVal = Math.max(lowRef.current + 2, Math.min(newVal, max));
+                newVal = Math.max(lowRef.current + 1, Math.min(newVal, max));
                 const roundedVal = Math.round(newVal);
-
                 if (roundedVal !== highRef.current) {
                     setHigh(roundedVal);
                     onValuesChange && onValuesChange(lowRef.current, roundedVal);
@@ -151,29 +124,11 @@ const RangeSlider = ({min = 0, max = 50, initialLow = 0, initialHigh = 50, onVal
     const highPos = sliderWidth ? ((high - min) / (max - min)) * sliderWidth : 0;
 
     return (
-        <View
-            style={styles.sliderContainer}
-            onLayout={(e) => setSliderWidth(e.nativeEvent.layout.width)}
-        >
+        <View style={styles.sliderContainer} onLayout={(e) => setSliderWidth(e.nativeEvent.layout.width)}>
             <View style={styles.trackBg}/>
-
-            <View
-                style={[
-                    styles.trackActive,
-                    {left: lowPos, width: Math.max(0, highPos - lowPos)}
-                ]}
-            />
-
-            <View
-                style={[styles.thumb, {left: lowPos - 14}]}
-                {...panLow.panHandlers}
-            />
-
-            <View
-                style={[styles.thumb, {left: highPos - 14}]}
-                {...panHigh.panHandlers}
-            />
-
+            <View style={[styles.trackActive, {left: lowPos, width: Math.max(0, highPos - lowPos)}]}/>
+            <View style={[styles.thumb, {left: lowPos - 14}]} {...panLow.panHandlers}/>
+            <View style={[styles.thumb, {left: highPos - 14}]} {...panHigh.panHandlers}/>
             <View style={[styles.priceLabel, {left: lowPos - 27}]}>
                 <CustomText style={styles.priceText}>${low}k</CustomText>
             </View>
@@ -184,15 +139,42 @@ const RangeSlider = ({min = 0, max = 50, initialLow = 0, initialHigh = 50, onVal
     );
 };
 
-
 const CandidateSearchAdvance = ({navigation}) => {
+    const [categories, setCategories] = useState([]);
+    const [locations, setLocations] = useState([]);
+    const [loadingData, setLoadingData] = useState(true);
+
     const [category, setCategory] = useState(null);
     const [subCategory, setSubCategory] = useState(null);
     const [location, setLocation] = useState(null);
-    const [salary, setSalary] = useState({min: 0, max: 50});
-    const [selectedJobTypes, setSelectedJobTypes] = useState(['full', 'remote']);
+
+    const DEFAULT_SALARY = {min: 0, max: 50};
+    const [salary, setSalary] = useState(DEFAULT_SALARY);
+    const [resetSliderTrigger, setResetSliderTrigger] = useState(0);
+
+    const [selectedJobTypes, setSelectedJobTypes] = useState([]);
     const [lastUpdate, setLastUpdate] = useState('any');
-    const [experience, setExperience] = useState('5_10');
+    const [experience, setExperience] = useState(null);
+
+    useEffect(() => {
+        const fetchMasterData = async () => {
+            try {
+                const [resCats, resLocs] = await Promise.all([
+                    API.get(endpoints['categories']),
+                    API.get(endpoints['locations'])
+                ]);
+
+                setCategories(resCats.data);
+                setLocations(resLocs.data);
+            } catch (error) {
+                console.error("Lỗi lấy dữ liệu lọc:", error);
+            } finally {
+                setLoadingData(false);
+            }
+        };
+
+        fetchMasterData();
+    }, []);
 
     const toggleJobType = (id) => {
         if (selectedJobTypes.includes(id)) {
@@ -201,14 +183,24 @@ const CandidateSearchAdvance = ({navigation}) => {
             setSelectedJobTypes(prev => [...prev, id]);
         }
     };
+
     const handleReset = () => {
-        console.log("Đã bấm Reset!");
+        console.log("Resetting filters...");
+        setCategory(null);
+        setSubCategory(null);
+        setLocation(null);
+
+        setSalary(DEFAULT_SALARY);
+        setResetSliderTrigger(prev => prev + 1);
+
+        setSelectedJobTypes([]);
+        setLastUpdate('any');
+        setExperience(null);
     };
 
     const handleApply = () => {
         const filterParams = {
             category,
-            subCategory,
             location,
             salary,
             selectedJobTypes,
@@ -217,12 +209,11 @@ const CandidateSearchAdvance = ({navigation}) => {
         };
 
         console.log("Applying filters:", filterParams);
-        navigation.navigate('CandidateSearchResults', { filterParams });
+        navigation.navigate('CandidateSearchResults', {filterParams});
     };
 
     return (
         <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-
             <View style={{paddingHorizontal: 20}}>
                 <View style={{
                     flexDirection: 'row',
@@ -238,139 +229,128 @@ const CandidateSearchAdvance = ({navigation}) => {
                 </View>
             </View>
 
-            <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-
-                <View style={styles.sectionWrapper}>
-                    <CustomSelector
-                        label="Category"
-                        placeholder="Select Category"
-                        data={CATEGORIES}
-                        selectedValue={category}
-                        onSelect={setCategory}
-                    />
-                    <View style={styles.separator}/>
+            {loadingData ? (
+                <View style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}>
+                    <ActivityIndicator size="large" color="#FF9228"/>
+                    <CustomText>Loading filters...</CustomText>
                 </View>
-
-                <View style={styles.sectionWrapper}>
-                    <CustomSelector
-                        label="Sub Category"
-                        placeholder="Select Sub Category"
-                        data={SUB_CATEGORIES}
-                        selectedValue={subCategory}
-                        onSelect={setSubCategory}
-                    />
-                    <View style={styles.separator}/>
-                </View>
-
-                <View style={styles.sectionWrapper}>
-                    <CustomSelector
-                        label="Location"
-                        placeholder="Select Location"
-                        data={LOCATIONS}
-                        selectedValue={location}
-                        onSelect={setLocation}
-                    />
-                    <View style={styles.separator}/>
-                </View>
-
-                <View style={styles.sectionWrapper}>
-                    <View style={styles.accordionHeader}>
-                        <CustomText style={styles.sectionTitle}>Last update</CustomText>
+            ) : (
+                <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+                    <View style={styles.sectionWrapper}>
+                        <CustomSelector
+                            label="Category"
+                            placeholder="Select Category"
+                            data={categories}
+                            selectedValue={category}
+                            onSelect={setCategory}
+                        />
+                        <View style={styles.separator}/>
                     </View>
 
-                    <View style={styles.radioGroup}>
-                        {UPDATE_TIMES.map((item) => {
-                            const isSelected = lastUpdate === item.id;
-                            return (
-                                <TouchableOpacity
-                                    key={item.id}
-                                    style={styles.radioRow}
-                                    onPress={() => setLastUpdate(item.id)}
-                                    activeOpacity={0.7}
-                                >
-                                    <MaterialCommunityIcons
-                                        name={isSelected ? "record-circle-outline" : "circle-outline"}
-                                        size={24}
-                                        color={isSelected ? "#FCA34D" : "#524B6B"}
-                                    />
-                                    <CustomText style={[
-                                        styles.radioText,
-                                        isSelected && styles.radioTextSelected
-                                    ]}>
-                                        {item.label}
-                                    </CustomText>
-                                </TouchableOpacity>
-                            )
-                        })}
-                    </View>
-                    <View style={styles.separator}/>
-                </View>
-
-                <View style={styles.sectionWrapper}>
-                    <CustomText style={styles.sectionTitle}>Salary</CustomText>
-                    <RangeSlider
-                        min={0}
-                        max={50}
-                        initialLow={salary.min}
-                        initialHigh={salary.max}
-                        onValuesChange={(min, max) => setSalary({min, max})}
-                    />
-                    <View style={{height: 5}}/>
-                    <View style={styles.separator}/>
-                </View>
-
-                <View style={styles.sectionWrapper}>
-                    <CustomText style={styles.sectionTitle}>Job Type</CustomText>
-                    <View style={styles.chipContainer}>
-                        {JOB_TYPES.map((type) => {
-                            const isSelected = selectedJobTypes.includes(type.id);
-                            return (
-                                <TouchableOpacity
-                                    key={type.id}
-                                    style={[styles.chipBtn, isSelected && styles.chipBtnSelected]}
-                                    onPress={() => toggleJobType(type.id)}
-                                >
-                                    <CustomText style={[styles.chipText, isSelected && styles.chipTextSelected]}>
-                                        {type.label}
-                                    </CustomText>
-                                </TouchableOpacity>
-                            )
-                        })}
-                    </View>
-                </View>
-                <View style={styles.sectionWrapper}>
-                    <View style={styles.accordionHeader}>
-                        <CustomText style={styles.sectionTitle}>Experience</CustomText>
+                    <View style={styles.sectionWrapper}>
+                        <CustomSelector
+                            label="Location"
+                            placeholder="Select Location"
+                            data={locations}
+                            selectedValue={location}
+                            onSelect={setLocation}
+                        />
+                        <View style={styles.separator}/>
                     </View>
 
-                    <View style={styles.radioGroup}>
-                        {EXPERIENCE_LEVELS.map((item) => {
-                            const isSelected = experience === item.id;
-                            return (
-                                <TouchableOpacity
-                                    key={item.id}
-                                    style={styles.radioRow}
-                                    onPress={() => setExperience(item.id)}
-                                    activeOpacity={0.7}
-                                >
-                                    <MaterialCommunityIcons
-                                        name={isSelected ? "record-circle-outline" : "circle-outline"}
-                                        size={24}
-                                        color={isSelected ? "#FCA34D" : "#524B6B"}
-                                    />
-                                    <CustomText style={[
-                                        styles.radioText,
-                                        isSelected && styles.radioTextSelected
-                                    ]}>
-                                        {item.label}
-                                    </CustomText>
-                                </TouchableOpacity>
-                            )
-                        })}
+                    <View style={styles.sectionWrapper}>
+                        <View style={styles.accordionHeader}>
+                            <CustomText style={styles.sectionTitle}>Last update</CustomText>
+                        </View>
+                        <View style={styles.radioGroup}>
+                            {UPDATE_TIMES.map((item) => {
+                                const isSelected = lastUpdate === item.id;
+                                return (
+                                    <TouchableOpacity
+                                        key={item.id}
+                                        style={styles.radioRow}
+                                        onPress={() => setLastUpdate(item.id)}
+                                        activeOpacity={0.7}
+                                    >
+                                        <MaterialCommunityIcons
+                                            name={isSelected ? "record-circle-outline" : "circle-outline"}
+                                            size={24}
+                                            color={isSelected ? "#FCA34D" : "#524B6B"}
+                                        />
+                                        <CustomText style={[styles.radioText, isSelected && styles.radioTextSelected]}>
+                                            {item.label}
+                                        </CustomText>
+                                    </TouchableOpacity>
+                                )
+                            })}
+                        </View>
+                        <View style={styles.separator}/>
                     </View>
-                </View>
 
-            </ScrollView>
+                    {/* Salary Slider */}
+                    <View style={styles.sectionWrapper}>
+                        <CustomText style={styles.sectionTitle}>Salary (Million VND)</CustomText>
+                        <RangeSlider
+                            min={0}
+                            max={50}
+                            initialLow={salary.min}
+                            initialHigh={salary.max}
+                            resetTrigger={resetSliderTrigger} // Truyền prop này để reset UI
+                            onValuesChange={(min, max) => setSalary({min, max})}
+                        />
+                        <View style={{height: 5}}/>
+                        <View style={styles.separator}/>
+                    </View>
+
+                    <View style={styles.sectionWrapper}>
+                        <CustomText style={styles.sectionTitle}>Job Type</CustomText>
+                        <View style={styles.chipContainer}>
+                            {JOB_TYPES.map((type) => {
+                                const isSelected = selectedJobTypes.includes(type.id);
+                                return (
+                                    <TouchableOpacity
+                                        key={type.id}
+                                        style={[styles.chipBtn, isSelected && styles.chipBtnSelected]}
+                                        onPress={() => toggleJobType(type.id)}
+                                    >
+                                        <CustomText style={[styles.chipText, isSelected && styles.chipTextSelected]}>
+                                            {type.label}
+                                        </CustomText>
+                                    </TouchableOpacity>
+                                )
+                            })}
+                        </View>
+                    </View>
+
+                    <View style={styles.sectionWrapper}>
+                        <View style={styles.accordionHeader}>
+                            <CustomText style={styles.sectionTitle}>Experience</CustomText>
+                        </View>
+                        <View style={styles.radioGroup}>
+                            {EXPERIENCE_LEVELS.map((item) => {
+                                const isSelected = experience === item.id;
+                                return (
+                                    <TouchableOpacity
+                                        key={item.id}
+                                        style={styles.radioRow}
+                                        onPress={() => setExperience(item.id)}
+                                        activeOpacity={0.7}
+                                    >
+                                        <MaterialCommunityIcons
+                                            name={isSelected ? "record-circle-outline" : "circle-outline"}
+                                            size={24}
+                                            color={isSelected ? "#FCA34D" : "#524B6B"}
+                                        />
+                                        <CustomText style={[styles.radioText, isSelected && styles.radioTextSelected]}>
+                                            {item.label}
+                                        </CustomText>
+                                    </TouchableOpacity>
+                                )
+                            })}
+                        </View>
+                    </View>
+                </ScrollView>
+            )}
 
             <CustomFooter applyTitle="APPLY NOW" onApply={handleApply}
                           leftContent={<ResetButton onPress={handleReset}/>}/>

@@ -3,20 +3,24 @@ from django.db import models
 from cloudinary.models import CloudinaryField
 from ..core.models import BaseModel
 
+
 class UserRole(models.TextChoices):
     ADMIN = "ADMIN", "Admin"
     EMPLOYER = "EMPLOYER", "Employer"
     CANDIDATE = "CANDIDATE", "Candidate"
+
 
 class VerificationStatus(models.TextChoices):
     PENDING = "PENDING", "Pending"
     APPROVED = "APPROVED", "Approved"
     REJECTED = "REJECTED", "Rejected"
 
+
 class EducationStatus(models.TextChoices):
     STUDYING = "STUDYING", "Đang học"
     GRADUATED = "GRADUATED", "Đã tốt nghiệp"
     DROPOUT = "DROPOUT", "Đã nghỉ học / Bảo lưu"
+
 
 class CustomUserManager(UserManager):
     def create_superuser(self, username, email=None, password=None, **extra_fields):
@@ -26,6 +30,7 @@ class CustomUserManager(UserManager):
         extra_fields.setdefault("role", UserRole.ADMIN)
 
         return super().create_superuser(username, email=email, password=password, **extra_fields)
+
 
 class User(AbstractUser, BaseModel):
     email = models.EmailField(unique=True)
@@ -75,8 +80,10 @@ class CandidateProfile(BaseModel):
         choices=EducationStatus.choices,
         default=EducationStatus.GRADUATED
     )
+
     def __str__(self):
         return self.user.get_full_name() if self.user.get_full_name() else self.user.username
+
 
 class EmployerProfile(BaseModel):
     user = models.OneToOneField(
@@ -88,6 +95,9 @@ class EmployerProfile(BaseModel):
     company_name = models.CharField(max_length=255)
     tax_code = models.CharField(max_length=50, blank=True, null=True, unique=True)
     website = models.URLField(blank=True, null=True)
+
+    description = models.TextField(blank=True, default="")
+    address = models.CharField(max_length=500, blank=True, null=True)
 
     status = models.CharField(max_length=20, choices=VerificationStatus.choices, default=VerificationStatus.PENDING)
     reject_reason = models.TextField(blank=True, default="")

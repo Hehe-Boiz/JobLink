@@ -45,6 +45,8 @@ class Command(BaseCommand):
 
             for i in range(10):
                 email = f"recruiter_{i}@company.com"
+
+                # Check user tồn tại chưa
                 if not User.objects.filter(email=email).exists():
                     user = User.objects.create_user(
                         username=f"recruiter_{i}",
@@ -66,7 +68,10 @@ class Command(BaseCommand):
                         user=user,
                         company_name=fake.company(),
                         tax_code=fake.unique.ean13(),
+                        tax_code=fake.unique.ean13(),
                         website=fake.url(),
+                        description=fake.paragraph(nb_sentences=3),
+                        address=fake.address(),
                         status=status,
                         verified_at=verified_at,
                         verified_by=verified_by
@@ -124,9 +129,11 @@ class Command(BaseCommand):
             self.stdout.write("- Đang tạo Job Categories & Locations...")
 
             categories = [JobCategory.objects.get_or_create(name=n)[0] for n in
-                          ["IT Phần mềm", "Marketing", "Sales", "Kế toán"]]
-            locations = [Location.objects.get_or_create(name=n)[0] for n in ["Hồ Chí Minh", "Hà Nội", "Đà Nẵng"]]
-            tags = [Tag.objects.get_or_create(name=n)[0] for n in ["Python", "Java", "React", "English"]]
+                          ["IT Phần mềm", "Marketing", "Sales", "Kế toán", "Design"]]
+            locations = [Location.objects.get_or_create(name=n)[0] for n in
+                         ["Hồ Chí Minh", "Hà Nội", "Đà Nẵng", "Cần Thơ"]]
+            tags = [Tag.objects.get_or_create(name=n)[0] for n in
+                    ["Python", "Java", "React", "English", "Fullstack", "NodeJS"]]
 
             self.stdout.write(f"- Đang tạo Jobs cho {len(recruiters)} nhà tuyển dụng...")
 
@@ -175,6 +182,7 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.WARNING("⚠️ Thiếu Job hoặc Candidate để tạo Application."))
                 return
 
+
             self.stdout.write("- Đang tạo Hồ sơ ứng tuyển (Applications)...")
             Application.objects.all().delete()
 
@@ -194,6 +202,7 @@ class Command(BaseCommand):
                     employer_note = ""
 
                     if status != ApplicationStatus.SUBMITTED:
+                        rating = random.randint(1, 5) if random.random() > 0.3 else None
                         rating = random.randint(1, 5) if random.random() > 0.3 else None
                         employer_note = fake.sentence() if random.random() > 0.5 else ""
 

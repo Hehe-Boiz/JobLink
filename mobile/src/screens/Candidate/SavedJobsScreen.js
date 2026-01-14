@@ -1,4 +1,4 @@
-import React, {useMemo, useState, useCallback, useRef, useEffect} from "react";
+import React, {useMemo, useState, useCallback, useRef, useEffect, useContext} from "react";
 import {
     View,
     StyleSheet,
@@ -9,62 +9,30 @@ import {
     Animated,
     Dimensions,
     PanResponder, Image,
-    TouchableWithoutFeedback
+    TouchableWithoutFeedback,
+    Alert
 } from "react-native";
 import {SafeAreaView} from "react-native-safe-area-context";
 import {MaterialCommunityIcons} from "@expo/vector-icons";
 import CustomText from "../../components/common/CustomText";
 import JobCard from "../../components/Candidate/JobCard";
+import Apis, {endpoints, authApis} from '../../utils/Apis';
+import {MyUserContext} from '../../utils/contexts/MyContext';
+import {useFocusEffect} from "@react-navigation/native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import {formatTimeElapsed} from "../../utils/Helper";
 
 const {height: screenHeight} = Dimensions.get("window");
 const CLOSE_THRESHOLD = 120;
 
-const MOCK_SAVED = [
-    {
-        id: "1",
-        title: "UI/UX Designer",
-        company: "Google inc",
-        location: "California, USA",
-        logo: "https://img.icons8.com/color/480/google-logo.png",
-        tags: ["Design", "Full time", "Senior designer"],
-        salary: "$15K",
-        period: "Mo",
-        posted: "25 minute ago",
-        saved: true,
-    },
-    {
-        id: "2",
-        title: "Lead Designer",
-        company: "Dribbble inc",
-        location: "California, USA",
-        logo: "https://img.icons8.com/fluency/480/dribbble.png",
-        tags: ["Design", "Full time", "Senior designer"],
-        salary: "$20K",
-        period: "Mo",
-        posted: "25 minute ago",
-        saved: true,
-    },
-    {
-        id: "3",
-        title: "UX Researcher",
-        company: "Twitter inc",
-        location: "California, USA",
-        logo: "https://img.icons8.com/color/480/twitter--v1.png",
-        tags: ["Design", "Full time", "Senior designer"],
-        salary: "$12K",
-        period: "Mo",
-        posted: "25 minute ago",
-        saved: true,
-    },
-];
-
 const SavedJobsScreen = ({navigation}) => {
-    const [savedJobs, setSavedJobs] = useState(MOCK_SAVED);
-
+    const [user, dispatch] = useContext(MyUserContext);
+    const accessToken = user?.token;
+    const [savedJobs, setSavedJobs] = useState([]);
     const [sheetVisible, setSheetVisible] = useState(false);
     const [selectedJob, setSelectedJob] = useState(null);
-
     const translateY = useRef(new Animated.Value(screenHeight)).current;
+    const [loading, setLoading] = useState(false);
 
     const openSheet = useCallback((job) => {
         setSelectedJob(job);
@@ -94,9 +62,9 @@ const SavedJobsScreen = ({navigation}) => {
 
     const panResponder = useRef(
         PanResponder.create({
-            onStartShouldSetPanResponder: () => true, // QUAN TRỌNG
+            onStartShouldSetPanResponder: () => true,
             onMoveShouldSetPanResponder: (_, gesture) => {
-                return Math.abs(gesture.dy) > Math.abs(gesture.dx); // giống CustomSelector
+                return Math.abs(gesture.dy) > Math.abs(gesture.dx);
             },
             onPanResponderMove: (_, gesture) => {
                 if (gesture.dy > 0) translateY.setValue(gesture.dy);
@@ -116,23 +84,125 @@ const SavedJobsScreen = ({navigation}) => {
         })
     ).current;
 
-    const handleToggleSave = useCallback((jobId) => {
+    useFocusEffect(
+        useCallback(() => {
+            loadSavedJobs();
+        }, [])
+    );
+
+    const loadSavedJobs = async () => {
+
+        try {
+            setLoading(true);
+            const token = await AsyncStorage.getItem('token');
+            const res = await authApis(token).get(endpoints['bookmarks']);
+
+            let dataList = [];
+            if (Array.isArray(res.data)) {
+                dataList = res.data;
+            } else if (res.data && Array.isArray(res.data.results)) {
+                dataList = res.data.results;
+            }
+            console.log("Số lượng job đã lưu:", dataList.length);
+
+            const formattedData = res.data.map(item => {
+                const job = item.job;
+
+                const minSalary = job.salary_min ? (job.salary_min / 1000000).toFixed(0) + 'M' : '';
+                const maxSalary = job.salary_max ? (job.salary_max / 1000000).toFixed(0) + 'M' : '';
+                const salaryString = (minSalary && maxSalary)
+                    ? `${minSalary} - ${maxSalary}`
+                    : (minSalary || maxSalary || 'Thỏa thuận');
+
+                return {
+                    bookmarkId: item.id,
+                    id: job.id,
+                    title: job.title,
+                    company: job.company_name,
+                    logo: job.employer_logo || 'https://via.placeholder.com/60',
+                    location: job.location?.name || 'Việt Nam',
+                    salary: salaryString,
+                    period: 'Tháng',
+                    tags: [
+                        job.employment_type?.replace('_', ' '),
+                        ...(job.tags || []).map(t => t.name || t)
+                    ].filter(Boolean),
+                    saved: true,
+                    posted: formatTimeElapsed(job.updated_date)
+                };
+            });
+
+            setSavedJobs(formattedData);
+        } catch (error) {
+            console.error("Lỗi khi tải jobs đã lưu:", error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleToggleSave = useCallback(async (jobId) => {
+        const jobIndex = savedJobs.findIndex(j => j.id === jobId);
+        if (jobIndex === -1) return;
+
+        const bookmarkIdToDelete = savedJobs[jobIndex].bookmarkId;
+
         setSavedJobs((prev) => prev.filter((j) => j.id !== jobId));
-    }, []);
+
+        try {
+            const token = await AsyncStorage.getItem('token');
+            await authApis(token).delete(`${endpoints.bookmarks}${bookmarkIdToDelete}/`);
+        } catch (error) {
+            console.error("Lỗi khi xóa bookmark:", error);
+            Alert.alert("Lỗi", "Không thể bỏ lưu công việc này. Vui lòng thử lại.");
+            loadSavedJobs();
+        }
+    }, [savedJobs, accessToken]);
 
     const handleDeleteAll = useCallback(() => {
-        setSavedJobs([]);
+        Alert.alert(
+            "Xóa tất cả",
+            "Bạn có chắc chắn muốn xóa toàn bộ công việc đã lưu không?",
+            [
+                {
+                    text: "Hủy",
+                    style: "cancel"
+                },
+                {
+                    text: "Xóa hết",
+                    style: "destructive",
+                    onPress: async () => {
+                        try {
+                            setLoading(true);
+
+                            const token = await AsyncStorage.getItem('token');
+
+                            await authApis(token).delete(`${endpoints['bookmarks']}delete-all/`);
+
+                            setSavedJobs([]);
+
+
+                        } catch (error) {
+                            console.error("Lỗi xóa tất cả:", error);
+                            Alert.alert("Lỗi", "Không thể xóa vào lúc này. Vui lòng thử lại sau.");
+                        } finally {
+                            setLoading(false);
+                        }
+                    }
+                }
+            ]
+        );
     }, []);
 
     const handleApply = useCallback((jobId) => {
         closeSheet();
-    }, [closeSheet]);
+        navigation.navigate("JobDetail", {jobId: jobId});
+    }, [closeSheet, navigation]);
 
     const handleDeleteOne = useCallback(() => {
         if (!selectedJob) return;
-        setSavedJobs((prev) => prev.filter((j) => j.id !== selectedJob.id));
+        handleToggleSave(selectedJob.id);
         closeSheet();
-    }, [selectedJob, closeSheet]);
+    }, [selectedJob, closeSheet, handleToggleSave]);
 
     const renderItem = useCallback(({item}) => {
         return (
@@ -140,24 +210,24 @@ const SavedJobsScreen = ({navigation}) => {
                 <JobCard
                     item={item}
                     variant="search"
-                    onSavePress={handleToggleSave}
-                    onApplyPress={handleApply}
+                    onSavePress={() => handleToggleSave(item.id)}
+                    onApplyPress={() => handleApply(item.id)}
                     showMore
                     onMorePress={(job) => openSheet(job)}
                     action="more"
+                    onPress={() => navigation.navigate("JobDetail", {jobId: item.id})}
                 />
             </View>
         );
-    }, [handleApply, handleToggleSave, openSheet]);
+    }, [handleApply, handleToggleSave, openSheet, navigation]);
 
-    const keyExtractor = useCallback((item) => item.id, []);
+    const keyExtractor = useCallback((item) => item.id.toString(), []);
 
     const hasSavings = useMemo(() => savedJobs.length > 0, [savedJobs.length]);
 
     return (
         <SafeAreaView style={styles.safe}>
             <View style={styles.container}>
-                {/* Header */}
                 <View style={styles.headerRow}>
                     <CustomText style={styles.headerTitle}>Save Job</CustomText>
 
@@ -168,7 +238,6 @@ const SavedJobsScreen = ({navigation}) => {
                     )}
                 </View>
 
-                {/* Body */}
                 {hasSavings ? (
                     <FlatList
                         contentContainerStyle={styles.listContent}
@@ -196,17 +265,14 @@ const SavedJobsScreen = ({navigation}) => {
                     </View>
                 )}
 
-                {/* Options Bottom Sheet */}
                 <Modal
                     transparent
                     visible={sheetVisible}
                     animationType="none"
                     onRequestClose={closeSheet}
                 >
-                    {/* Lớp ngoài: bấm ngoài sheet để đóng */}
                     <TouchableWithoutFeedback onPress={closeSheet}>
                         <View style={styles.modalOverlay}>
-                            {/* Lớp trong: chặn để sheet nhận gesture, không bị overlay ăn */}
                             <TouchableWithoutFeedback>
                                 <Animated.View
                                     style={[
@@ -214,12 +280,10 @@ const SavedJobsScreen = ({navigation}) => {
                                         {transform: [{translateY}]},
                                     ]}
                                 >
-                                    {/* Handle kéo */}
                                     <View style={styles.handleTouchArea} {...panResponder.panHandlers}>
                                         <View style={styles.sheetHandle}/>
                                     </View>
 
-                                    {/* Items */}
                                     <TouchableOpacity style={styles.sheetItem} activeOpacity={0.7} onPress={closeSheet}>
                                         <MaterialCommunityIcons name="send-outline" size={22} color="#1E1E1E"/>
                                         <CustomText style={styles.sheetText}>Send message</CustomText>

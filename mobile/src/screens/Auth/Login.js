@@ -1,8 +1,8 @@
-import React, { useState, useContext } from 'react';
-import { View, TouchableOpacity, ScrollView, Alert } from 'react-native';
-import { Text, TextInput, Button, Checkbox, HelperText, useTheme } from 'react-native-paper';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import React, {useState, useContext} from 'react';
+import {View, TouchableOpacity, ScrollView, Alert} from 'react-native';
+import {Text, TextInput, Button, Checkbox, HelperText, useTheme} from 'react-native-paper';
+import {MaterialCommunityIcons} from '@expo/vector-icons';
+import {useNavigation} from '@react-navigation/native';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import styles from '../../styles/Auth/LoginStyles';
@@ -18,10 +18,10 @@ import {
 } from '@react-native-google-signin/google-signin';
 import { CLIENT_ID, CLIENT_SECRET } from '@env';//
 
-const Login = ({ route }) => {
+const Login = ({route}) => {
     const navigation = useNavigation();
     const theme = useTheme();
-    const { profile, loadEmployerProfile } = useEmployer();
+    const {profile, loadEmployerProfile} = useEmployer();
     const [, dispatch] = useContext(MyUserContext);
     const { showDialog } = useDialog();
     const info = [
@@ -222,7 +222,7 @@ const Login = ({ route }) => {
     }
 
     const toggleShow = (field) => {
-        setShowPass(prev => ({ ...prev, [field]: !prev[field] }));
+        setShowPass(prev => ({...prev, [field]: !prev[field]}));
     }
 
     return (
@@ -239,7 +239,7 @@ const Login = ({ route }) => {
 
             <ScrollView showsVerticalScrollIndicator={false}>
 
-                <HelperText type="error" visible={err} style={{ textAlign: 'center' }}>
+                <HelperText type="error" visible={err} style={{textAlign: 'center'}}>
                     Vui lòng nhập đầy đủ thông tin!
                 </HelperText>
 
@@ -250,17 +250,17 @@ const Login = ({ route }) => {
                             style={styles.input}
                             value={user[i.field]}
                             onChangeText={(t) => {
-                                setUser({ ...user, [i.field]: t });
+                                setUser({...user, [i.field]: t});
                                 if (err) setErr(false);
                             }}
                             label={i.title}
                             mode="outlined"
                             outlineColor="#EAEAEA"
                             activeOutlineColor="#130160"
-                            theme={{ roundness: 10 }}
+                            theme={{roundness: 10}}
 
                             secureTextEntry={i.secure ? !showPass[i.field] : false}
-                            left={<TextInput.Icon icon={i.icon} color="#AAA6B9" />}
+                            left={<TextInput.Icon icon={i.icon} color="#AAA6B9"/>}
                             right={
                                 i.secure ?
                                     <TextInput.Icon
@@ -310,8 +310,8 @@ const Login = ({ route }) => {
                     disabled={loading}
                     style={styles.googleBtn}
                     labelStyle={styles.googleBtnLabel}
-                    icon={({ size, color }) => (
-                        <MaterialCommunityIcons name="google" size={20} color="#EA4335" />
+                    icon={({size, color}) => (
+                        <MaterialCommunityIcons name="google" size={20} color="#EA4335"/>
                     )}
                 >
                     SIGN IN WITH GOOGLE

@@ -4,9 +4,9 @@ import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {MaterialCommunityIcons} from '@expo/vector-icons';
 import CandidateProfileStack from './CandidateProfileStack';
 import CandidateHome from '../screens/Candidate/CandidateHome';
-import JobDetail from '../screens/Job/JobDetail';
+import NotificationsScreen from "../screens/Candidate/Notifications/NotificationsScreen";
+import SavedJobsScreen from "../screens/Candidate/SavedJobsScreen";
 
-// Placeholder screens
 const NetworkScreen = () => (
     <View style={styles.placeholder}>
         <MaterialCommunityIcons name="account-group" size={50} color="#95969D"/>
@@ -50,7 +50,7 @@ export default function CandidateTabs() {
                     shadowOpacity: 0.1,
                     shadowRadius: 8,
                     height: 70,
-                    paddingBottom: 10,
+                    paddingBottom: 25,
                     paddingTop: 10,
                 },
             }}
@@ -68,12 +68,12 @@ export default function CandidateTabs() {
             />
 
             <Tab.Screen
-                name="Network"
-                component={NetworkScreen}
+                name="Notifications"
+                component={NotificationsScreen}
                 options={{
                     tabBarIcon: ({color, size, focused}) => (
                         <View style={focused ? styles.activeTab : null}>
-                            <MaterialCommunityIcons name="account-group" size={28} color={color}/>
+                            <MaterialCommunityIcons name="bell-outline" size={28} color={color}/>
                         </View>
                     ),
                 }}
@@ -89,14 +89,15 @@ export default function CandidateTabs() {
                         </View>
                     ),
                 }}
+
             />
             <Tab.Screen
                 name="Saved"
-                component={SavedScreen}
+                component={SavedJobsScreen}
                 options={{
                     tabBarIcon: ({color, size, focused}) => (
                         <View style={focused ? styles.activeTab : null}>
-                            <MaterialCommunityIcons name="bookmark" size={28} color={color}/>
+                            <MaterialCommunityIcons name="bookmark-outline" size={28} color={color}/>
                         </View>
                     ),
                 }}
@@ -134,11 +135,12 @@ const styles = StyleSheet.create({
         backgroundColor: '#130160',
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 10,
+        marginBottom: 35,
         shadowColor: '#130160',
         shadowOffset: {width: 0, height: 4},
         shadowOpacity: 0.3,
         shadowRadius: 8,
-        elevation: 8,
+        elevation: 3,
+
     },
 });

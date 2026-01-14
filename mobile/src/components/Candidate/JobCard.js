@@ -12,6 +12,7 @@ const JobCard = ({
                      variant = "home",
                      action = "bookmark", // 'bookmark' | 'more'
                      onMorePress,
+                     onPress
                  }) => {
     const scaleValue = useRef(new Animated.Value(1)).current;
     const bookmarkScale = useRef(new Animated.Value(1)).current;
@@ -185,7 +186,7 @@ const JobCard = ({
     return (
         <Animated.View style={{transform: [{scale: scaleValue}]}}>
             <TouchableRipple
-                onPress={() => console.log("Job Pressed")}
+                onPress={onPress}
                 onPressIn={onPressIn}
                 onPressOut={onPressOut}
                 rippleColor="rgba(19, 1, 96, 0.1)"

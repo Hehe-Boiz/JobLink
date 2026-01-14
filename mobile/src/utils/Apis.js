@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const BASE_URL = 'http://192.168.1.14:8000/';
+const BASE_URL = 'http://192.168.1.23:8000/';
 
 export const endpoints = {
     'register_candidate': '/register/candidate/',
@@ -17,6 +17,13 @@ export const endpoints = {
     'locations': '/locations/',
     'applications_by_employer_jobs': (jobId) => `employer/jobs/${jobId}/applications/`,
     'candidate_by_applications_in_employer_jobs': (applicationId) => `employer/applications/${applicationId}/candidate-profile/`,
+    'update_application': (applicationId) => `employer/applications/${applicationId}/`,
+    'jobs': '/jobs/',
+    'bookmarks': '/bookmarks/',
+    'candidate_applications': '/candidate/applications/',
+    'candidate_profile': '/candidates/me/',
+    'update_user': '/users/current-user/',
+    'update_candidate_profile': '/candidates/me/',
     'update_application': (applicationId) => `employer/applications/${applicationId}/`,
     'service_packs': '/payments/service-packs/',
     'create_payment': '/payments/receipts/create-payment/',

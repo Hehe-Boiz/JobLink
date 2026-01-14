@@ -1,21 +1,23 @@
 from rest_framework import viewsets, filters, status, generics
 from rest_framework.permissions import AllowAny
-
-from .models import Job, BookmarkJob, JobCategory, Location
+from ..users.permissions import IsEmployerApproved, IsCandidate
+from .models import Job, BookmarkJob, JobCategory, Location, EmploymentType
 from ..core.paginators import StandardResultsSetPagination
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
 from .serializers import CandidateJobSerializer, CandidateJobDetailSerializer, EmployerJobSerializer, \
     CandidateBookmarkJobSerializer, JobCategorySerializer, LocationSerializer
-from apps.applications.serializers import EmployerApplicationSerializer
+from ..applications.serializers import EmployerApplicationSerializer
 from ..users.permissions import IsEmployerApproved, IsCandidate
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from .filters import JobFilter
+from django.db.models import Count, Q
 
 
 
 class JobViewCandidate(viewsets.ReadOnlyModelViewSet):
+    permission_classes = [IsCandidate]
     queryset = Job.objects.filter(deadline__gte=timezone.now())
     pagination_class = StandardResultsSetPagination
 
@@ -66,6 +68,18 @@ class JobViewCandidate(viewsets.ReadOnlyModelViewSet):
         serializer = CandidateJobDetailSerializer(jobs, many=True)
 
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['get'], url_path='stats')
+    def stats(self, request):
+        qs = self.get_queryset()
+
+        data = qs.aggregate(
+            remote_count=Count('id', filter=Q(employment_type=EmploymentType.REMOTE)),
+            full_time_count=Count('id', filter=Q(employment_type=EmploymentType.FULL_TIME)),
+            part_time_count=Count('id', filter=Q(employment_type=EmploymentType.PART_TIME))
+        )
+
+        return Response(data, status=status.HTTP_200_OK)
 
 
 class EmployerJobViewSet(viewsets.ViewSet, generics.ListCreateAPIView, generics.UpdateAPIView,
@@ -124,6 +138,22 @@ class BookmarkJobViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             raise e
+
+    @action(detail=False, methods=['delete'], url_path='delete-all')
+    def delete_all(self, request):
+        queryset = self.get_queryset()
+        count = queryset.count()
+        if count == 0:
+            return Response(
+                {"detail": "Danh sách đã trống."},
+                status=status.HTTP_200_OK
+            )
+        queryset.delete()
+
+        return Response(
+            {"detail": f"{count} công việc đã lưu."},
+            status=status.HTTP_200_OK
+        )
 class JobCategoryViewSet(viewsets.ViewSet, generics.ListAPIView):
     serializer_class = JobCategorySerializer
     queryset = JobCategory.objects.all()
