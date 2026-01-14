@@ -1,5 +1,5 @@
-import React, {useState} from 'react';
-import {View, TouchableOpacity, Image, ScrollView, TextInput, Alert} from 'react-native';
+import React, {useState, useEffect} from 'react';
+import {View, TouchableOpacity, Image, ScrollView, TextInput, Alert, ActivityIndicator} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {MaterialCommunityIcons} from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
@@ -9,6 +9,9 @@ import CustomHeader from "../../components/common/CustomHeader";
 import stylesJobDetail from "../../styles/Job/JobDetailStyles";
 import JobLogo from "../../components/Job/JobLogo";
 import CustomFooter from "../../components/common/CustomFooter";
+import Apis, {endpoints, authApis} from '../../utils/Apis';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 
 // const SUCCESS_IMG = 'https://cdn-icons-png.flaticon.com/512/7518/7518748.png';
 const SUCCESS_IMG = require('../../../assets/images/illustration.png')
@@ -22,7 +25,11 @@ const job = {
 };
 
 const ApplyJob = ({navigation, route}) => {
-
+    const {jobId} = route.params || {};
+    console.log("Job ID nhận được:", jobId);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [jobData, setJobData] = useState(null);
+    const [loading, setLoading] = useState(true);
 
     const [cvFile, setCvFile] = useState(null);
     const [coverLetter, setCoverLetter] = useState('');
@@ -42,14 +49,104 @@ const ApplyJob = ({navigation, route}) => {
         }
     }
 
-    const handleApply = () => {
+    useEffect(() => {
+        const loadJobDetail = async () => {
+            if (!jobId) return;
+            try {
+                const token = await AsyncStorage.getItem('token')
+                const api = authApis(token);
+                const [jobRes, historyRes] = await Promise.all([
+                    api.get(`${endpoints['jobs']}${jobId}/`),
+
+                    api.get(endpoints['candidate_applications'])
+                ]);
+                setJobData(jobRes.data);
+                const hasApplied = historyRes.data.some(app => app.job.id === parseInt(jobId));
+                if (hasApplied) {
+                    console.log(`[Check] Job ${jobId} đã tồn tại trong danh sách ứng tuyển -> Success`);
+                    setIsSuccess(true); // Chuyển thẳng sang màn hình thành công
+                } else {
+                    console.log(`[Check] Job ${jobId} chưa ứng tuyển -> Hiển thị Form`);
+                }
+            } catch (error) {
+                console.error("Lỗi lấy chi tiết job:", error);
+                Alert.alert("Lỗi", "Không thể tải thông tin công việc.");
+                navigation.goBack();
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        loadJobDetail();
+    }, [jobId]);
+
+    const handleApply = async () => {
         if (!cvFile) {
+            console.log("2. [Check] Chưa có CV -> Hiển thị Alert");
             Alert.alert("Thiếu thông tin", "Vui lòng tải lên CV của bạn!");
             return;
         }
-        // Giả lập gọi API thành công...
         setIsSuccess(true);
+        try {
+            const formData = new FormData();
+            formData.append('job', jobId);
+            formData.append('cover_letter', coverLetter);
+            formData.append('cv', {
+                uri: cvFile.uri,
+                name: cvFile.name || 'cv.pdf',
+                type: cvFile.mimeType || 'application/pdf'
+            });
+
+            console.log("Đang gửi đơn ứng tuyển...", formData);
+
+            const token = await AsyncStorage.getItem('token');
+            let res = await authApis(token).post(endpoints['candidate_applications'], formData, {
+                headers: {
+                    "Content-Type": "multipart/form-data",
+                },
+            });
+            console.log("Ứng tuyển thành công:", res.data);
+            setIsSuccess(true);
+        } catch (error) {
+            console.error("Lỗi ứng tuyển:", error);
+            if (error.response && error.response.data) {
+                const msg = error.response.data.detail || JSON.stringify(error.response.data);
+                Alert.alert("Không thành công", msg);
+            } else {
+                Alert.alert("Lỗi", "Có lỗi xảy ra khi nộp đơn. Vui lòng thử lại.");
+            }
+        } finally {
+            setIsSubmitting(false);
+        }
     };
+
+    if (loading) {
+        return (
+            <SafeAreaView style={[styles.container, {justifyContent: 'center', alignItems: 'center'}]}>
+                <ActivityIndicator size="large" color="#FF9228"/>
+            </SafeAreaView>
+        );
+    }
+    if (!jobData) return null;
+
+    const formattedJob = {
+        title: jobData.title,
+        company: jobData.company_name,
+        location: jobData.location?.name || "Vietnam",
+        postedTime: jobData.created_date ? `Posted ${jobData.created_date}` : "Recently",
+        logo: jobData.employer_logo || 'https://via.placeholder.com/150',
+        website: jobData.website
+    };
+
+    if (isSubmitting) {
+        return (
+            <SafeAreaView style={[styles.container, {justifyContent: 'center', alignItems: 'center'}]}>
+                <ActivityIndicator size="large" color="#FF9228"/>
+                <CustomText style={{marginTop: 10}}>Sending Application...</CustomText>
+            </SafeAreaView>
+        )
+    }
+
 
     if (isSuccess) {
         return (
@@ -76,7 +173,7 @@ const ApplyJob = ({navigation, route}) => {
 
                     <TouchableOpacity
                         style={styles.primaryBtn}
-                        onPress={() => navigation.navigate('CandidateMain')} // Quay về Home
+                        onPress={() => navigation.navigate('CandidateMain')}
                     >
                         <CustomText style={styles.applyBtnText}>BACK TO HOME</CustomText>
                     </TouchableOpacity>
@@ -87,11 +184,11 @@ const ApplyJob = ({navigation, route}) => {
 
     return (
         <SafeAreaView style={styles.container}>
-            <CustomHeader navigation={navigation}/>
+            <CustomHeader title="Apply Job" onBack={() => navigation.goBack()} navigation={navigation}/>
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{paddingBottom: 130}}>
 
                 <View style={stylesJobDetail.section}>
-                    <JobLogo item={job}/>
+                    <JobLogo item={formattedJob}/>
                     <View style={[stylesJobDetail.containerJob, stylesJobDetail.mt_10]}>
                         <CustomText style={stylesJobDetail.contentTitle}>Upload CV</CustomText>
                         <CustomText style={[stylesJobDetail.contentReq, stylesJobDetail.mb_20]}>Add your CV/Resume to
@@ -142,7 +239,9 @@ const ApplyJob = ({navigation, route}) => {
                     </View>
                 </View>
             </ScrollView>
-            <CustomFooter/>
+            <CustomFooter
+                onApply={handleApply}
+            />
         </SafeAreaView>
     );
 };

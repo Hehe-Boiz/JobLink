@@ -1,6 +1,6 @@
-import React, {useState, useMemo, useContext} from "react";
+import React, {useState, useMemo, useContext, useEffect} from "react";
 import {SafeAreaView} from "react-native-safe-area-context";
-import {ScrollView, TouchableOpacity, View, StyleSheet, Image, Alert} from "react-native";
+import {ScrollView, TouchableOpacity, View, StyleSheet, Image, Alert, ActivityIndicator} from "react-native";
 import {MaterialCommunityIcons} from '@expo/vector-icons';
 import CustomText from "../../components/common/CustomText";
 import JobDescriptionTab from "../../components/Job/JobDetail/JobDetailDescription";
@@ -12,45 +12,10 @@ import {Portal, Dialog, Button} from 'react-native-paper';
 import JobLogo from "../../components/Job/JobLogo";
 import CustomHeader from "../../components/common/CustomHeader"
 import CustomFooter from "../../components/common/CustomFooter";
+import Apis, {endpoints, authApis} from '../../utils/Apis';
+import {formatTimeElapsed, stripHtmlTags} from "../../utils/Helper";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const MOCK_JOB_DETAIL = {
-    id: '1',
-    logo: 'https://cdn-icons-png.flaticon.com/512/2991/2991148.png',
-    title: 'UI/UX Designer',
-    company: 'Google',
-    location: 'California',
-    postedTime: '1 day ago',
-    desc: "Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo. Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt.",
-    requirements: "Sed ut perspiciatis unde omnis iste natus error sit.\nNeque porro quisquam est, qui dolorem ipsum quia dolor sit amet.\nNemo enim ipsam voluptatem quia voluptas sit aspernatur.\nUt enim ad minima veniam, quis nostrum exercitationem.",
-    street: "Overlook Avenue, Belleville, NJ, USA",
-    link_gg_map: "https://www.google.com/maps/search/?api=1&query=Googleplex+Mountain+View",
-    info: [
-        {title: "Position", value: "Senior Designer"},
-        {title: "Qualification", value: "Bachelor's Degree"},
-        {title: "Experience", value: "3 Years"},
-        {title: "Job Type", value: "Full-Time"},
-        {title: "Specialization", value: "Design"}
-    ],
-    facilities: "Medical, Dental, Technical Certification, Meal Allowance, Transport Allowance, Monday-Friday",
-    aboutCompany: "Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo.\nAt vero eos et accusamus et iusto odio dignissimos ducimus qui blanditiis praesentium voluptatum deleniti atque corrupti quos dolores et quas .\nNor again is there anyone who loves or pursues or desires to obtain pain of itself, because it is pain.",
-    company_info: [
-        {title: "Industry", value: "Internet product"},
-        {title: "Employee size", value: "132,121 Employees"},
-        {title: "Head office", value: "Mountain View, California, Amerika Serikat"},
-        {title: "Type", value: "Multinational company"},
-        {title: "Since", value: "1998"},
-        {title: "Specialization", value: "Search technology, Web computing, Software and Online advertising"}
-    ],
-    company_gallery: [
-        "https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1556761175-5973dc0f32e7?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1542744173-8e7e53415bb0?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1497215728101-856f4ea42174?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1568992687947-868a62a9f521?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1600880292203-757bb62b4baf?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=800&q=80"
-    ]
-};
 const MOCK_APPLICANTS = [
     {
         id: 1,
@@ -83,15 +48,110 @@ const MOCK_APPLICANTS = [
 
 
 const JobDetail = ({navigation, route}) => {
+    const {jobId, initialData} = route.params || {};
     const [user,] = useContext(MyUserContext)
     const applicants = MOCK_APPLICANTS;
-    const item = MOCK_JOB_DETAIL;
     const [activeTab, setActiveTab] = useState(0);
     const [isSaved, setIsSaved] = useState(false);
     const isEmployer = user?.role === "EMPLOYER";
-    const toggleSave = () => {
+    const toggleSave = async () => {
+        const prevSaved = isSaved;
         setIsSaved(!isSaved);
+
+        try {
+            const api = authApis(user.token);
+            if (prevSaved) {
+                if (job.bookmark_id) {
+                    await api.delete(`${endpoints['bookmarks']}${job.bookmark_id}/`);
+                    setJob(prev => ({...prev, bookmark_id: null}));
+                }
+            } else {
+                const res = await api.post(endpoints['bookmarks'], {job_id: job.id});
+                setJob(prev => ({...prev, bookmark_id: res.data.id}));
+            }
+        } catch (error) {
+            console.error(error);
+            setIsSaved(prevSaved);
+            Alert.alert("Lỗi", "Không thể cập nhật trạng thái lưu.");
+        }
     };
+
+    const mapJobData = (data) => {
+        if (!data) return null;
+
+        const minSalary = data.salary_min ? (data.salary_min / 1000000).toFixed(0) + 'M' : '';
+        const maxSalary = data.salary_max ? (data.salary_max / 1000000).toFixed(0) + 'M' : '';
+        const salaryString = (minSalary && maxSalary)
+            ? `${minSalary} - ${maxSalary}`
+            : (minSalary || maxSalary || 'Thỏa thuận');
+
+        return {
+            id: data.id,
+            logo: data.employer_logo || data.logo || 'https://via.placeholder.com/150',
+            title: data.title,
+            company: data.company_name || data.company || "Unknown Company",
+            location: data.location?.name || data.location || "Việt Nam",
+            postedTime: formatTimeElapsed(data.updated_date || new Date()), // Format thời gian
+
+            desc: stripHtmlTags(data.description) || "Đang tải chi tiết...",
+            requirements: stripHtmlTags(data.requirements) || "Đang tải yêu cầu...",
+            street: stripHtmlTags(data.company?.address) || "Chưa cập nhật địa chỉ",
+
+            info: [
+                {title: "Mức lương", value: salaryString},
+                {title: "Kinh nghiệm", value: data.experience ? `${data.experience} năm` : "Không yêu cầu"},
+                {title: "Hình thức", value: data.employment_type?.replace('_', ' ') || "Full Time"},
+                {title: "Hạn nộp", value: data.deadline ? new Date(data.deadline).toLocaleDateString() : "Vô thời hạn"},
+            ],
+
+            facilities: stripHtmlTags(data.benefits) || "Chưa có thông tin đãi ngộ",
+
+            companyData: {
+                about: stripHtmlTags(data.company?.description) || "Đang tải thông tin...",
+                website: data.company?.website || null, // Lấy link website
+                address: data.company?.address || "Việt Nam",
+                gallery: [
+                    "https://images.unsplash.com/photo-1497366216548-37526070297c?w=800",
+                    "https://images.unsplash.com/photo-1556761175-5973dc0f32e7?w=800"
+                ],
+                info: [
+                    {
+                        title: "Quy mô",
+                        value: data.company?.company_size ? `${data.company.company_size} nhân viên` : "N/A"
+                    },
+                    {title: "Quốc gia", value: data.company?.country?.name || "Việt Nam"},
+                    {title: "Thành lập", value: data.company?.founded_year || "N/A"},
+                ]
+            },
+
+            bookmark_id: data.bookmark_id
+        };
+    };
+
+    const [job, setJob] = useState(() => initialData ? mapJobData(initialData) : null);
+    const [loading, setLoading] = useState(!job);
+
+    useEffect(() => {
+        const loadFullDetail = async () => {
+            if (!jobId) return;
+            try {
+                const token = await AsyncStorage.getItem('token')
+                const res = await authApis(token).get(`${endpoints['jobs']}${jobId}/`);
+
+                const fullData = mapJobData(res.data);
+                setJob(fullData);
+
+                setIsSaved(!!res.data.bookmark_id);
+
+            } catch (error) {
+                console.error("Lỗi tải chi tiết job:", error);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        loadFullDetail();
+    }, [jobId, user?.token]);
 
     const SaveButton = (
         <TouchableOpacity style={styles.btnBookmark} onPress={toggleSave}>
@@ -104,8 +164,24 @@ const JobDetail = ({navigation, route}) => {
     );
 
     const handleApply = () => {
-        navigation.navigate('ApplyJob', {job: item});
+        navigation.navigate('ApplyJob', {jobId: job.id, jobTitle: job.title});
     };
+
+    if (loading && !job) {
+        return (
+            <View style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}>
+                <ActivityIndicator size="large" color="#FF9228"/>
+            </View>
+        );
+    }
+
+    if (!job) {
+        return (
+            <View style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}>
+                <CustomText>Không tìm thấy công việc.</CustomText>
+            </View>
+        );
+    }
 
     // const isEmployer = user.role == "EMPLOYER" ? true : false;
     return (
@@ -115,7 +191,7 @@ const JobDetail = ({navigation, route}) => {
                     <CustomHeader navigation={navigation}/>
 
                     <View style={styles.section}>
-                        <JobLogo item={item}/>
+                        <JobLogo item={job}/>
 
                         <View style={styles.tabContainer}>
                             <TouchableOpacity
@@ -147,8 +223,8 @@ const JobDetail = ({navigation, route}) => {
                             }
                         </View>
 
-                        {activeTab === 0 && <JobDescriptionTab item={item}/>}
-                        {activeTab === 1 && <CompanyTab item={item}/>}
+                        {activeTab === 0 && <JobDescriptionTab item={job}/>}
+                        {activeTab === 1 && <CompanyTab item={job.companyData}/>}
                         {activeTab === 2 && isEmployer && <JobApplicantsTab job={route.params.job}/>}
 
                     </View>

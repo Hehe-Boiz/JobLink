@@ -1,23 +1,23 @@
-import React, { useState, useContext } from 'react';
-import { View, TouchableOpacity, ScrollView, Alert } from 'react-native';
-import { Text, TextInput, Button, Checkbox, HelperText, useTheme } from 'react-native-paper';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import React, {useState, useContext} from 'react';
+import {View, TouchableOpacity, ScrollView, Alert} from 'react-native';
+import {Text, TextInput, Button, Checkbox, HelperText, useTheme} from 'react-native-paper';
+import {MaterialCommunityIcons} from '@expo/vector-icons';
+import {useNavigation} from '@react-navigation/native';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // 1. Import Styles & API & Context
 import styles from '../../styles/Auth/LoginStyles';
-import Apis, { authApis, endpoints } from '../../utils/Apis';
-import { MyUserContext } from '../../utils/contexts/MyContext';
-import { useEmployer } from '../../hooks/useEmployer';
-import { useDialog } from '../../hooks/useDialog';
+import Apis, {authApis, endpoints} from '../../utils/Apis';
+import {MyUserContext} from '../../utils/contexts/MyContext';
+import {useEmployer} from '../../hooks/useEmployer';
+import {useDialog} from '../../hooks/useDialog';
 
-const Login = ({ route }) => {
+const Login = ({route}) => {
     const navigation = useNavigation();
     const theme = useTheme();
-    const { profile, loadEmployerProfile } = useEmployer();
+    const {profile, loadEmployerProfile} = useEmployer();
     const [, dispatch] = useContext(MyUserContext);
-    const { showDialog } = useDialog();
+    const {showDialog} = useDialog();
     // Cấu hình Input
     const info = [
         {
@@ -56,8 +56,8 @@ const Login = ({ route }) => {
                 console.log(user);
                 let res = await Apis.post(endpoints['login'], {
                     ...user,
-                    'client_id': '5XCmPUvnuXrvqhLbbifhHnPD3fYqiPA6t59KoH45',
-                    'client_secret': 'rgRooNUhgQ6oaa5WouYu1WqCc5ZI7mXYyhpGhMODmQua1yvHKNKwhQWJvA1eFmBwJtSfuOvzOrvwIfNsRIamWTUZo70xtvpG21eQpIw3FCz8KkDPhWId7XkTE2bplYqc',
+                    'client_id': 'c5tRihJQksOzY4oG2OfsB9bWrA8E6nZOQ4jE2eGW',
+                    'client_secret': '6pRbeNw7bCxvBTuGSStwM620R5lQ6MYdLky5oWbznLyGWPCibrOHBZWVauLGRi0LkjmnFx5EXTZOSe3inDu5N4XEKTC832RiorCVW61tMnHMfm1ilBBZPN2SjhkVylGC',
                     'grant_type': 'password'
                 });
                 await AsyncStorage.setItem('token', res.data.access_token);
@@ -81,22 +81,24 @@ const Login = ({ route }) => {
                                 confirmText: 'ĐÃ HIỂU'
                             });
                             await AsyncStorage.removeItem('token');
-                            return ;
+                            return;
                         }
-                        const next = route.params?.next;
-                        if (next) {
-                            navigation.navigate(next);
-                        } else {
-                            const role = userRes.data.role;
-                            console.log(role);
-                            if (role === 'EMPLOYER') {
-                                    navigation.navigate('EmployerMain');
 
-                            } else {
-                                navigation.navigate('CandidateMain');
-                            }
+                    }
+                    const next = route.params?.next;
+                    if (next) {
+                        navigation.navigate(next);
+                    } else {
+                        const role = userRes.data.role;
+                        console.log(role);
+                        if (role === 'EMPLOYER') {
+                            navigation.navigate('EmployerMain');
+
+                        } else {
+                            navigation.navigate('CandidateMain');
                         }
-                    }}, 100);
+                    }
+                }, 100);
             } catch (ex) {
                 console.error(ex);
                 let msg = "Tên đăng nhập hoặc mật khẩu không đúng!";
@@ -109,7 +111,7 @@ const Login = ({ route }) => {
     }
 
     const toggleShow = (field) => {
-        setShowPass(prev => ({ ...prev, [field]: !prev[field] }));
+        setShowPass(prev => ({...prev, [field]: !prev[field]}));
     }
 
     return (
@@ -126,7 +128,7 @@ const Login = ({ route }) => {
 
             <ScrollView showsVerticalScrollIndicator={false}>
 
-                <HelperText type="error" visible={err} style={{ textAlign: 'center' }}>
+                <HelperText type="error" visible={err} style={{textAlign: 'center'}}>
                     Vui lòng nhập đầy đủ thông tin!
                 </HelperText>
 
@@ -137,17 +139,17 @@ const Login = ({ route }) => {
                             style={styles.input}
                             value={user[i.field]}
                             onChangeText={(t) => {
-                                setUser({ ...user, [i.field]: t });
+                                setUser({...user, [i.field]: t});
                                 if (err) setErr(false);
                             }}
                             label={i.title}
                             mode="outlined"
                             outlineColor="#EAEAEA"
                             activeOutlineColor="#130160"
-                            theme={{ roundness: 10 }}
+                            theme={{roundness: 10}}
 
                             secureTextEntry={i.secure ? !showPass[i.field] : false}
-                            left={<TextInput.Icon icon={i.icon} color="#AAA6B9" />}
+                            left={<TextInput.Icon icon={i.icon} color="#AAA6B9"/>}
                             right={
                                 i.secure ?
                                     <TextInput.Icon
@@ -196,8 +198,8 @@ const Login = ({ route }) => {
                     onPress={() => console.log('Google Login')}
                     style={styles.googleBtn}
                     labelStyle={styles.googleBtnLabel}
-                    icon={({ size, color }) => (
-                        <MaterialCommunityIcons name="google" size={20} color="#EA4335" />
+                    icon={({size, color}) => (
+                        <MaterialCommunityIcons name="google" size={20} color="#EA4335"/>
                     )}
                 >
                     SIGN IN WITH GOOGLE

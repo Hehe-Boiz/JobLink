@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from .models import Job, JobCategory, Location, Tag, BookmarkJob
 from django.utils import timezone
+from ..users.models import EmployerProfile
+from ..core.serializers import MediaURLSerializer
 
 
 class JobCategorySerializer(serializers.ModelSerializer):
@@ -26,6 +28,7 @@ class CandidateJobSerializer(serializers.ModelSerializer):
     location = LocationSerializer(read_only=True)
     tags = TagSerializer(many=True, read_only=True)
     employer_logo = serializers.SerializerMethodField()
+    bookmark_id = serializers.SerializerMethodField()
 
     class Meta:
         model = Job
@@ -33,7 +36,7 @@ class CandidateJobSerializer(serializers.ModelSerializer):
             'id', 'title', 'company_name', 'employer_logo',
             'category', 'location', 'employment_type',
             'experience_level', 'salary_min', 'salary_max',
-            'deadline', 'tags', 'updated_date', 'active'
+            'deadline', 'tags', 'updated_date', 'active', 'bookmark_id'
         ]
 
     def get_employer_logo(self, obj):
@@ -44,10 +47,42 @@ class CandidateJobSerializer(serializers.ModelSerializer):
             return None
         return None
 
+    def get_bookmark_id(self, obj):
+        user = self.context.get('request').user
+
+        if not user.is_authenticated:
+            return None
+        try:
+            bookmark = obj.bookmarked_by.filter(user=user).first()
+            return bookmark.id if bookmark else None
+        except:
+            return None
+
+
+class CompanyInfoSerializer(MediaURLSerializer):
+    id = serializers.ReadOnlyField(source='pk')
+    logo = serializers.SerializerMethodField()
+
+    class Meta:
+        model = EmployerProfile
+        fields = ['id', 'company_name', 'website', 'logo', 'description', 'address', 'tax_code']
+
+    def get_logo(self, obj):
+        try:
+            return obj.user.avatar.url
+        except:
+            pass
+        return None
+
+    def get_address(self, obj):
+        return "Việt Nam"
+
 
 class CandidateJobDetailSerializer(CandidateJobSerializer):
+    company = CompanyInfoSerializer(source='posted_by.employer_profile', read_only=True)
+
     class Meta(CandidateJobSerializer.Meta):
-        fields = CandidateJobSerializer.Meta.fields + ['description', 'requirements', 'benefits']
+        fields = CandidateJobSerializer.Meta.fields + ['description', 'requirements', 'benefits','company']
 
 
 class EmployerJobSerializer(serializers.ModelSerializer):
@@ -154,9 +189,9 @@ class CandidateBookmarkJobSerializer(serializers.ModelSerializer):
     job = CandidateJobSerializer(read_only=True)  # chỉ dùng cho chiều dữ liệu đi ra
 
     job_id = serializers.PrimaryKeyRelatedField(
-        queryset=Job.objects.filter(active=True), # giới hạn phạm vi tìm kiếm
-        source="job", # gán vào trường job của Bookmark sau khi tìm thấy
-        write_only=True # dùng cho chiều dữ liệu đi vào
+        queryset=Job.objects.filter(active=True),  # giới hạn phạm vi tìm kiếm
+        source="job",  # gán vào trường job của Bookmark sau khi tìm thấy
+        write_only=True  # dùng cho chiều dữ liệu đi vào
     )
 
     class Meta:

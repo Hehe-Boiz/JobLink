@@ -1,100 +1,73 @@
-import React, { useEffect, useReducer } from 'react';
+import React, {useEffect, useReducer} from 'react';
 
-import AppNavigator from './src/navigation/AppNavigator'; // File điều hướng chính
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { MyUserContext } from './src/utils/contexts/MyContext';
+import AppNavigator from './src/navigation/AppNavigator';
+import {SafeAreaProvider} from 'react-native-safe-area-context';
+import {MyUserContext} from './src/utils/contexts/MyContext';
 import MyUserReducer from './src/utils/reducers/MyUserReducer';
-
-// Định nghĩa Theme màu chủ đạo (ví dụ màu Xanh dương cho Job Portal)
-import { Provider as PaperProvider, MD3LightTheme as DefaultTheme } from 'react-native-paper';
-import { useFonts } from 'expo-font';
+import {Provider as PaperProvider, MD3LightTheme as DefaultTheme} from 'react-native-paper';
+import {useFonts} from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
-import JobDetail from "./src/screens/Job/JobDetail";
-import { DialogProvider } from './src/utils/contexts/DialogContext';
-import ApplyJob from "./src/screens/Job/ApplyJob";
-import CandidateSearchJob from "./src/screens/Candidate/CandidateSearchJob";
-import CandidateHome from "./src/screens/Candidate/CandidateHome";
-import CandidateFilterCategory from "./src/screens/Candidate/CandidateFilterCategory";
-import CandidateSearchAdvance from './src/screens/Candidate/CandidateSearchAdvance'
-import { EmployerProvider } from './src/utils/contexts/EmployerContext';
-import CandidateSearchResults from "./src/screens/Candidate/CandidateSearchResults";
-import CompanyList from './src/screens/Candidate/CompanyList'
-import CompanyDetail from "./src/screens/Candidate/CompanyDetail";
-import CandidateProfile from "./src/screens/CandidateProfile/CandidateProfile";
-import EditAboutMe from "./src/screens/CandidateProfile/EditAboutMe";
-import AddWorkExperience from "./src/screens/CandidateProfile/AddWorkExperience";
-import AddEducation from "./src/screens/CandidateProfile/AddEducation";
-import AddSkill from "./src/screens/CandidateProfile/AddSkill";
-import SkillList from "./src/screens/CandidateProfile/SkillList";
-import LanguageList from "./src/screens/CandidateProfile/LanguageList";
-import AddLanguage from "./src/screens/CandidateProfile/AddLanguage";
-import LanguageDetail from "./src/screens/CandidateProfile/LanguageDetail";
-import AppreciationForm from "./src/screens/CandidateProfile/AppreciationForm";
-import AddResume from "./src/screens/CandidateProfile/AddResume";
-import EmployerProfile from "./src/screens/Employer/EmployerProfile";
-import EditProfile from "./src/screens/CandidateProfile/EditProfile";
-import SettingsScreen from "./src/screens/CandidateProfile/Settings/SettingsScreen";
-import UpdatePasswordScreen from "./src/screens/CandidateProfile/Settings/UpdatePasswordScreen";
-import SavedJobsScreen from "./src/screens/Candidate/SavedJobsScreen";
-import NotificationsScreen from "./src/screens/Candidate/Notifications/NotificationsScreen";
-import NotificationDetailScreen from "./src/screens/Candidate/Notifications/NotificationDetailScreen";
+import {DialogProvider} from './src/utils/contexts/DialogContext';
+import {EmployerProvider} from './src/utils/contexts/EmployerContext';
 
 SplashScreen.preventAutoHideAsync();
 
 const theme = {
-  ...DefaultTheme,
-  colors: {
-    ...DefaultTheme.colors,
-    primary: '#FF9228',
-    secondary: '#130160ff',
-    error: '#dc3545',
-  },
+    ...DefaultTheme,
+    colors: {
+        ...DefaultTheme.colors,
+        primary: '#FF9228',
+        secondary: '#130160ff',
+        error: '#dc3545',
+    },
 };
 
 export default function App() {
-  const [user, dispatch] = useReducer(MyUserReducer, null);
-  const [fontsLoaded] = useFonts({
-    // Regular weights (non-italic)
-    'DMSans-Thin': require('./assets/fonts/DM_Sans/static/DMSans-Thin.ttf'),
-    'DMSans-ExtraLight': require('./assets/fonts/DM_Sans/static/DMSans-ExtraLight.ttf'),
-    'DMSans-Light': require('./assets/fonts/DM_Sans/static/DMSans-Light.ttf'),
-    'DMSans-Regular': require('./assets/fonts/DM_Sans/static/DMSans-Regular.ttf'),
-    'DMSans-Medium': require('./assets/fonts/DM_Sans/static/DMSans-Medium.ttf'),
-    'DMSans-SemiBold': require('./assets/fonts/DM_Sans/static/DMSans-SemiBold.ttf'),
-    'DMSans-Bold': require('./assets/fonts/DM_Sans/static/DMSans-Bold.ttf'),
-    'DMSans-ExtraBold': require('./assets/fonts/DM_Sans/static/DMSans-ExtraBold.ttf'),
-    'DMSans-Black': require('./assets/fonts/DM_Sans/static/DMSans-Black.ttf'),
+    const [user, dispatch] = useReducer(MyUserReducer, null);
+    const [fontsLoaded] = useFonts({
+        // Regular weights (non-italic)
+        'DMSans-Thin': require('./assets/fonts/DM_Sans/static/DMSans-Thin.ttf'),
+        'DMSans-ExtraLight': require('./assets/fonts/DM_Sans/static/DMSans-ExtraLight.ttf'),
+        'DMSans-Light': require('./assets/fonts/DM_Sans/static/DMSans-Light.ttf'),
+        'DMSans-Regular': require('./assets/fonts/DM_Sans/static/DMSans-Regular.ttf'),
+        'DMSans-Medium': require('./assets/fonts/DM_Sans/static/DMSans-Medium.ttf'),
+        'DMSans-SemiBold': require('./assets/fonts/DM_Sans/static/DMSans-SemiBold.ttf'),
+        'DMSans-Bold': require('./assets/fonts/DM_Sans/static/DMSans-Bold.ttf'),
+        'DMSans-ExtraBold': require('./assets/fonts/DM_Sans/static/DMSans-ExtraBold.ttf'),
+        'DMSans-Black': require('./assets/fonts/DM_Sans/static/DMSans-Black.ttf'),
 
-    // Italic weights (optional - uncomment if you use italic)
-    'DMSans-ThinItalic': require('./assets/fonts/DM_Sans/static/DMSans-ThinItalic.ttf'),
-    'DMSans-ExtraLightItalic': require('./assets/fonts/DM_Sans/static/DMSans-ExtraLightItalic.ttf'),
-    'DMSans-LightItalic': require('./assets/fonts/DM_Sans/static/DMSans-LightItalic.ttf'),
-    'DMSans-Italic': require('./assets/fonts/DM_Sans/static/DMSans-Italic.ttf'),
-    'DMSans-MediumItalic': require('./assets/fonts/DM_Sans/static/DMSans-MediumItalic.ttf'),
-    'DMSans-SemiBoldItalic': require('./assets/fonts/DM_Sans/static/DMSans-SemiBoldItalic.ttf'),
-    'DMSans-BoldItalic': require('./assets/fonts/DM_Sans/static/DMSans-BoldItalic.ttf'),
-    'DMSans-ExtraBoldItalic': require('./assets/fonts/DM_Sans/static/DMSans-ExtraBoldItalic.ttf'),
-    'DMSans-BlackItalic': require('./assets/fonts/DM_Sans/static/DMSans-BlackItalic.ttf'),
-  });
+        // Italic weights (optional - uncomment if you use italic)
+        'DMSans-ThinItalic': require('./assets/fonts/DM_Sans/static/DMSans-ThinItalic.ttf'),
+        'DMSans-ExtraLightItalic': require('./assets/fonts/DM_Sans/static/DMSans-ExtraLightItalic.ttf'),
+        'DMSans-LightItalic': require('./assets/fonts/DM_Sans/static/DMSans-LightItalic.ttf'),
+        'DMSans-Italic': require('./assets/fonts/DM_Sans/static/DMSans-Italic.ttf'),
+        'DMSans-MediumItalic': require('./assets/fonts/DM_Sans/static/DMSans-MediumItalic.ttf'),
+        'DMSans-SemiBoldItalic': require('./assets/fonts/DM_Sans/static/DMSans-SemiBoldItalic.ttf'),
+        'DMSans-BoldItalic': require('./assets/fonts/DM_Sans/static/DMSans-BoldItalic.ttf'),
+        'DMSans-ExtraBoldItalic': require('./assets/fonts/DM_Sans/static/DMSans-ExtraBoldItalic.ttf'),
+        'DMSans-BlackItalic': require('./assets/fonts/DM_Sans/static/DMSans-BlackItalic.ttf'),
+    });
 
-  useEffect(() => {
-    if (fontsLoaded) {
-      SplashScreen.hideAsync();
+    useEffect(() => {
+        if (fontsLoaded) {
+            SplashScreen.hideAsync();
+        }
+    }, [fontsLoaded]);
+
+    if (!fontsLoaded) {
+        return null;
     }
-  }, [fontsLoaded]);
-
-  if (!fontsLoaded) {
-    return null;
-  }
-  return (
-    <SafeAreaProvider>
-      <MyUserContext.Provider value={[user, dispatch]}>
-        <PaperProvider theme={theme}>
-          <DialogProvider>
-            <NotificationDetailScreen />
-          </DialogProvider>
-        </PaperProvider>
-      </MyUserContext.Provider>
-    </SafeAreaProvider>
-  );
+    return (
+        <SafeAreaProvider>
+            <MyUserContext.Provider value={[user, dispatch]}>
+                <EmployerProvider>
+                    <PaperProvider theme={theme}>
+                        <DialogProvider>
+                            <AppNavigator/>
+                        </DialogProvider>
+                    </PaperProvider>
+                </EmployerProvider>
+            </MyUserContext.Provider>
+        </SafeAreaProvider>
+    );
 }
