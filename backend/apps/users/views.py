@@ -1,8 +1,15 @@
+from datetime import timedelta
+
 from rest_framework import generics, status, viewsets, parsers, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
-from .models import User, VerificationStatus
+from rest_framework.views import APIView
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
+from oauth2_provider.models import Application, AccessToken, RefreshToken
+from oauthlib.common import generate_token
+from .models import User, VerificationStatus, UserRole, CandidateProfile
 from .models import EmployerProfile
 from .permissions import IsAdminRole, IsCandidate, IsEmployer
 from .serializers import EmployerProfileSerializer, AdminEmployerSerializer
@@ -73,6 +80,64 @@ class AdminEmployerViewSet(viewsets.ReadOnlyModelViewSet):
         emp.verified_by = request.user
         emp.save()
         return Response({"message": "Rejected"}, status=status.HTTP_200_OK)
+
+
+class GoogleLoginView(APIView):
+    permission_classes = [AllowAny]  # Cho phép ai cũng gọi được
+
+    def post(self, request):
+        token = request.data.get('token')
+        if not token:
+            return Response({'error': 'Chưa nhận thấy token'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            GOOGLE_WEB_CLIENT_ID = "665244573266-77l5gm6jcvsimql5jntqc6g102geoh09.apps.googleusercontent.com"
+
+            idinfo = id_token.verify_oauth2_token(token, google_requests.Request(), GOOGLE_WEB_CLIENT_ID)
+
+            email = idinfo['email']
+            first_name = idinfo.get('given_name', '')
+            last_name = idinfo.get('family_name', '')
+            user, created = User.objects.get_or_create(
+                email=email,
+                defaults={
+                    'username': email,
+                    'first_name': first_name,
+                    'last_name': last_name,
+                    'role': UserRole.CANDIDATE,
+                    'is_active': True
+                }
+            )
+
+            if created:
+                user.set_unusable_password()
+                user.save()
+                CandidateProfile.objects.create(user=user)
+
+            app_oauth = Application.objects.first()
+            if not app_oauth:
+                return Response({'error': 'OAuth App chưa được cấu hình'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            expires = timezone.now() + timedelta(seconds=36000)
+            access_token = AccessToken.objects.create(
+                user=user, application=app_oauth, token=generate_token(),
+                expires=expires, scope="read write"
+            )
+            refresh_token = RefreshToken.objects.create(
+                user=user, application=app_oauth, token=generate_token(),
+                access_token=access_token
+            )
+
+            # Trả về Token để App lưu vào máy
+            return Response({
+                'access_token': access_token.token,
+                'refresh_token': refresh_token.token,
+                'role': user.role,
+                'token_type': 'Bearer',
+            }, status=200)
+
+        except ValueError as e:
+            return Response({'error': 'Invalid Google Token', 'details': str(e)}, status=400)
 
 
 class RegisterCandidateView(viewsets.ViewSet, generics.CreateAPIView):

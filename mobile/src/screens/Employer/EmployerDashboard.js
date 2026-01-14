@@ -189,7 +189,7 @@ const EmployerDashboard = ({ navigation }) => {
                 {/* 4. CHÚ THÍCH */}
                 <View style={{ padding: 20 }}>
                     <Text style={{color: '#95969D', textAlign: 'center', fontSize: 12}}>
-                        * Biểu đồ thể hiện tỷ lệ % số người nộp đơn so với số người xem tin tuyển dụng của bạn.
+                        Biểu đồ thể hiện tỷ lệ % số người nộp đơn so với số người xem tin tuyển dụng
                     </Text>
                 </View>
                 

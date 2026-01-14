@@ -6,6 +6,7 @@ export const endpoints = {
     'register_candidate': '/register/candidate/',
     'register_employer': '/register/employer/',
     'login': '/o/token/',
+    'login_google': '/auth/google/login/',
     'logout': '/o/revoke_token/',
     'current_user': '/users/current-user/',
     'current_employer': '/employers/me/',
@@ -16,7 +17,11 @@ export const endpoints = {
     'locations': '/locations/',
     'applications_by_employer_jobs': (jobId) => `employer/jobs/${jobId}/applications/`,
     'candidate_by_applications_in_employer_jobs': (applicationId) => `employer/applications/${applicationId}/candidate-profile/`,
-    'update_application': (applicationId) => `employer/applications/${applicationId}/`
+    'update_application': (applicationId) => `employer/applications/${applicationId}/`,
+    'service_packs': '/payments/service-packs/',
+    'create_payment': '/payments/receipts/create-payment/',
+    'confirm_payment': '/payments/receipts/confirm-payment/',
+    'history_payment': '/payments/receipts/',
 };
 
 export const authApis = (token) => {

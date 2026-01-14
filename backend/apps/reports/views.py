@@ -9,7 +9,6 @@ from apps.applications.models import Application
 from apps.users.permissions import IsEmployerApproved
 import random
 
-
 class EmployerStatsView(APIView):
     permission_classes = [IsEmployerApproved]
 
@@ -17,25 +16,20 @@ class EmployerStatsView(APIView):
         ep = request.user.employer_profile
         current_year = timezone.now().year
 
-        # 1. LẤY THAM SỐ TỪ CLIENT
-        # period: 'year' (xem các năm), 'quarter' (xem 4 quý), 'month' (xem 12 tháng)
         period = request.query_params.get('period', 'month')
-        # category_id: Lọc theo ngành
+
         category_id = request.query_params.get('category_id', 'all')
-        # selected_year: Năm cần xem (dùng cho lọc quý và tháng)
+
         selected_year = int(request.query_params.get('year', current_year))
 
-        # 2. LỌC JOB THEO USER & CATEGORY
         jobs_query = Job.objects.filter(posted_by=ep)
+
         if category_id and category_id != 'all':
             jobs_query = jobs_query.filter(category_id=category_id)
 
         job_ids = jobs_query.values_list('id', flat=True)
 
-        # 3. HÀM TÍNH TOÁN %
         def get_efficiency(app_count):
-            # Giả lập View (Thực tế bạn thay bằng query ViewLog)
-            # Logic: View gấp 10-20 lần App.
             if app_count == 0:
                 view_count = random.randint(10, 50)  # Vẫn có view dù ko có app
                 return 0.0

@@ -18,6 +18,7 @@ import AppSelector from '../../components/common/AppSelector';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import AppDatePicker from '../../components/common/AppDatePicker';
 import { validateForm } from '../../utils/validate/Employer/ValidatePostJob';
+import { useDialog } from '../../hooks/useDialog';
 
 const PostJob = ({ navigation, route }) => {
     // 1. State
@@ -34,6 +35,7 @@ const PostJob = ({ navigation, route }) => {
     const [level, setLevel] = useState('JUNIOR');
     const levels = ['INTERN', 'FRESHER', 'JUNIOR', 'MIDDLE', 'SENIOR', 'EXPERT']
     const [loading, setLoading] = useState(false);
+    const { showDialog } = useDialog();
     useEffect(() => {
         const fetchData = async () => {
             try {
@@ -69,10 +71,10 @@ const PostJob = ({ navigation, route }) => {
                 const d = jobData.deadline;
                 formattedDeadline = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
             }
- 
+
             const payload = {
                 title: jobData.title,
-                company_name: "Tự động lấy từ Profile", 
+                company_name: "Tự động lấy từ Profile",
 
                 category: selectedCategory.id,
                 location: selectedLocation.id,
@@ -81,7 +83,7 @@ const PostJob = ({ navigation, route }) => {
                 employment_type: jobType,
                 experience_level: level,
 
-  
+
                 salary_min: parseInt(jobData.salaryMin) || null,
                 salary_max: parseInt(jobData.salaryMax) || null,
 
@@ -96,15 +98,28 @@ const PostJob = ({ navigation, route }) => {
             let res = await api.post(endpoints['employer_jobs'], payload);
 
             if (res.status === 201) {
-                Alert.alert("Thành công", "Đăng tin tuyển dụng thành công!");
-                navigation.goBack();
+                showDialog({
+                    type: 'success',
+                    title: 'Đăng tin thành công!',
+                    content: '"Bạn có muốn mua gói Dịch vụ (Tin nổi bật/Gấp) để tiếp cận nhiều ứng viên hơn không?"',
+                    confirmText: 'Mua ngay',
+                    cancelText: 'Để sau',
+                    showCancel: true,
+                    onConfirm: () => {
+                        console.log(res.data);
+                        navigation.replace('BuyService', { job: res.data });
+                    },
+                    onCancel: () => {
+                        navigation.goBack();
+                    }
+                });
             }
 
         } catch (ex) {
             console.error(ex);
             let msg = "Lỗi không xác định";
             if (ex.response && ex.response.data) {
-                msg = JSON.stringify(ex.response.data); 
+                msg = JSON.stringify(ex.response.data);
             }
             Alert.alert("Đăng tin thất bại", msg);
         } finally {
@@ -214,7 +229,7 @@ const PostJob = ({ navigation, route }) => {
                         onPress={handlePost}
                         loading={loading}
                         disabled={loading}
-                        style={styles.btnPrimary} 
+                        style={styles.btnPrimary}
                         contentStyle={{ height: 50 }}
                     >
                         ĐĂNG TUYỂN DỤNG

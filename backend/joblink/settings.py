@@ -53,6 +53,8 @@ INSTALLED_APPS = [
     'apps.core',
     'apps.jobs',
     'apps.applications',
+    'apps.payments',
+    'apps.reports',
     'rest_framework',
     'drf_yasg',
     'oauth2_provider',
@@ -88,7 +90,7 @@ ROOT_URLCONF = 'joblink.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [

@@ -5,11 +5,10 @@ import styles from "../../styles/Auth/CandidateRegisterStyles"; // Style của J
 import Apis, { endpoints } from "../../utils/Apis";
 import { Alert } from "react-native";
 const CandidateRegister = ({ navigation }) => {
-  // 1. Cấu hình mảng Fields (Format thầy giáo)
   const info = [
     {
       title: "Full Name",
-      field: "first_name", // Gộp tên vào đây
+      field: "first_name",
       icon: "account-outline"
     },
 
@@ -49,7 +48,6 @@ const CandidateRegister = ({ navigation }) => {
     return true;
   }
 
-  // 5. Hàm Đăng ký (Logic Loop FormData chuẩn thầy)
   const register = async () => {
     if (validate() === true) {
       try {

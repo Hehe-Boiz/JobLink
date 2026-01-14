@@ -9,6 +9,7 @@ router.register('register/employer', views.RegisterEmployerView, basename='regis
 router.register('register/candidate', views.RegisterCandidateView, basename='register-candidate')
 router.register('admin/employers', views.AdminEmployerViewSet, basename='admin-employer')
 urlpatterns = [
+    path('auth/google/login/', views.GoogleLoginView.as_view(), name='google-login'),
     path('candidates/me/', views.CandidateMeView.as_view(), name='candidate-me'),
     path('employers/me/', views.EmployerMeView.as_view(), name='employer-me'),
     path('', include(router.urls)),

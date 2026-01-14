@@ -1,215 +1,155 @@
 import React, { useState } from 'react';
-import { View, ScrollView, Alert } from 'react-native'; // Thêm Alert
+import { View, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { Text, TextInput, Button, HelperText } from 'react-native-paper';
+import { useNavigation } from '@react-navigation/native';
 import styles from '../../styles/Auth/EmployerRegisterStyles';
-import Apis, { endpoints } from "../../utils/Apis"; // Import API
+import Apis, { endpoints } from "../../utils/Apis";
+import { useDialog } from '../../hooks/useDialog';
 
-const EmployerRegister = ({ navigation }) => {
-    const [step, setStep] = useState(1); // Giữ nguyên logic chuyển bước
-    const [loading, setLoading] = useState(false); // State loading khi gọi API
+const EmployerRegister = () => {
+    const navigation = useNavigation();
+    const { showDialog } = useDialog();
 
-    // 1. Dữ liệu form (Cập nhật đủ các trường backend cần)
-    const [formData, setFormData] = useState({
-        first_name: '', // Tên người liên hệ (Quan trọng)
-        email: '',
-        password: '',
-        confirm: '', // Thêm confirm pass
-        company_name: '',
-        website: '',
-        phone: '',
-    });
+    const [step, setStep] = useState(1);
+    const [loading, setLoading] = useState(false);
 
-    // Helper update state
+    // --- 1. CẤU HÌNH INPUT (Giống CandidateRegister nhưng có thêm thuộc tính 'step') ---
+    const info = [
+        // BƯỚC 1: Thông tin cá nhân
+        {
+            title: "Họ (Last Name)",
+            field: "last_name",
+            icon: "account-outline",
+            step: 1
+        },
+        {
+            title: "Tên (First Name)",
+            field: "first_name",
+            icon: "account-outline",
+            step: 1
+        },
+        {
+            title: "Email đăng nhập",
+            field: "email",
+            icon: "email-outline",
+            step: 1,
+            keyboardType: "email-address"
+        },
+        {
+            title: "Số điện thoại",
+            field: "phone",
+            icon: "phone-outline",
+            step: 1,
+            keyboardType: "phone-pad"
+        },
+
+        // BƯỚC 2: Thông tin công ty
+        {
+            title: "Tên công ty",
+            field: "company_name",
+            icon: "domain",
+            step: 2
+        },
+        {
+            title: "Mã số thuế",
+            field: "tax_code",
+            icon: "card-account-details-outline",
+            step: 2
+        },
+        {
+            title: "Website",
+            field: "website",
+            icon: "web",
+            step: 2,
+            autoCapitalize: "none"
+        },
+
+        // BƯỚC 3: Mật khẩu
+        {
+            title: "Mật khẩu",
+            field: "password",
+            icon: "lock-outline",
+            step: 3,
+            secure: true
+        },
+        {
+            title: "Nhập lại mật khẩu",
+            field: "confirm",
+            icon: "lock-check-outline",
+            step: 3,
+            secure: true
+        }
+    ];
+
+    // State quản lý dữ liệu form & hiển thị pass
+    const [formData, setFormData] = useState({});
+    const [showPass, setShowPass] = useState({});
+    const [err, setErr] = useState(false); // Dùng để highlight lỗi confirm pass
+
     const updateData = (key, value) => {
         setFormData({ ...formData, [key]: value });
+        if (err) setErr(false); // Reset lỗi khi gõ lại
     };
 
-
-    // 2. LOGIC ĐĂNG KÝ
-    const register = async () => {
-        // Validate cơ bản
-        if (formData.password !== formData.confirm) {
-            Alert.alert("Lỗi", "Mật khẩu xác nhận không khớp!");
-            return;
-        }
-
-        try {
-            setLoading(true);
-
-            // Tạo FormData chuẩn
-            let form = new FormData();
-            for (let key in formData) {
-                if (key !== 'confirm') { // Không gửi confirm pass lên server
-                    form.append(key, formData[key]);
-                }
-            }
-
-            // Nếu backend yêu cầu username, gán username = email
-            if (!formData.username) {
-                form.append("username", formData.email);
-            }
-
-            console.info("Sending Employer Data:", formData);
-
-            // Gọi API
-            let res = await Apis.post(endpoints['register_employer'], form, {
-                headers: { 'Content-Type': 'multipart/form-data' }
-            });
-
-            if (res.status === 201) {
-                Alert.alert("Thành công", "Đăng ký hồ sơ doanh nghiệp thành công! Vui lòng chờ Admin phê duyệt.");
-                navigation.navigate('Login');
-            }
-
-        } catch (ex) {
-            // --- XỬ LÝ LỖI (Mang từ Candidate sang) ---
-            let message = "Đăng ký thất bại.";
-            if (ex.response && ex.response.data) {
-                const errorData = ex.response.data;
-                console.log("Lỗi Server:", errorData);
-
-                // Từ điển dịch lỗi cho Employer
-                const fieldMap = {
-                    "email": "Email",
-                    "username": "Tên đăng nhập",
-                    "password": "Mật khẩu",
-                    "first_name": "Tên người liên hệ",
-                    "company_name": "Tên công ty",
-                    "phone": "Số điện thoại",
-                    "address": "Địa chỉ",
-                    "website": "Website",
-                    "non_field_errors": "Lỗi chung"
-                };
-
-                if (typeof errorData === 'object') {
-                    message = "";
-                    for (let key in errorData) {
-                        let vnField = fieldMap[key] || key;
-                        let errContent = errorData[key];
-                        if (Array.isArray(errContent)) errContent = errContent[0];
-
-                        let lowerContent = String(errContent).toLowerCase();
-                        let vnMessage = "gặp lỗi.";
-
-                        if (lowerContent.includes("already exists")) vnMessage = "đã tồn tại.";
-                        else if (lowerContent.includes("required")) vnMessage = "là bắt buộc.";
-                        else if (lowerContent.includes("valid")) vnMessage = "không hợp lệ.";
-
-                        message += `• ${vnField} ${vnMessage}\n`;
-                    }
-                }
-            }
-            Alert.alert("Thông báo lỗi", message);
-        } finally {
-            setLoading(false);
-        }
+    const toggleShow = (field) => {
+        setShowPass(prev => ({ ...prev, [field]: !prev[field] }));
     };
 
-    // --- RENDER CÁC BƯỚC (Giữ nguyên UI của bạn) ---
+    // --- HÀM RENDER INPUT ĐỘNG THEO BƯỚC ---
+    const renderInputsForStep = (currentStep) => {
+        // Lọc ra các field thuộc bước hiện tại
+        const fields = info.filter(item => item.step === currentStep);
 
-    // STEP 1: Tài khoản cá nhân
-    const renderStep1 = () => (
-        <View>
-            <Text style={styles.sectionTitle}>1. Account Information</Text>
+        return fields.map((item) => {
+            // Logic check lỗi cho password
+            const isErrorField = err && (item.field === 'password' || item.field === 'confirm');
 
-            {/* Thêm trường Tên người liên hệ (Backend User nào cũng cần first_name) */}
-            <TextInput
-                label="Contact Person Name"
-                value={formData.first_name}
-                onChangeText={(text) => updateData('first_name', text)}
-                mode="outlined"
-                style={styles.input}
-                left={<TextInput.Icon icon="account-tie" />}
-            />
+            return (
+                <View key={item.field} style={{ marginBottom: 10 }}>
+                    <TextInput
+                        label={item.title}
+                        value={formData[item.field] || ''}
+                        onChangeText={(t) => updateData(item.field, t)}
+                        mode="outlined"
+                        style={styles.input}
+                        outlineColor="#EAEAEA"
+                        activeOutlineColor={isErrorField ? "red" : "#130160"}
+                        theme={{ roundness: 10 }}
+                        keyboardType={item.keyboardType || 'default'}
+                        autoCapitalize={item.autoCapitalize || 'sentences'}
 
-            <TextInput
-                label="Work Email"
-                value={formData.email}
-                onChangeText={(text) => updateData('email', text)}
-                mode="outlined"
-                style={styles.input}
-                left={<TextInput.Icon icon="email-outline" />}
-                keyboardType="email-address"
-                autoCapitalize="none"
-            />
-            <TextInput
-                label="Password"
-                value={formData.password}
-                onChangeText={(text) => updateData('password', text)}
-                secureTextEntry
-                mode="outlined"
-                style={styles.input}
-                left={<TextInput.Icon icon="lock-outline" />}
-            />
-            <TextInput
-                label="Confirm Password"
-                value={formData.confirm}
-                onChangeText={(text) => updateData('confirm', text)}
-                secureTextEntry
-                mode="outlined"
-                style={styles.input}
-                left={<TextInput.Icon icon="lock-check-outline" />}
-            />
-        </View>
-    );
+                        secureTextEntry={item.secure ? !showPass[item.field] : false}
+                        left={<TextInput.Icon icon={item.icon} color={isErrorField ? "red" : "#AAA6B9"} />}
+                        right={
+                            item.secure ?
+                                <TextInput.Icon
+                                    icon={showPass[item.field] ? "eye-off" : "eye"}
+                                    onPress={() => toggleShow(item.field)}
+                                    color={isErrorField ? "red" : "#AAA6B9"}
+                                /> : null
+                        }
+                    />
+                </View>
+            );
+        });
+    };
 
-    // STEP 2: Thông tin công ty
-    const renderStep2 = () => (
-        <View>
-            <Text style={styles.sectionTitle}>2. Company Details</Text>
-            <TextInput
-                label="Company Name"
-                value={formData.companyName} // Lưu ý: key này phải khớp logic backend
-                // Ở trên state mình đặt là company_name nhưng logic UI bạn dùng companyName
-                // Sửa lại chỗ này cho khớp state:
-                onChangeText={(text) => updateData('company_name', text)}
-                mode="outlined"
-                style={styles.input}
-                left={<TextInput.Icon icon="domain" />}
-            />
-            <TextInput
-                label="Website (Optional)"
-                value={formData.website}
-                onChangeText={(text) => updateData('website', text)}
-                mode="outlined"
-                style={styles.input}
-                left={<TextInput.Icon icon="web" />}
-                autoCapitalize="none"
-            />
-        </View>
-    );
-
-    // STEP 3: Liên hệ & Xác thực
-    const renderStep3 = () => (
-        <View>
-            <Text style={styles.sectionTitle}>3. Contact & Verify</Text>
-            <TextInput
-                label="Phone Number"
-                value={formData.phone}
-                keyboardType="phone-pad"
-                onChangeText={(text) => updateData('phone', text)}
-                mode="outlined"
-                style={styles.input}
-                left={<TextInput.Icon icon="phone" />}
-            />
-            <TextInput
-                label="Headquarters Address"
-                value={formData.address}
-                onChangeText={(text) => updateData('address', text)}
-                mode="outlined"
-                style={styles.input}
-                left={<TextInput.Icon icon="map-marker" />}
-            />
-        </View>
-    );
-
-    // --- XỬ LÝ ĐIỀU HƯỚNG BƯỚC ---
+    // --- LOGIC NAVIGATION & VALIDATE TỪNG BƯỚC ---
     const handleNext = () => {
-        if (step < 3) {
-            setStep(step + 1);
-        } else {
-            // Ở bước cuối cùng, thay vì log log, ta gọi hàm register
-            register();
+        if (step === 1) {
+            if (!formData.first_name || !formData.last_name || !formData.email || !formData.phone) {
+                showDialog({ type: 'warning', title: 'Thiếu thông tin', content: 'Vui lòng điền đầy đủ thông tin cá nhân.' });
+                return;
+            }
+            setStep(2);
+        } else if (step === 2) {
+            if (!formData.company_name) {
+                showDialog({ type: 'warning', title: 'Thiếu thông tin', content: 'Vui lòng nhập tên công ty.' });
+                return;
+            }
+            setStep(3);
+        } else if (step === 3) {
+            handleRegister();
         }
     };
 
@@ -218,63 +158,123 @@ const EmployerRegister = ({ navigation }) => {
         else navigation.goBack();
     };
 
+    // --- LOGIC GỌI API ---
+    const handleRegister = async () => {
+        if (formData.password !== formData.confirm) {
+            setErr(true);
+            showDialog({ type: 'error', title: 'Lỗi', content: 'Mật khẩu xác nhận không khớp!' });
+            return;
+        }
+
+        setLoading(true);
+        try {
+            let form = new FormData();
+
+            // Lấy tất cả key trong info (trừ confirm) để append vào form
+            info.forEach(item => {
+                if (item.field !== 'confirm' && formData[item.field]) {
+                    form.append(item.field, formData[item.field]);
+                }
+            });
+            form.append('role', 'EMPLOYER');
+
+            console.info("Sending Data:", formData);
+
+            const res = await Apis.post(endpoints['register_employer'], form, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            });
+
+            if (res.status === 201) {
+                showDialog({
+                    type: 'success',
+                    title: 'Đăng ký thành công',
+                    content: 'Tài khoản của bạn đã được tạo. Vui lòng chờ Admin phê duyệt.',
+                    confirmText: 'VỀ ĐĂNG NHẬP',
+                    onConfirm: () => navigation.navigate('Login')
+                });
+            }
+
+        } catch (ex) {
+            let message = "Đăng ký thất bại. Vui lòng thử lại.";
+            if (ex.response && ex.response.data) {
+                const errorData = ex.response.data;
+                const fieldMap = {
+                    "email": "Email", "username": "Tên đăng nhập", "password": "Mật khẩu",
+                    "first_name": "Tên", "last_name": "Họ", "phone": "Số điện thoại",
+                    "company_name": "Tên công ty", "tax_code": "Mã số thuế", "non_field_errors": "Lỗi"
+                };
+
+                if (typeof errorData === 'object') {
+                    message = "";
+                    for (let key in errorData) {
+                        let vnField = fieldMap[key] || key;
+                        let errContent = Array.isArray(errorData[key]) ? errorData[key][0] : errorData[key];
+                        message += `${vnField}: ${errContent}\n`;
+                    }
+                }
+            }
+            showDialog({ type: 'error', title: 'Lỗi', content: message });
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return (
-        <View style={styles.container}>
-            <ScrollView showsVerticalScrollIndicator={false}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+            <View style={styles.container}>
+                <ScrollView contentContainerStyle={{ paddingBottom: 30 }} showsVerticalScrollIndicator={false}>
 
-                {/* Header */}
-                <View style={styles.headerContainer}>
-                    <Text style={styles.appName}>Job<Text style={styles.brandHighlight}>Link</Text></Text>
-                    <Text style={{ color: 'gray' }}>Employer Registration</Text>
-                </View>
-
-                {/* Progress Bar (Giữ nguyên) */}
-                <View style={styles.progressContainer}>
-                    <View style={[styles.stepIndicator, step >= 1 && styles.activeStep]}>
-                        <Text style={[styles.stepText, step >= 1 && styles.activeStepText]}>1</Text>
+                    <View style={styles.headerContainer}>
+                        <Text style={styles.appName}>Job<Text style={styles.brandHighlight}>Link</Text></Text>
+                        <Text style={styles.tagline}>Đăng ký nhà tuyển dụng</Text>
                     </View>
-                    <View style={[styles.stepLine, step >= 2 && styles.activeLine]} />
 
-                    <View style={[styles.stepIndicator, step >= 2 && styles.activeStep]}>
-                        <Text style={[styles.stepText, step >= 2 && styles.activeStepText]}>2</Text>
+                    {/* Progress Bar */}
+                    <View style={styles.progressContainer}>
+                        {[1, 2, 3].map(s => (
+                            <React.Fragment key={s}>
+                                <View style={[styles.stepIndicator, step >= s && styles.activeStep]}>
+                                    <Text style={[styles.stepText, step >= s && styles.activeStepText]}>{s}</Text>
+                                </View>
+                                {s < 3 && <View style={[styles.stepLine, step > s && styles.activeLine]} />}
+                            </React.Fragment>
+                        ))}
                     </View>
-                    <View style={[styles.stepLine, step >= 3 && styles.activeLine]} />
 
-                    <View style={[styles.stepIndicator, step >= 3 && styles.activeStep]}>
-                        <Text style={[styles.stepText, step >= 3 && styles.activeStepText]}>3</Text>
+                    {/* FORM CONTAINER: Gọi hàm render động */}
+                    <View style={styles.formContainer}>
+                        <Text style={styles.sectionTitle}>
+                            {step === 1 ? "Thông tin người liên hệ" : step === 2 ? "Thông tin doanh nghiệp" : "Thiết lập bảo mật"}
+                        </Text>
+
+                        {step === 3 && (
+                            <HelperText type="error" visible={err}>Mật khẩu KHÔNG khớp!</HelperText>
+                        )}
+
+                        {/* --- RENDER CÁC Ô NHẬP TẠI ĐÂY --- */}
+                        {renderInputsForStep(step)}
                     </View>
-                </View>
 
-                {/* Nội dung form */}
-                {step === 1 && renderStep1()}
-                {step === 2 && renderStep2()}
-                {step === 3 && renderStep3()}
+                    {/* Buttons */}
+                    <View style={styles.navButtonContainer}>
+                        <Button
+                            mode="outlined" onPress={handleBack}
+                            style={styles.backBtn} textColor="#524B6B" disabled={loading}
+                        >
+                            {step === 1 ? "Hủy" : "Quay lại"}
+                        </Button>
 
-                {/* Nút điều hướng */}
-                <View style={styles.navButtonContainer}>
-                    <Button
-                        mode="outlined"
-                        style={styles.backBtn}
-                        textColor="#524B6B"
-                        onPress={handleBack}
-                        disabled={loading} // Khóa nút khi đang gửi
-                    >
-                        {step === 1 ? "Cancel" : "Back"}
-                    </Button>
+                        <Button
+                            mode="contained" onPress={handleNext}
+                            style={styles.nextBtn} loading={loading} disabled={loading}
+                        >
+                            {step === 3 ? "Đăng Ký" : "Tiếp theo"}
+                        </Button>
+                    </View>
 
-                    <Button
-                        mode="contained"
-                        style={styles.nextBtn}
-                        onPress={handleNext}
-                        loading={loading} // Hiệu ứng xoay vòng loading
-                        disabled={loading}
-                    >
-                        {step === 3 ? "Submit" : "Next"}
-                    </Button>
-                </View>
-
-            </ScrollView>
-        </View>
+                </ScrollView>
+            </View>
+        </KeyboardAvoidingView>
     );
 };
 

@@ -20,6 +20,8 @@ const EmployerProfile = ({ navigation }) => {
     const { profile, clearEmployerProfile } = useEmployer();
     const logout = async () => {
         try {
+            console.log(CLIENT_ID);
+            console.log(CLIENT_SECRET);
             const token = await AsyncStorage.getItem('token');
             if (token) {
                 await Apis.post(endpoints['logout'], {

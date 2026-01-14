@@ -28,7 +28,6 @@ const EmployerEditProfile = ({ navigation }) => {
         tax_code: ''
     });
 
-    // 1. Load dữ liệu ban đầu
     useEffect(() => {
         try {
             setLoading(true);

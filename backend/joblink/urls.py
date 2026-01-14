@@ -3,7 +3,7 @@ from django.urls import path, include, re_path
 from drf_yasg import openapi
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
-
+from apps.core.admin import admin_site
 
 schema_view = get_schema_view(
     openapi.Info(
@@ -24,7 +24,9 @@ urlpatterns = [
     path('', include('apps.jobs.urls')),
     path('', include('apps.users.urls')),
     path('', include('apps.reports.urls')),
-    path('admin/', admin.site.urls),
+    path('', include('apps.core.urls')),
+    path('', include('apps.payments.urls')),
+    path('admin/', admin_site.urls),
     re_path(r'^ckeditor/', include('ckeditor_uploader.urls')),
     re_path(r'^swagger(?P<format>\.json|\.yaml)$',
             schema_view.without_ui(cache_timeout=0),
