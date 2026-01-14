@@ -1,11 +1,10 @@
 from django.http import HttpResponseRedirect
-from rest_framework import viewsets, status, generics
+from rest_framework import viewsets, generics
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from .models import ServicePack, Receipt, PaymentMethod
+from .models import ServicePack, Receipt
 from .serializers import ServicePackSerializer, ReceiptSerializer
-from datetime import timedelta
 from django.utils import timezone
 
 from .utils.momo_utils import create_momo_payment
@@ -25,10 +24,8 @@ class ReceiptViewSet(viewsets.ViewSet, generics.ListAPIView):
     def get_queryset(self):
         return Receipt.objects.filter(user=self.request.user)
 
-    # API tạo thanh toán
     @action(methods=['post'], detail=False, url_path='create-payment')
     def create_payment(self, request):
-        # Input: { "pack_id": 1, "job_id": 10, "method": "MOMO" }
         pack_id = request.data.get('pack_id')
         job_id = request.data.get('job_id')
         method = request.data.get('method')
@@ -50,14 +47,7 @@ class ReceiptViewSet(viewsets.ViewSet, generics.ListAPIView):
 
         payment_url = ""
         if method == 'MOMO':
-            # Tạo Order ID duy nhất (VD: JOBLINK_RECPT_10)
             order_id = f"JOBLINK_{receipt.id}_{int(timezone.now().timestamp())}"
-
-            # Cấu hình URL
-            # return_url: Nơi user được chuyển về sau khi thanh toán trên app MoMo (về lại App Mobile)
-            # notify_url: Nơi MoMo gọi ngầm để báo kết quả (IPN) - PHẢI LÀ LINK PUBLIC (Ngrok)
-
-            # Tạm thời để localhost, tí nữa chạy Ngrok sẽ thay domain vào đây
             domain = "https://0559111a69ee.ngrok-free.app"
             return_url = "exp://192.168.1.14:8081"
             notify_url = f"{domain}/payments/receipts/momo-ipn/"
@@ -110,20 +100,16 @@ class ReceiptViewSet(viewsets.ViewSet, generics.ListAPIView):
         data = request.data
         print("MOMO IPN DATA:", data)
 
-        # Kiểm tra chữ ký (Signature) verify lại cho chắc ăn (Bỏ qua để đơn giản hóa MVP)
 
         if str(data.get('resultCode')) == '0':  # 0 là thành công
             order_id = data.get('orderId')
             try:
-                # Tìm hóa đơn theo order_id đã lưu lúc tạo
+
                 receipt = Receipt.objects.get(transaction_id=order_id)
                 if not receipt.is_paid:
                     receipt.is_paid = True
                     receipt.save()
-
-                    # Kích hoạt dịch vụ (Đẩy tin/VIP...)
                     if receipt.related_job:
-                        # Logic kích hoạt...
                         pass
 
                 return Response(status=204)
@@ -149,7 +135,6 @@ class ReceiptViewSet(viewsets.ViewSet, generics.ListAPIView):
         return HttpResponseRedirect(f"joblink://payment-result?status=failed&order_id={vnp_TxnRef}")
     @action(methods=['post'], detail=False, url_path='confirm-payment')
     def confirm_payment(self, request):
-        # Input: { "receipt_id": 5 }
         receipt_id = request.data.get('receipt_id')
         try:
             receipt = Receipt.objects.get(pk=receipt_id, user=request.user)
@@ -157,18 +142,12 @@ class ReceiptViewSet(viewsets.ViewSet, generics.ListAPIView):
             if receipt.is_paid:
                 return Response({"msg": "Đã thanh toán rồi."}, status=200)
 
-            # 1. Cập nhật trạng thái hóa đơn
             receipt.is_paid = True
             receipt.transaction_id = f"TRANS_{timezone.now().timestamp()}"
             receipt.save()
 
-            # 2. KÍCH HOẠT DỊCH VỤ (Logic quan trọng nhất)
-            # Ví dụ: Mua gói đẩy tin -> Update Job
             if receipt.related_job:
                 job = receipt.related_job
-                # Giả sử trong Job model bạn thêm field 'is_featured' hoặc 'expiration_date'
-                # job.is_featured = True
-                # job.featured_until = timezone.now() + timedelta(days=receipt.service_pack.duration_days)
                 job.save()
 
             return Response({"message": "Thanh toán thành công! Dịch vụ đã được kích hoạt."}, status=200)

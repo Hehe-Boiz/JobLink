@@ -11,12 +11,8 @@ const BuyService = ({ route, navigation }) => {
     const [paymentMethod, setPaymentMethod] = useState('MOMO');
     const [loading, setLoading] = useState(false);
     useEffect(() => {
-        // Hàm xử lý khi App được mở từ Deep Link
         const handleDeepLink = (event) => {
             let data = Linking.parse(event.url);
-            
-            // data.path sẽ là 'payment-result'
-            // data.queryParams sẽ là { status: 'success', order_id: '...' }
             
             if (data.path === 'payment-result') {
                 if (data.queryParams.status === 'success') {
@@ -28,10 +24,8 @@ const BuyService = ({ route, navigation }) => {
             }
         };
 
-        // 1. Lắng nghe khi App đang chạy ngầm (Background)
         const subscription = Linking.addEventListener('url', handleDeepLink);
 
-        // 2. Kiểm tra nếu App đang tắt hẳn mà được bật lên (Cold Start)
         Linking.getInitialURL().then((url) => {
             if (url) handleDeepLink({ url });
         });
@@ -67,11 +61,9 @@ const BuyService = ({ route, navigation }) => {
                 let res = await authApis(token).post(endpoints['create_payment'], payload);
 
                 if (res.data.payment_url) {
-                    // Mở app MoMo hoặc Trình duyệt để thanh toán
+ 
                     Linking.openURL(res.data.payment_url);
 
-                    // Sau khi mở, bạn có thể hiện một cái Modal hỏi người dùng
-                    // "Bạn đã thanh toán xong chưa?" -> Nếu bấm "Rồi" thì gọi API kiểm tra lại trạng thái
                     Alert.alert(
                         "Đang thanh toán",
                         "Vui lòng hoàn tất thanh toán trên trình duyệt",

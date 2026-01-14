@@ -51,10 +51,8 @@ def create_vnpay_payment_url(
     if not tmn_code or not hash_secret:
         raise ValueError("Missing VNPAY_TMN_CODE / VNPAY_HASH_SECRET in settings")
 
-    # Theo techspec: amount gửi sang VNPAY = amount * 100:contentReference[oaicite:5]{index=5}
     vnp_amount = int(amount_vnd) * 100
 
-    # vnp_CreateDate theo GMT+7 (Vietnam). Techspec mô tả dạng yyyyMMddHHmmss:contentReference[oaicite:6]{index=6}
     vn_tz = timezone(timedelta(hours=7))
     now_vn = datetime.now(tz=vn_tz)
     create_date = now_vn.strftime("%Y%m%d%H%M%S")
@@ -67,23 +65,23 @@ def create_vnpay_payment_url(
         "vnp_Amount": str(vnp_amount),
         "vnp_CurrCode": "VND",
         "vnp_TxnRef": str(order_id),
-        "vnp_OrderInfo": _strip_accents(order_desc)[:255],  # không dấu:contentReference[oaicite:7]{index=7}
-        "vnp_OrderType": "other",  # required trong bảng tham số:contentReference[oaicite:8]{index=8}
+        "vnp_OrderInfo": _strip_accents(order_desc)[:255],
+        "vnp_OrderType": "other",
         "vnp_Locale": "vn",
         "vnp_ReturnUrl": return_url,
         "vnp_IpAddr": ip_addr,
         "vnp_CreateDate": create_date,
-        "vnp_ExpireDate": expire_date,  # optional nhưng nên có
+        "vnp_ExpireDate": expire_date,
     }
 
-    # Lọc params rỗng (cực quan trọng):contentReference[oaicite:9]{index=9}
+
     items = [(k, v) for k, v in vnp_params.items() if v is not None and str(v) != ""]
     items.sort(key=lambda x: x[0])  # sort alphabet
 
-    # hashData: key=value&key=value (KHÔNG kèm vnp_SecureHash):contentReference[oaicite:10]{index=10}
+
     hash_data = "&".join([f"{k}={v}" for k, v in items])
 
-    # query: URL-encode key & value
+
     query = "&".join([f"{quote_plus(k)}={quote_plus(str(v))}" for k, v in items])
 
     secure_hash = _hmac_sha512(hash_secret, hash_data)
@@ -119,7 +117,6 @@ def verify_vnpay_signature(query_params: dict) -> bool:
     hash_data = "&".join([f"{k}={v}" for k, v in items])
     calculated = _hmac_sha512(hash_secret, hash_data)
 
-    # compare constant-time
     return hmac.compare_digest(calculated.lower(), received_hash.lower())
 
 

@@ -51,7 +51,7 @@ class CandidateJobDetailSerializer(CandidateJobSerializer):
 
 
 class EmployerJobSerializer(serializers.ModelSerializer):
-    # Hiển thị thêm tên category/location cho dễ đọc
+
     category_name = serializers.CharField(source="category.name", read_only=True)
     location_name = serializers.CharField(source="location.name", read_only=True)
 
@@ -102,7 +102,7 @@ class EmployerJobSerializer(serializers.ModelSerializer):
         if salary_min is not None and salary_max is not None and salary_min > salary_max:
             raise serializers.ValidationError({"salary_min": "salary_min must be <= salary_max"})
 
-        # Optional rule (bạn có thể bỏ nếu không muốn chặn)
+
         if deadline is not None and deadline < timezone.now().date():
             raise serializers.ValidationError({"deadline": "deadline must be today or in the future"})
 
@@ -113,7 +113,7 @@ class EmployerJobSerializer(serializers.ModelSerializer):
         if not ep:
             raise serializers.ValidationError("Employer profile not found")
 
-        # ep.is_verified có thể là field hoặc @property (tuỳ bạn refactor)
+
         if not getattr(ep, "is_verified", False):
             raise serializers.ValidationError("Employer is not approved/verified yet")
         return ep
@@ -135,7 +135,7 @@ class EmployerJobSerializer(serializers.ModelSerializer):
         return job
 
     def update(self, instance, validated_data):
-        # Không cho sửa posted_by/company_name bằng API
+
         validated_data.pop("posted_by", None)
         validated_data.pop("company_name", None)
 
@@ -151,12 +151,12 @@ class EmployerJobSerializer(serializers.ModelSerializer):
 
 
 class CandidateBookmarkJobSerializer(serializers.ModelSerializer):
-    job = CandidateJobSerializer(read_only=True)  # chỉ dùng cho chiều dữ liệu đi ra
+    job = CandidateJobSerializer(read_only=True)
 
     job_id = serializers.PrimaryKeyRelatedField(
-        queryset=Job.objects.filter(active=True), # giới hạn phạm vi tìm kiếm
-        source="job", # gán vào trường job của Bookmark sau khi tìm thấy
-        write_only=True # dùng cho chiều dữ liệu đi vào
+        queryset=Job.objects.filter(active=True),
+        source="job",
+        write_only=True
     )
 
     class Meta:

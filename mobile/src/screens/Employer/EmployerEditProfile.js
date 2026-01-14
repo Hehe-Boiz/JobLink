@@ -53,7 +53,7 @@ const EmployerEditProfile = ({ navigation }) => {
         }
     }, [profile]);
 
-    // 2. Hàm chọn ảnh
+    
     const pickImage = async () => {
         let result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ImagePicker.Images,
@@ -67,12 +67,12 @@ const EmployerEditProfile = ({ navigation }) => {
         }
     };
 
-    // Helper đổi text
+    
     const handleChange = (field, value) => {
         setFormData(prev => ({ ...prev, [field]: value }));
     };
 
-    // 3. Hàm Lưu thay đổi
+    
     const handleSave = async () => {
         setLoading(true);
         try {
@@ -145,7 +145,7 @@ const EmployerEditProfile = ({ navigation }) => {
         <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
             <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
 
-                {/* Header */}
+                
                 <View style={styles.header}>
                     <TouchableOpacity onPress={() => navigation.goBack()}>
                         <MaterialCommunityIcons name="arrow-left" size={24} color="#130160" />
@@ -156,7 +156,7 @@ const EmployerEditProfile = ({ navigation }) => {
 
                 <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
 
-                    {/* Avatar Upload */}
+                    
                     <View style={styles.editAvatarContainer}>
                         <TouchableOpacity onPress={pickImage}>
                             <Image
@@ -170,7 +170,7 @@ const EmployerEditProfile = ({ navigation }) => {
                         <Text style={{ marginTop: 10, color: '#95969D', fontSize: 13 }}>Chạm để đổi ảnh đại diện</Text>
                     </View>
 
-                    {/* Phần 1: Thông tin cá nhân */}
+                    
                     <View style={{ paddingHorizontal: 20 }}>
                         <View style={styles.formSection}>
                             <Text style={styles.formTitle}>Thông tin cá nhân</Text>
@@ -198,7 +198,7 @@ const EmployerEditProfile = ({ navigation }) => {
                             />
                         </View>
 
-                        {/* Phần 2: Thông tin công ty */}
+                        
                         <View style={styles.formSection}>
                             <Text style={styles.formTitle}>Thông tin công ty</Text>
 
@@ -224,7 +224,7 @@ const EmployerEditProfile = ({ navigation }) => {
                             />
                         </View>
 
-                        {/* Nút Save */}
+                       
                         <Button
                             mode="contained"
                             onPress={handleSave}

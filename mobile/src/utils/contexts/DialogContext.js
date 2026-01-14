@@ -6,7 +6,6 @@ const DialogContext = createContext();
 export const DialogProvider = ({ children }) => {
     const [visible, setVisible] = useState(false);
     
-    // State cấu hình mặc định
     const [config, setConfig] = useState({
         title: '',
         content: '',
@@ -17,12 +16,6 @@ export const DialogProvider = ({ children }) => {
         onCancel: null,
         showCancel: false,
     });
-
-    /**
-     * Hàm gọi Dialog đa năng
-     * @param {Object} options 
-     * options = { title, content, type, onConfirm, onCancel, showCancel, confirmText, cancelText }
-     */
     const showDialog = (options) => {
         setConfig({
             title: options.title || 'Thông báo',

@@ -14,22 +14,22 @@ const AppDialog = ({
     cancelText = 'HỦY',
     onConfirm,
     onCancel,
-    showCancel = false // Cờ để bật chế độ Confirm
+    showCancel = false 
 }) => {
 
-    // 1. Cấu hình Icon và Màu sắc động theo Type
+    
     const config = {
         success: {
-            icon: 'https://cdn-icons-png.flaticon.com/512/148/148767.png', // Tích xanh
-            color: '#130160', // Màu chủ đạo
+            icon: 'https://cdn-icons-png.flaticon.com/512/148/148767.png',
+            color: '#130160', 
         },
         error: {
-            icon: 'https://cdn-icons-png.flaticon.com/512/190/190406.png', // Dấu X đỏ
+            icon: 'https://cdn-icons-png.flaticon.com/512/190/190406.png', 
             color: '#FF4D4D',
         },
         warning: {
-            icon: 'https://cdn-icons-png.flaticon.com/512/1008/1008948.png', // Dấu than vàng
-            color: '#FF9228', // Màu cam cảnh báo
+            icon: 'https://cdn-icons-png.flaticon.com/512/1008/1008948.png', 
+            color: '#FF9228',
         }
     };
 
@@ -70,7 +70,7 @@ const AppDialog = ({
                     </Dialog.Content>
 
                     <Dialog.Actions style={styles.dialogActions}>
-                        {/* Nút Hủy (Chỉ hiện khi showCancel = true) */}
+                    
                         {showCancel && (
                             <Button
                                 mode="outlined"
@@ -83,7 +83,7 @@ const AppDialog = ({
                             </Button>
                         )}
 
-                        {/* Nút Xác nhận */}
+                       
                         <Button
                             mode="contained"
                             onPress={handleConfirm}

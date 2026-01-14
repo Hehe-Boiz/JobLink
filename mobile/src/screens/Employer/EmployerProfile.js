@@ -14,7 +14,7 @@ import { useEmployer } from '../../hooks/useEmployer';
 import { CLIENT_ID, CLIENT_SECRET } from '@env';
 const EmployerProfile = ({ navigation }) => {
     const { showDialog } = useDialog();
-    // Giả lập toggle switch 
+   
     const [isNotiEnabled, setIsNotiEnabled] = useState(true);
     const [user, dispatch] = useContext(MyUserContext);
     const { profile, clearEmployerProfile } = useEmployer();

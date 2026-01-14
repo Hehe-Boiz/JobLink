@@ -158,7 +158,7 @@ const EmployerJobs = ({ navigation }) => {
                     refreshControl={
                         <RefreshControl
                             refreshing={loading && page === 1}
-                            onRefresh={() => setPage(1)} // Reset về trang 1 khi refresh
+                            onRefresh={() => setPage(1)} 
                         />
                     }
                     renderItem={({ item }) => (

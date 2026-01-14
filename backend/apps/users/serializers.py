@@ -13,7 +13,6 @@ class UserSerializer(MediaURLSerializer):
 
     class Meta:
         model = User
-        # bạn có thể bỏ bớt field nếu muốn ngắn hơn
         fields = [
             "id",
             "username",
@@ -30,7 +29,6 @@ class UserSerializer(MediaURLSerializer):
         ]
         extra_kwargs = {
             "password": {"write_only": True, "required": False},
-            # role không cho đổi lung tung qua API user update (đổi role do admin)
             "role": {"read_only": True},
             "created_date": {"read_only": True},
         }
@@ -93,7 +91,6 @@ class EmployerProfileSerializer(MediaURLSerializer):
 
 
 class AdminEmployerSerializer(EmployerProfileSerializer):
-    # thêm thông tin user đầy đủ để admin xem nhanh
     user_detail = UserSerializer(source="user", read_only=True)
     verified_by_detail = UserSerializer(source="verified_by", read_only=True)
 
@@ -118,19 +115,14 @@ class BaseRegisterSerializer(serializers.Serializer):
         return value
 
 
-# --- 1. Candidate Register ---
 class CandidateRegisterSerializer(BaseRegisterSerializer):
     @transaction.atomic
     def create(self, validated_data):
-        # Tách data
+
         password = validated_data.pop("password")
         email = validated_data.pop("email")
-        # Profile data
-
-        # User basic data (first_name, last_name...)
         user_data = validated_data
 
-        # Tạo User
         user = User.objects.create_user(
             username=email,
             email=email,
@@ -139,14 +131,13 @@ class CandidateRegisterSerializer(BaseRegisterSerializer):
             **user_data
         )
 
-        # Tạo Profile
         CandidateProfile.objects.create(
             user=user,
         )
         return user
 
 
-# --- 2. Employer Register ---
+
 class EmployerRegisterSerializer(BaseRegisterSerializer):
     company_name = serializers.CharField(required=True)
     tax_code = serializers.CharField(required=False, allow_blank=True)
@@ -156,13 +147,11 @@ class EmployerRegisterSerializer(BaseRegisterSerializer):
     def create(self, validated_data):
         password = validated_data.pop("password")
         email = validated_data.pop("email")
-        # Profile data
         company_name = validated_data.pop("company_name")
         tax_code = validated_data.pop("tax_code", None)
         website = validated_data.pop("website", None)
         user_data = validated_data
         print(user_data)
-        # Tạo User
         user = User.objects.create_user(
             username=email,
             email=email,
@@ -170,8 +159,6 @@ class EmployerRegisterSerializer(BaseRegisterSerializer):
             role=UserRole.EMPLOYER,
             **user_data
         )
-
-        # Tạo Profile
         EmployerProfile.objects.create(
             user=user,
             company_name=company_name,

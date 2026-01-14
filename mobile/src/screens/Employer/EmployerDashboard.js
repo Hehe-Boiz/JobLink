@@ -101,7 +101,7 @@ const EmployerDashboard = ({ navigation }) => {
                     <StatCard icon="account-group-outline" color="#FF9228" bg="#FFF4E5" value="38" label="Hồ sơ mới" />
                 </View>
 
-                {/* 1. LỌC NGÀNH NGHỀ */}
+                
                 <View style={{ marginTop: 10,paddingHorizontal: 20 }}>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                         {categories.map((cat) => (
@@ -126,7 +126,7 @@ const EmployerDashboard = ({ navigation }) => {
                     </ScrollView>
                 </View>
 
-                {/* 2. KHUNG BIỂU ĐỒ */}
+               
                 <View style={{ marginTop: 20, marginHorizontal: 20 }}>
                     <View style={{ backgroundColor: 'white', borderRadius: 20, padding: 15, elevation: 4 }}>
                         
@@ -134,7 +134,7 @@ const EmployerDashboard = ({ navigation }) => {
                             Tỷ lệ chuyển đổi (App/View)
                         </Text>
 
-                        {/* Chart */}
+                        
                         <LineChart
                             data={chartData}
                             width={screenWidth - 70}
@@ -148,16 +148,16 @@ const EmployerDashboard = ({ navigation }) => {
                             withOuterLines={false}
                         />
 
-                        {/* 3. BỘ LỌC THỜI GIAN */}
+                        
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 15 }}>
-                            {/* Cột trái: Chọn Loại (Tháng/Quý/Năm) */}
+                            
                             <View style={{ flexDirection: 'row', backgroundColor: '#F5F7FA', borderRadius: 10, padding: 3 }}>
                                 <FilterBtn title="Tháng" active={period === 'month'} onPress={() => setPeriod('month')} />
                                 <FilterBtn title="Quý" active={period === 'quarter'} onPress={() => setPeriod('quarter')} />
                                 <FilterBtn title="Năm" active={period === 'year'} onPress={() => setPeriod('year')} />
                             </View>
 
-                            {/* Cột phải: Chọn Năm (Chỉ hiện khi không phải mode Year) */}
+                            
                             {period !== 'year' && (
                                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                                     <MaterialCommunityIcons name="calendar-month" size={20} color="#95969D" style={{marginRight: 5}}/>

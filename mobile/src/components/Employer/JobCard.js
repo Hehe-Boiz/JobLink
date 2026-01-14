@@ -8,8 +8,6 @@ const JobCard = ({ job, onPress, onEdit, onDelete }) => {
 
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
-
-      {/* 1. Header: Title & Status */}
       <View style={styles.rowBetween}>
         <View style={{ flex: 1, marginRight: 10 }}>
           <Text style={styles.title} numberOfLines={1}>{job.title}</Text>
@@ -20,7 +18,7 @@ const JobCard = ({ job, onPress, onEdit, onDelete }) => {
         </View>
       </View>
 
-      {/* 2. Info: Location & Type */}
+
       <View style={styles.infoRow}>
         <View style={styles.infoItem}>
           <MaterialCommunityIcons name="map-marker-outline" size={16} color="#95969D" />
@@ -46,27 +44,24 @@ const JobCard = ({ job, onPress, onEdit, onDelete }) => {
 
 
       <View style={styles.footer}>
-        {/* Bên trái: Hạn nộp */}
+
         <View style={styles.dateContainer}>
           <MaterialCommunityIcons name="clock-outline" size={14} color="#524B6B" />
           <Text style={styles.dateText}>Hạn: {formatDate(job.deadline)}</Text>
         </View>
 
-        {/* Bên phải: Group Action (Stats + Edit + Delete) */}
+   
         <View style={styles.actionRow}>
 
-          {/* Stats (Số lượng HS) */}
           <View style={styles.statsContainer}>
             <MaterialCommunityIcons name="account-group" size={16} color="#130160" />
             <Text style={styles.statText}>12</Text>
           </View>
 
-          {/* Nút Sửa */}
           <TouchableOpacity style={styles.iconBtn} onPress={onEdit}>
             <MaterialCommunityIcons name="pencil-outline" size={20} color="#2E5CFF" />
           </TouchableOpacity>
 
-          {/* Nút Xóa */}
           <TouchableOpacity style={styles.iconBtn} onPress={onDelete}>
             <MaterialCommunityIcons name="trash-can-outline" size={20} color="#FF4D4D" />
           </TouchableOpacity>

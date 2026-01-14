@@ -50,7 +50,6 @@ class EmployerApplicationSerializer(serializers.ModelSerializer):
     def validate_rating(self, value):
         if value is None:
             return value
-        # Bạn có thể đổi range theo ý (vd 0-100). Model đang integer nên MVP: 1..5
         if not (1 <= value <= 5):
             raise serializers.ValidationError("rating must be between 1 and 5")
         return value

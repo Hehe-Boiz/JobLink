@@ -5,7 +5,7 @@ import {MaterialCommunityIcons} from '@expo/vector-icons';
 import {useNavigation} from '@react-navigation/native';
 
 const CustomHeader = ({navigation, iconColor = "#1A1D1F", showMenu = true}) => {
-    // const navigation = useNavigation();
+
     return (
         <View style={styles.headerNav}>
             <TouchableOpacity onPress={() => navigation?.canGoBack() ? navigation.goBack() : null}>

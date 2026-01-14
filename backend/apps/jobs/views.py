@@ -14,20 +14,20 @@ from rest_framework.decorators import action
 from .filters import JobFilter
 
 
-# danh sách và chi tiết job
+
 class JobViewCandidate(viewsets.ReadOnlyModelViewSet):
     queryset = Job.objects.filter(deadline__gte=timezone.now())
     pagination_class = StandardResultsSetPagination
 
     filter_backends = [
-        DjangoFilterBackend, # Lọc theo các trường cố định
-        filters.SearchFilter, # hỗ trợ tìm kiếm theo từ khóa
-        filters.OrderingFilter, # sắp xếp kết quả
+        DjangoFilterBackend,
+        filters.SearchFilter,
+        filters.OrderingFilter,
     ]
     filterset_class = JobFilter
-    search_fields = ['title', 'company_name']  # cấu hình cho SearchFilter
-    ordering_fields = ['salary_min', 'salary_max', 'created_date']  # các trường người dùng được sắp xếp
-    ordering = ['-created_date']  # sắp xếp mặc định
+    search_fields = ['title', 'company_name']
+    ordering_fields = ['salary_min', 'salary_max', 'created_date']
+    ordering = ['-created_date']
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -112,10 +112,9 @@ class BookmarkJobViewSet(viewsets.ModelViewSet):
         return BookmarkJob.objects.none()
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)  # gán vào giai đoạn này vì backend chỉ tin chính nó
+        serializer.save(user=self.request.user)
 
     def create(self, request, *args, **kwargs):
-        # Bắt lỗi nếu đã lưu rồi mà bấm lưu tiếp
         try:
             return super().create(request, *args, **kwargs)
         except Exception as e:

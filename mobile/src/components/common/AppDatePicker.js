@@ -52,12 +52,12 @@ const AppDatePicker = ({ label, value, onDateChange, placeholder = "Chọn ngày
       {show && (
         <DateTimePicker
           testID="dateTimePicker"
-          value={value || new Date()} // Nếu chưa chọn thì mặc định là hôm nay
+          value={value || new Date()} 
           mode="date"
           display={Platform.OS === 'ios' ? 'spinner' : 'default'}
           onChange={onChange}
-          minimumDate={new Date()} // Không cho chọn quá khứ
-          accentColor="#130160"    // Màu chủ đạo (Android 12+)
+          minimumDate={new Date()} 
+          accentColor="#130160"  
         />
       )}
     </View>
@@ -82,7 +82,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#EAEAEA',
     borderRadius: 10,
-    height: 50, // Chiều cao bằng AppInput
+    height: 50, 
     paddingHorizontal: 15,
   },
   valueText: {

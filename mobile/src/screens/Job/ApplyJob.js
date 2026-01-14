@@ -9,9 +9,8 @@ import CustomHeader from "../../components/common/CustomHeader";
 import stylesJobDetail from "../../styles/Job/JobDetailStyles";
 import JobLogo from "../../components/Job/JobLogo";
 import CustomFooter from "../../components/common/CustomFooter";
-
 // const SUCCESS_IMG = 'https://cdn-icons-png.flaticon.com/512/7518/7518748.png';
-const SUCCESS_IMG = require('../../../assets/images/illustration.png')
+const SUCCESS_IMG = require('../../../assets/images/Illustration.png')
 
 const job = {
     title: 'UI/UX Designer',

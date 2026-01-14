@@ -1,5 +1,3 @@
-# backend/joblink/views.py
-
 from django.db.models import Count, Sum
 from django.utils import timezone
 from rest_framework.views import APIView
@@ -75,7 +73,6 @@ class EmployerStatsView(APIView):
                 data_points.append(get_efficiency(app_count))
 
         else:
-            # --- LỌC THEO THÁNG (T1 -> T12 của selected_year) ---
             for m in range(1, 13):
                 labels.append(f"T{m}")
 
@@ -87,7 +84,6 @@ class EmployerStatsView(APIView):
 
                 data_points.append(get_efficiency(app_count))
 
-        # 5. Lấy danh sách Category
         categories = JobCategory.objects.values('id', 'name')
 
         return Response({

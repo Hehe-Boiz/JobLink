@@ -7,12 +7,12 @@ import { ScrollView, KeyboardAvoidingView, Platform, Alert, Text, View } from 'r
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from 'react-native-paper';
 
-// IMPORT COMPONENTS ĐÃ TÁCH
+
 import AppHeader from '../../components/common/AppHeader';
 import AppInput from '../../components/common/AppInput';
 import ChipSelector from '../../components/Employer/ChipSelector';
 import Apis, { authApis, endpoints } from '../../utils/Apis';
-// Style import (Nếu cần style riêng cho container)
+
 import styles from '../../styles/Employer/EmployerStyles';
 import AppSelector from '../../components/common/AppSelector';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -21,7 +21,7 @@ import { validateForm } from '../../utils/validate/Employer/ValidatePostJob';
 import { useDialog } from '../../hooks/useDialog';
 
 const PostJob = ({ navigation, route }) => {
-    // 1. State
+
     const [jobData, setJobData] = useState({
         title: '', location: '', address: '', salaryMin: '', salaryMax: '',
         description: '', requirements: '', benefits: '', deadline: null
@@ -90,7 +90,7 @@ const PostJob = ({ navigation, route }) => {
                 description: jobData.description,
                 requirements: jobData.requirements,
                 benefits: jobData.benefits,
-                deadline: formattedDeadline // YYYY-MM-DD
+                deadline: formattedDeadline 
             };
 
             console.log("Sending Payload:", payload);
@@ -192,7 +192,7 @@ const PostJob = ({ navigation, route }) => {
                         value={jobData.deadline}
                         onDateChange={(date) => updateData('deadline', date)}
                     />
-                    {/* PHẦN 2: LƯƠNG */}
+                    
                     <Text style={styles.sectionTitle}>2. Mức lương (Triệu VNĐ)</Text>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                         <AppInput

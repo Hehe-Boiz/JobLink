@@ -61,7 +61,6 @@ class CandidateApplicationViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         instance = serializer.instance
 
-        # không được sửa khi nhà tuyển dụng đã xem
         if instance.status != 'SUBMITTED':
             raise PermissionDenied("Hồ sơ đã được Nhà tuyển dụng xử lý, bạn không thể chỉnh sửa nữa.")
 

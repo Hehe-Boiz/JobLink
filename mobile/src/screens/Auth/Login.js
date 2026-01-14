@@ -5,7 +5,6 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-// 1. Import Styles & API & Context
 import styles from '../../styles/Auth/LoginStyles';
 import Apis, { authApis, endpoints } from '../../utils/Apis';
 import { MyUserContext } from '../../utils/contexts/MyContext';
@@ -48,7 +47,7 @@ const Login = ({ route }) => {
     useEffect(() => {
         GoogleSignin.configure({
             webClientId: '665244573266-77l5gm6jcvsimql5jntqc6g102geoh09.apps.googleusercontent.com',
-            offlineAccess: true, // Để lấy refresh token nếu cần
+            offlineAccess: true, 
             forceCodeForRefreshToken: true,
         });
     }, []);
@@ -137,7 +136,7 @@ const Login = ({ route }) => {
             setLoading(false);
         }
     };
-    // Hàm Validate
+    
     const validate = () => {
         if (!user.username || !user.password) {
             setErr(true);

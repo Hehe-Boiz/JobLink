@@ -7,4 +7,4 @@ class BaseModel(models.Model):
     updated_date = models.DateTimeField(auto_now=True)
 
     class Meta:
-        abstract = True # thông báo database không tạo bảng
+        abstract = True

@@ -83,7 +83,7 @@ class AdminEmployerViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class GoogleLoginView(APIView):
-    permission_classes = [AllowAny]  # Cho phép ai cũng gọi được
+    permission_classes = [AllowAny]
 
     def post(self, request):
         token = request.data.get('token')
@@ -127,8 +127,6 @@ class GoogleLoginView(APIView):
                 user=user, application=app_oauth, token=generate_token(),
                 access_token=access_token
             )
-
-            # Trả về Token để App lưu vào máy
             return Response({
                 'access_token': access_token.token,
                 'refresh_token': refresh_token.token,

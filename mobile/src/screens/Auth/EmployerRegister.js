@@ -15,7 +15,7 @@ const EmployerRegister = () => {
 
     // --- 1. CẤU HÌNH INPUT (Giống CandidateRegister nhưng có thêm thuộc tính 'step') ---
     const info = [
-        // BƯỚC 1: Thông tin cá nhân
+        
         {
             title: "Họ (Last Name)",
             field: "last_name",
@@ -43,7 +43,7 @@ const EmployerRegister = () => {
             keyboardType: "phone-pad"
         },
 
-        // BƯỚC 2: Thông tin công ty
+        
         {
             title: "Tên công ty",
             field: "company_name",
@@ -64,7 +64,7 @@ const EmployerRegister = () => {
             autoCapitalize: "none"
         },
 
-        // BƯỚC 3: Mật khẩu
+        
         {
             title: "Mật khẩu",
             field: "password",
@@ -81,27 +81,27 @@ const EmployerRegister = () => {
         }
     ];
 
-    // State quản lý dữ liệu form & hiển thị pass
+    
     const [formData, setFormData] = useState({});
     const [showPass, setShowPass] = useState({});
-    const [err, setErr] = useState(false); // Dùng để highlight lỗi confirm pass
+    const [err, setErr] = useState(false);
 
     const updateData = (key, value) => {
         setFormData({ ...formData, [key]: value });
-        if (err) setErr(false); // Reset lỗi khi gõ lại
+        if (err) setErr(false); 
     };
 
     const toggleShow = (field) => {
         setShowPass(prev => ({ ...prev, [field]: !prev[field] }));
     };
 
-    // --- HÀM RENDER INPUT ĐỘNG THEO BƯỚC ---
+    
     const renderInputsForStep = (currentStep) => {
-        // Lọc ra các field thuộc bước hiện tại
+       
         const fields = info.filter(item => item.step === currentStep);
 
         return fields.map((item) => {
-            // Logic check lỗi cho password
+            
             const isErrorField = err && (item.field === 'password' || item.field === 'confirm');
 
             return (
@@ -134,7 +134,7 @@ const EmployerRegister = () => {
         });
     };
 
-    // --- LOGIC NAVIGATION & VALIDATE TỪNG BƯỚC ---
+    
     const handleNext = () => {
         if (step === 1) {
             if (!formData.first_name || !formData.last_name || !formData.email || !formData.phone) {
@@ -158,7 +158,7 @@ const EmployerRegister = () => {
         else navigation.goBack();
     };
 
-    // --- LOGIC GỌI API ---
+    
     const handleRegister = async () => {
         if (formData.password !== formData.confirm) {
             setErr(true);
@@ -170,7 +170,7 @@ const EmployerRegister = () => {
         try {
             let form = new FormData();
 
-            // Lấy tất cả key trong info (trừ confirm) để append vào form
+            
             info.forEach(item => {
                 if (item.field !== 'confirm' && formData[item.field]) {
                     form.append(item.field, formData[item.field]);
@@ -229,7 +229,7 @@ const EmployerRegister = () => {
                         <Text style={styles.tagline}>Đăng ký nhà tuyển dụng</Text>
                     </View>
 
-                    {/* Progress Bar */}
+                    
                     <View style={styles.progressContainer}>
                         {[1, 2, 3].map(s => (
                             <React.Fragment key={s}>
@@ -241,7 +241,7 @@ const EmployerRegister = () => {
                         ))}
                     </View>
 
-                    {/* FORM CONTAINER: Gọi hàm render động */}
+                    
                     <View style={styles.formContainer}>
                         <Text style={styles.sectionTitle}>
                             {step === 1 ? "Thông tin người liên hệ" : step === 2 ? "Thông tin doanh nghiệp" : "Thiết lập bảo mật"}
@@ -251,7 +251,7 @@ const EmployerRegister = () => {
                             <HelperText type="error" visible={err}>Mật khẩu KHÔNG khớp!</HelperText>
                         )}
 
-                        {/* --- RENDER CÁC Ô NHẬP TẠI ĐÂY --- */}
+                        
                         {renderInputsForStep(step)}
                     </View>
 

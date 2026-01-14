@@ -2,7 +2,7 @@ import urllib.parse
 from rest_framework import serializers
 class MediaURLSerializer(serializers.ModelSerializer):
 
-    media_fields = []  # ví dụ: ["avatar"], ["cv"]
+    media_fields = []
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
