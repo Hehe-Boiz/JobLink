@@ -1,101 +1,80 @@
-import React, {useState, useRef} from 'react';
+import React, { useState } from 'react';
 import {
     View,
-    StyleSheet,
     TextInput,
     TouchableOpacity,
-    Modal,
-    Dimensions,
     KeyboardAvoidingView,
     Platform,
     TouchableWithoutFeedback,
     Keyboard,
     ScrollView,
-    PanResponder,
-    Animated
 } from 'react-native';
-import {SafeAreaView} from 'react-native-safe-area-context';
-import {MaterialCommunityIcons} from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import CustomText from '../../components/common/CustomText';
-import styles from '../../styles/CandidateProfile/AddWorkExperienceStyles'
+import styles from '../../styles/CandidateProfile/AddWorkExperienceStyles';
+import ConfirmationSheet from '../../components/common/ConfirmationSheet';
 
-const {height: screenHeight} = Dimensions.get('window');
-const AddWorkExperience = ({navigation, route}) => {
+import MonthYearInput from '../../components/common/MonthYear/MonthYearInput';
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+const parseDateToPickerValue = (dateInput) => {
+    if (!dateInput) return null;
+    const d = new Date(dateInput);
+    if (isNaN(d.getTime())) return null;
+    return {
+        month: MONTHS[d.getMonth()],
+        year: d.getFullYear()
+    };
+};
+
+const convertPickerToDate = (pickerValue) => {
+    if (!pickerValue) return null;
+    const monthIndex = MONTHS.indexOf(pickerValue.month);
+    return new Date(pickerValue.year, monthIndex, 1);
+};
+
+const AddWorkExperience = ({ navigation, route }) => {
     const initialData = route?.params?.data || {};
     const isEdit = !!initialData.id;
 
     const [jobTitle, setJobTitle] = useState(initialData.title || '');
     const [company, setCompany] = useState(initialData.company || '');
-    const [startDate, setStartDate] = useState(initialData.startDate || '');
-    const [endDate, setEndDate] = useState(initialData.endDate || '');
+
+    const [startDate, setStartDate] = useState(parseDateToPickerValue(initialData.startDate));
+    const [endDate, setEndDate] = useState(parseDateToPickerValue(initialData.endDate));
+
     const [isCurrentPosition, setIsCurrentPosition] = useState(initialData.isCurrentPosition || false);
     const [description, setDescription] = useState(initialData.description || '');
 
-    const [showUndoSheet, setShowUndoSheet] = useState(false);
-
-    const translateY = useRef(new Animated.Value(0)).current;
-
-    const panResponder = useRef(
-        PanResponder.create({
-            onStartShouldSetPanResponder: () => true,
-            onMoveShouldSetPanResponder: (_, gesture) => {
-                return Math.abs(gesture.dy) > Math.abs(gesture.dx);
-            },
-            onPanResponderMove: (_, gesture) => {
-                if (gesture.dy > 0) {
-                    translateY.setValue(gesture.dy);
-                }
-            },
-            onPanResponderRelease: (_, gesture) => {
-                if (gesture.dy > 100) {
-                    closeSheet();
-                } else {
-                    Animated.spring(translateY, {
-                        toValue: 0,
-                        useNativeDriver: true,
-                        tension: 100,
-                        friction: 10,
-                    }).start();
-                }
-            },
-        })
-    ).current;
+    const [showSheet, setShowSheet] = useState(false);
+    const [sheetType, setSheetType] = useState('undo'); // 'undo' | 'remove'
 
     const hasChanges = () => {
-        return jobTitle !== (initialData.title || '') ||
+        const initialStart = JSON.stringify(parseDateToPickerValue(initialData.startDate));
+        const currentStart = JSON.stringify(startDate);
+
+        const initialEnd = JSON.stringify(parseDateToPickerValue(initialData.endDate));
+        const currentEnd = JSON.stringify(endDate);
+
+        return (
+            jobTitle !== (initialData.title || '') ||
             company !== (initialData.company || '') ||
-            startDate !== (initialData.startDate || '') ||
-            endDate !== (initialData.endDate || '') ||
+            currentStart !== initialStart ||
+            currentEnd !== initialEnd ||
             isCurrentPosition !== (initialData.isCurrentPosition || false) ||
-            description !== (initialData.description || '');
-    };
-
-    const openSheet = () => {
-        translateY.setValue(0);
-        setShowUndoSheet(true);
-    };
-
-    const closeSheet = () => {
-        Animated.timing(translateY, {
-            toValue: screenHeight,
-            duration: 200,
-            useNativeDriver: true,
-        }).start(() => {
-            setShowUndoSheet(false);
-            translateY.setValue(0);
-        });
+            description !== (initialData.description || '')
+        );
     };
 
     const handleBack = () => {
         if (hasChanges()) {
             Keyboard.dismiss();
-            openSheet();
+            setSheetType('undo');
+            setShowSheet(true);
         } else {
-            if (navigation?.goBack) {
-                navigation.goBack();
-            } else {
-                console.log('Go back');
-            }
+            navigation?.goBack ? navigation.goBack() : console.log('Go back');
         }
     };
 
@@ -103,42 +82,37 @@ const AddWorkExperience = ({navigation, route}) => {
         const data = {
             title: jobTitle,
             company,
-            startDate,
-            endDate: isCurrentPosition ? 'Present' : endDate,
+            startDate: convertPickerToDate(startDate),
+            endDate: isCurrentPosition ? null : convertPickerToDate(endDate),
             isCurrentPosition,
             description
         };
         console.log('Saving work experience:', data);
-        if (navigation?.goBack) {
-            navigation.goBack();
-        } else {
-            console.log('Saved and go back');
+        navigation?.goBack ? navigation.goBack() : console.log('Saved and go back');
+    };
+
+    const handleToggleCurrentPosition = () => {
+        const newVal = !isCurrentPosition;
+        setIsCurrentPosition(newVal);
+        if (newVal) {
+            setEndDate(null);
         }
     };
 
-    const handleContinueFilling = () => {
-        closeSheet();
-    };
-
-    const handleUndoChanges = () => {
-        closeSheet();
-        setTimeout(() => {
-            if (navigation?.goBack) {
-                navigation.goBack();
-            } else {
-                console.log('Undo and go back');
-            }
-        }, 250);
-    };
-
-    const handleRemove = () => {
-        // TODO: Gọi API xóa work experience
-        console.log('Removing work experience:', initialData.id);
-        if (navigation?.goBack) {
-            navigation.goBack();
+    const onConfirmAction = () => {
+        setShowSheet(false);
+        if (sheetType === 'undo') {
+            navigation?.goBack ? navigation.goBack() : console.log('Undo');
         } else {
-            console.log('Removed and go back');
+            console.log('Removing work experience:', initialData.id);
+            navigation?.goBack ? navigation.goBack() : console.log('Removed');
         }
+    };
+
+    const handleRemovePress = () => {
+        Keyboard.dismiss();
+        setSheetType('remove');
+        setShowSheet(true);
     };
 
     return (
@@ -149,28 +123,17 @@ const AddWorkExperience = ({navigation, route}) => {
             >
                 <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                     <View style={styles.content}>
-                        {!showUndoSheet && (
-                            <TouchableOpacity
-                                onPress={handleBack}
-                                style={styles.backButton}
-                            >
-                                <MaterialCommunityIcons
-                                    name="arrow-left"
-                                    size={28}
-                                    color="#150B3D"
-                                />
-                            </TouchableOpacity>
-                        )}
-                        {showUndoSheet && <View style={styles.backButtonPlaceholder}/>}
+                        <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+                            <MaterialCommunityIcons name="arrow-left" size={28} color="#150B3D" />
+                        </TouchableOpacity>
 
                         <CustomText style={styles.title}>
                             {isEdit ? 'Edit work experience' : 'Add work experience'}
                         </CustomText>
 
-                        <ScrollView
-                            showsVerticalScrollIndicator={false}
-                            contentContainerStyle={styles.scrollContent}
-                        >
+                        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+
+                            {/* Job Title */}
                             <View style={styles.inputGroup}>
                                 <CustomText style={styles.label}>Job title</CustomText>
                                 <TextInput
@@ -182,6 +145,7 @@ const AddWorkExperience = ({navigation, route}) => {
                                 />
                             </View>
 
+                            {/* Company */}
                             <View style={styles.inputGroup}>
                                 <CustomText style={styles.label}>Company</CustomText>
                                 <TextInput
@@ -194,40 +158,37 @@ const AddWorkExperience = ({navigation, route}) => {
                             </View>
 
                             <View style={styles.dateRow}>
-                                <View style={styles.dateInput}>
-                                    <CustomText style={styles.label}>Start date</CustomText>
-                                    <TouchableOpacity style={styles.input}>
-                                        <TextInput
-                                            style={styles.dateText}
-                                            value={startDate}
-                                            onChangeText={setStartDate}
-                                            placeholder=""
-                                            placeholderTextColor="#AAA6B9"
-                                        />
-                                    </TouchableOpacity>
+                                <View style={{ flex: 1, marginRight: 10 }}>
+                                    <MonthYearInput
+                                        label="Start date"
+                                        value={startDate}
+                                        onChange={setStartDate}
+                                        placeholder="Select Date"
+                                    />
                                 </View>
-                                <View style={styles.dateInput}>
-                                    <CustomText style={styles.label}>End date</CustomText>
-                                    <TouchableOpacity
-                                        style={[styles.input, isCurrentPosition && styles.inputDisabled]}
-                                        disabled={isCurrentPosition}
-                                    >
-                                        <TextInput
-                                            style={[styles.dateText, isCurrentPosition && styles.dateTextDisabled]}
-                                            value={isCurrentPosition ? 'Present' : endDate}
-                                            onChangeText={setEndDate}
-                                            placeholder=""
-                                            placeholderTextColor="#AAA6B9"
-                                            editable={!isCurrentPosition}
+
+                                <View style={{ flex: 1, marginLeft: 10 }}>
+                                    {isCurrentPosition ? (
+                                        <View>
+                                            <CustomText style={styles.label}>End date</CustomText>
+                                            <View style={[styles.input, { backgroundColor: '#F9F9F9', justifyContent: 'center' }]}>
+                                                <CustomText style={{ color: '#AAA6B9' }}>Present</CustomText>
+                                            </View>
+                                        </View>
+                                    ) : (
+                                        <MonthYearInput
+                                            label="End date"
+                                            value={endDate}
+                                            onChange={setEndDate}
+                                            placeholder="Present"
                                         />
-                                    </TouchableOpacity>
+                                    )}
                                 </View>
                             </View>
 
-                            {/* Checkbox */}
                             <TouchableOpacity
                                 style={styles.checkboxRow}
-                                onPress={() => setIsCurrentPosition(!isCurrentPosition)}
+                                onPress={handleToggleCurrentPosition}
                                 activeOpacity={0.7}
                             >
                                 <View style={[styles.checkbox, isCurrentPosition && styles.checkboxChecked]}>
@@ -238,7 +199,6 @@ const AddWorkExperience = ({navigation, route}) => {
                                 <CustomText style={styles.checkboxLabel}>This is my position now</CustomText>
                             </TouchableOpacity>
 
-                            {/* Description */}
                             <View style={styles.inputGroup}>
                                 <CustomText style={styles.label}>Description</CustomText>
                                 <View style={styles.textAreaContainer}>
@@ -253,13 +213,14 @@ const AddWorkExperience = ({navigation, route}) => {
                                     />
                                 </View>
                             </View>
+
                         </ScrollView>
 
                         <View style={styles.buttonContainer}>
-                            {isEdit && (
+                             {isEdit && (
                                 <TouchableOpacity
                                     style={styles.removeButton}
-                                    onPress={handleRemove}
+                                    onPress={handleRemovePress}
                                     activeOpacity={0.8}
                                 >
                                     <CustomText style={styles.removeButtonText}>REMOVE</CustomText>
@@ -277,60 +238,12 @@ const AddWorkExperience = ({navigation, route}) => {
                 </TouchableWithoutFeedback>
             </KeyboardAvoidingView>
 
-            <Modal
-                visible={showUndoSheet}
-                animationType="slide"
-                transparent={true}
-                onRequestClose={closeSheet}
-            >
-                <TouchableWithoutFeedback onPress={closeSheet}>
-                    <View style={styles.modalOverlay}>
-                        {/* Header trong modal */}
-                        <SafeAreaView edges={['top']} style={styles.modalHeader}>
-                            <TouchableOpacity onPress={closeSheet} style={styles.closeButton}>
-                                <MaterialCommunityIcons name="close" size={28} color="#FFF"/>
-                            </TouchableOpacity>
-                        </SafeAreaView>
-
-                        <TouchableWithoutFeedback>
-                            <Animated.View
-                                style={[
-                                    styles.bottomSheet,
-                                    {transform: [{translateY}]}
-                                ]}
-                            >
-                                <View
-                                    style={styles.handleBarContainer}
-                                    {...panResponder.panHandlers}
-                                >
-                                    <View style={styles.sheetHandle}/>
-                                </View>
-
-                                <CustomText style={styles.sheetTitle}>Undo Changes ?</CustomText>
-                                <CustomText style={styles.sheetSubtitle}>
-                                    Are you sure you want to change what you entered?
-                                </CustomText>
-
-                                <TouchableOpacity
-                                    style={styles.continueButton}
-                                    onPress={handleContinueFilling}
-                                    activeOpacity={0.8}
-                                >
-                                    <CustomText style={styles.continueButtonText}>CONTINUE FILLING</CustomText>
-                                </TouchableOpacity>
-
-                                <TouchableOpacity
-                                    style={styles.undoButton}
-                                    onPress={handleUndoChanges}
-                                    activeOpacity={0.8}
-                                >
-                                    <CustomText style={styles.undoButtonText}>UNDO CHANGES</CustomText>
-                                </TouchableOpacity>
-                            </Animated.View>
-                        </TouchableWithoutFeedback>
-                    </View>
-                </TouchableWithoutFeedback>
-            </Modal>
+            <ConfirmationSheet
+                visible={showSheet}
+                type={sheetType}
+                onClose={() => setShowSheet(false)}
+                onConfirm={onConfirmAction}
+            />
         </SafeAreaView>
     );
 };

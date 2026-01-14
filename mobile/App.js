@@ -23,6 +23,21 @@ import CompanyDetail from "./src/screens/Candidate/CompanyDetail";
 import CandidateProfile from "./src/screens/CandidateProfile/CandidateProfile";
 import EditAboutMe from "./src/screens/CandidateProfile/EditAboutMe";
 import AddWorkExperience from "./src/screens/CandidateProfile/AddWorkExperience";
+import AddEducation from "./src/screens/CandidateProfile/AddEducation";
+import AddSkill from "./src/screens/CandidateProfile/AddSkill";
+import SkillList from "./src/screens/CandidateProfile/SkillList";
+import LanguageList from "./src/screens/CandidateProfile/LanguageList";
+import AddLanguage from "./src/screens/CandidateProfile/AddLanguage";
+import LanguageDetail from "./src/screens/CandidateProfile/LanguageDetail";
+import AppreciationForm from "./src/screens/CandidateProfile/AppreciationForm";
+import AddResume from "./src/screens/CandidateProfile/AddResume";
+import EmployerProfile from "./src/screens/Employer/EmployerProfile";
+import EditProfile from "./src/screens/CandidateProfile/EditProfile";
+import SettingsScreen from "./src/screens/CandidateProfile/Settings/SettingsScreen";
+import UpdatePasswordScreen from "./src/screens/CandidateProfile/Settings/UpdatePasswordScreen";
+import SavedJobsScreen from "./src/screens/Candidate/SavedJobsScreen";
+import NotificationsScreen from "./src/screens/Candidate/Notifications/NotificationsScreen";
+import NotificationDetailScreen from "./src/screens/Candidate/Notifications/NotificationDetailScreen";
 
 SplashScreen.preventAutoHideAsync();
 

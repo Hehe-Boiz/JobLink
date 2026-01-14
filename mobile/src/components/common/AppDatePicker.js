@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { TextInput } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import CustomText from "./CustomText";
 
 const AppDatePicker = ({ label, value, onDateChange, placeholder = "Chọn ngày...", required = false }) => {
   const [show, setShow] = useState(false);
@@ -30,9 +31,9 @@ const AppDatePicker = ({ label, value, onDateChange, placeholder = "Chọn ngày
     <View style={styles.container}>
 
       {label && (
-        <Text style={styles.label}>
+        <CustomText style={styles.label}>
           {label} {required && <Text style={{ color: 'red' }}>*</Text>}
-        </Text>
+        </CustomText>
       )}
 
       <TouchableOpacity 
@@ -40,9 +41,9 @@ const AppDatePicker = ({ label, value, onDateChange, placeholder = "Chọn ngày
         onPress={() => setShow(true)}
         activeOpacity={0.7}
       >
-        <Text style={[styles.valueText, !value && styles.placeholder]}>
+        <CustomText style={[styles.valueText, !value && styles.placeholder]}>
           {value ? formatDate(value) : placeholder}
-        </Text>
+        </CustomText>
         
 
         <MaterialCommunityIcons name="calendar-month-outline" size={24} color="#AAA6B9" />
@@ -68,7 +69,7 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   label: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
     color: '#524B6B',
     marginBottom: 8,
