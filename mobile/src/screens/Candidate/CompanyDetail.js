@@ -15,7 +15,7 @@ import styles from '../../styles/Candidate/CompanyDetail'
 const MOCK_COMPANY_INFO = {
     id: '1',
     logo: 'https://cdn-icons-png.flaticon.com/512/2991/2991148.png',
-    title: 'UI/UX Designer', // Hoặc tên công ty
+    title: 'UI/UX Designer',
     company: 'Google',
     location: 'California',
     postedTime: '1 day ago',

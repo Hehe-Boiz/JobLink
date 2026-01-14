@@ -95,6 +95,7 @@ const Login = ({route}) => {
                 }
                 navigation.navigate('EmployerMain');
             } else {
+                console.log('oke')
                 navigation.navigate('CandidateMain');
             }
 
@@ -201,13 +202,9 @@ const Login = ({route}) => {
                         } else {
                             const role = userRes.data.role;
                             console.log(role);
-                            if (role === 'EMPLOYER') {
-                                navigation.navigate('EmployerMain');
-
-                            } else {
-                                navigation.navigate('CandidateMain');
-                            }
                         }
+                    } else {
+                        navigation.navigate('CandidateMain');
                     }
                 }, 100);
             } catch (ex) {

@@ -11,7 +11,7 @@ const MOCK_COMPANIES = [
         id: '1',
         name: 'Google Inc',
         followers: '1M',
-        // Link png trực tiếp, ổn định
+
         logo: 'https://cdn-icons-png.flaticon.com/512/300/300221.png',
         bg: '#F4F8FF'
     },
@@ -71,7 +71,6 @@ const CompanyList = ({navigation}) => {
 
     return (
         <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-            {/*<CustomHeader navigation={navigation} title="" showMenu={false} />*/}
 
             <View style={styles.searchContainer}>
                 <View style={styles.searchBar}>

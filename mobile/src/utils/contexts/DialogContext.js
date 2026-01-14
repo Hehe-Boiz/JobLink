@@ -5,7 +5,7 @@ const DialogContext = createContext();
 
 export const DialogProvider = ({ children }) => {
     const [visible, setVisible] = useState(false);
-    
+
     const [config, setConfig] = useState({
         title: '',
         content: '',
@@ -16,19 +16,24 @@ export const DialogProvider = ({ children }) => {
         onCancel: null,
         showCancel: false,
     });
+
+    /**
+     * @param {Object} options 
+     * options = { title, content, type, onConfirm, onCancel, showCancel, confirmText, cancelText }
+     */
     const showDialog = (options) => {
         setConfig({
             title: options.title || 'Thông báo',
             content: options.content || '',
-            type: options.type || 'success', 
-            
+            type: options.type || 'success',
+
             confirmText: options.confirmText || (options.showCancel ? 'XÁC NHẬN' : 'ĐÓNG'),
             cancelText: options.cancelText || 'HỦY',
-            
+
             onConfirm: options.onConfirm || null,
             onCancel: options.onCancel || null,
-            
-            showCancel: options.showCancel || false, 
+
+            showCancel: options.showCancel || false,
         });
         setVisible(true);
     };

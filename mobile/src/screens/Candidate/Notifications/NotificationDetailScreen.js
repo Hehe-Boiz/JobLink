@@ -15,7 +15,6 @@ const Bullet = ({text}) => (
 const NotificationDetailScreen = ({navigation, route}) => {
     const item = route?.params?.item;
 
-    // Demo data giống ảnh “Your application”
     const data = {
         title: "UI/UX Designer",
         companyLine: "Google inc · California, USA",
