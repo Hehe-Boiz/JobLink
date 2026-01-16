@@ -5,6 +5,7 @@ from django.db import transaction
 from faker import Faker
 from datetime import timedelta
 
+from apps.payments.models import ServicePack
 # Import Models
 # Đảm bảo đường dẫn import đúng với cấu trúc dự án của bạn
 from apps.users.models import User, UserRole, VerificationStatus, CandidateProfile, EmployerProfile, EducationStatus
@@ -68,7 +69,6 @@ class Command(BaseCommand):
                         user=user,
                         company_name=fake.company(),
                         tax_code=fake.unique.ean13(),
-                        tax_code=fake.unique.ean13(),
                         website=fake.url(),
                         description=fake.paragraph(nb_sentences=3),
                         address=fake.address(),
@@ -123,6 +123,54 @@ class Command(BaseCommand):
                     if hasattr(u, 'candidate_profile'):
                         candidates_profiles.append(u.candidate_profile)
 
+            # ==========================================
+            # 4. TẠO GÓI DỊCH VỤ (SERVICE PACKS) - [MỚI]
+            # ==========================================
+            self.stdout.write("- Đang tạo Gói dịch vụ (Service Packs)...")
+
+            # Danh sách gói mẫu (Thực tế)
+            service_packs_data = [
+                {
+                    "name": "Đẩy tin nhanh (1 Ngày)",
+                    "price": 20000,
+                    "duration_days": 1,
+                    "pack_type": "JOB_PUSH",
+                    "description": "Đẩy tin lên đầu danh sách tìm kiếm trong 24h."
+                },
+                {
+                    "name": "Tin Nổi Bật (3 Ngày)",
+                    "price": 50000,
+                    "duration_days": 3,
+                    "pack_type": "JOB_PUSH",
+                    "description": "Ghim tin nổi bật và tiếp cận ứng viên nhanh hơn."
+                },
+                {
+                    "name": "Combo Tuần (7 Ngày)",
+                    "price": 100000,
+                    "duration_days": 7,
+                    "pack_type": "VIP_TOP",
+                    "description": "Tiết kiệm 30%. Tin luôn nằm trong top đầu trang chủ."
+                },
+                {
+                    "name": "Gói VIP Tuyển Dụng (30 Ngày)",
+                    "price": 500000,
+                    "duration_days": 30,
+                    "pack_type": "VIP_TOP",
+                    "description": "Giải pháp tuyển dụng toàn diện. Banner riêng và đẩy tin tự động mỗi ngày."
+                }
+            ]
+
+            for pack_data in service_packs_data:
+                # Dùng get_or_create để tránh tạo trùng lặp nếu chạy seed nhiều lần
+                ServicePack.objects.get_or_create(
+                    name=pack_data["name"],
+                    defaults={
+                        "price": pack_data["price"],
+                        "duration_days": pack_data["duration_days"],
+                        "pack_type": pack_data["pack_type"],
+                        "description": pack_data["description"]
+                    }
+                )
             # ==========================================
             # 4. TẠO JOBS (Job -> EmployerProfile)
             # ==========================================

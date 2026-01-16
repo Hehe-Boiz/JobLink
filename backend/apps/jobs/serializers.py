@@ -116,6 +116,7 @@ class EmployerJobSerializer(serializers.ModelSerializer):
             "location",
             "address",
             "location_name",
+            "is_featured",
             "employment_type",
             "experience_level",
             "salary_min",

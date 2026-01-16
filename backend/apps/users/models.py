@@ -88,7 +88,7 @@ class CandidateProfile(BaseModel):
 class EmployerProfile(BaseModel):
     user = models.OneToOneField(
         User,
-        on_delete=models.CASCADE,
+        on_delete=models.RESTRICT,
         primary_key=True,
         related_name="employer_profile"
     )

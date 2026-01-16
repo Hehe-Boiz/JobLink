@@ -13,4 +13,4 @@ class ReceiptSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Receipt
-        fields = ['id', 'pack_name', 'amount', 'payment_method', 'is_paid', 'created_date', 'transaction_id']
+        fields = ['id', 'pack_name', 'amount', 'payment_method', 'is_paid', 'created_date', 'transaction_id', 'status']

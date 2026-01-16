@@ -1,15 +1,16 @@
-from django.http import HttpResponseRedirect
+import json
+
+from django.http import HttpResponseRedirect, JsonResponse
 from rest_framework import viewsets, generics
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from .models import ServicePack, Receipt
+from .models import ServicePack, Receipt, PaymentStatus
 from .serializers import ServicePackSerializer, ReceiptSerializer
 from django.utils import timezone
-
 from .utils.momo_utils import create_momo_payment
-from .utils.vnpay_utils import create_vnpay_payment_url, get_client_ip
-
+from .utils.vnpay_utils import create_vnpay_payment_url, get_client_ip, validate_vnpay_signature, VNP_HASH_SECRET
+from django.http import HttpResponse
 
 class ServicePackViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [AllowAny]
@@ -29,7 +30,6 @@ class ReceiptViewSet(viewsets.ViewSet, generics.ListAPIView):
         pack_id = request.data.get('pack_id')
         job_id = request.data.get('job_id')
         method = request.data.get('method')
-
         try:
             pack = ServicePack.objects.get(pk=pack_id)
         except ServicePack.DoesNotExist:
@@ -46,43 +46,18 @@ class ReceiptViewSet(viewsets.ViewSet, generics.ListAPIView):
         )
 
         payment_url = ""
-        if method == 'MOMO':
-            order_id = f"JOBLINK_{receipt.id}_{int(timezone.now().timestamp())}"
-            domain = "https://0559111a69ee.ngrok-free.app"
-            return_url = "exp://192.168.1.14:8081"
-            notify_url = f"{domain}/payments/receipts/momo-ipn/"
-
-            momo_response = create_momo_payment(
-                order_id=order_id,
-                amount=int(pack.price),
-                order_info=f"Mua goi {pack.name}",
-                return_url=return_url,
-                notify_url=notify_url
-            )
-
-            if momo_response and 'payUrl' in momo_response:
-                payment_url = momo_response['payUrl']
-                # Lưu lại order_id của MoMo vào hóa đơn để sau này đối soát
-                receipt.transaction_id = order_id
-                receipt.save()
-            else:
-                return Response({"error": "Lỗi kết nối MoMo"}, status=400)
         if method == 'VNPAY':
-            # Order ID
             order_id = f"JOBLINK_{receipt.id}_{int(timezone.now().timestamp())}"
-
-            # Lấy IP người dùng (VNPAY bắt buộc)
             ip_addr = get_client_ip(request)
 
-            domain = "https://0559111a69ee.ngrok-free.app"
+            domain = "https://7649697af433.ngrok-free.app"
             return_url = f"{domain}/payments/receipts/vnpay-return/"
-
             payment_url = create_vnpay_payment_url(
                 order_id=order_id,
-                amount_vnd=int(pack.price),
-                order_desc=f"Mua_goi_{pack.name}",
+                amount=int(pack.price),
+                order_desc=f"Muagoi",
                 return_url=return_url,
-                ip_addr=ip_addr
+                ip_addr=ip_addr,
             )
 
             receipt.transaction_id = order_id
@@ -92,65 +67,121 @@ class ReceiptViewSet(viewsets.ViewSet, generics.ListAPIView):
             "payment_url": payment_url
         }, status=201)
 
-    @action(methods=['post'], detail=False, url_path='momo-ipn', permission_classes=[ AllowAny])
-    def momo_ipn(self, request):
-        """
-        MoMo sẽ gọi vào đây khi thanh toán thành công
-        """
-        data = request.data
-        print("MOMO IPN DATA:", data)
-
-
-        if str(data.get('resultCode')) == '0':  # 0 là thành công
-            order_id = data.get('orderId')
-            try:
-
-                receipt = Receipt.objects.get(transaction_id=order_id)
-                if not receipt.is_paid:
-                    receipt.is_paid = True
-                    receipt.save()
-                    if receipt.related_job:
-                        pass
-
-                return Response(status=204)
-            except Receipt.DoesNotExist:
-                pass
-
-        return Response(status=204)
-
-    @action(methods=['get'], detail=False, url_path='vnpay-return', permission_classes=[AllowAny])
+    @action(methods=['get', 'post'], detail=False, url_path='vnpay-return', permission_classes=[AllowAny])
     def vnpay_return(self, request):
         vnp_ResponseCode = request.GET.get('vnp_ResponseCode')
         vnp_TxnRef = request.GET.get('vnp_TxnRef')
 
-        if vnp_ResponseCode == '00':
-            try:
-                receipt = Receipt.objects.get(transaction_id=vnp_TxnRef)
+        text_color = "#dc3545"
+        try:
+            receipt = Receipt.objects.get(transaction_id=vnp_TxnRef)
+            if vnp_ResponseCode == '00':
+
                 if not receipt.is_paid:
                     receipt.is_paid = True
+                    receipt.status = PaymentStatus.SUCCESS
                     receipt.save()
-            except Receipt.DoesNotExist:
-                pass
-            return HttpResponseRedirect(f"joblink://payment-result?status=success&order_id={vnp_TxnRef}")
-        return HttpResponseRedirect(f"joblink://payment-result?status=failed&order_id={vnp_TxnRef}")
-    @action(methods=['post'], detail=False, url_path='confirm-payment')
-    def confirm_payment(self, request):
-        receipt_id = request.data.get('receipt_id')
-        try:
-            receipt = Receipt.objects.get(pk=receipt_id, user=request.user)
+                    if receipt.related_job:
+                        job = receipt.related_job
+                        job.is_featured = True
+                        job.save()
 
-            if receipt.is_paid:
-                return Response({"msg": "Đã thanh toán rồi."}, status=200)
+                transaction_status = "Thanh toán thành công!"
+                transaction_info = "Gói tin của bạn đã được kích hoạt"
+                deep_link_status = "success"
+                text_color = "#28a745"
 
-            receipt.is_paid = True
-            receipt.transaction_id = f"TRANS_{timezone.now().timestamp()}"
-            receipt.save()
+            else:
+                receipt.is_paid = False
+                receipt.status = PaymentStatus.FAILED
+                receipt.save()
 
-            if receipt.related_job:
-                job = receipt.related_job
-                job.save()
-
-            return Response({"message": "Thanh toán thành công! Dịch vụ đã được kích hoạt."}, status=200)
+                transaction_status = "Giao dịch thất bại hoặc bị hủy"
+                transaction_info = "Có lỗi xảy ra"
+                deep_link_status = "failed"
+                text_color = "#dc3545"
 
         except Receipt.DoesNotExist:
-            return Response({"error": "Hóa đơn không tồn tại"}, status=400)
+            transaction_status = "Không tìm thấy đơn hàng"
+            transaction_info = "Vui lòng chọn đơn hàng thanh toán"
+            deep_link_status = "failed"
+        app_url = f"joblink://payment-result?status={deep_link_status}&order_id={vnp_TxnRef}&transaction_status={transaction_status}&transaction_info={transaction_info}"
+
+        html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <title>Kết quả thanh toán</title>
+                <style>
+                    body {{ font-family: sans-serif; text-align: center; padding: 40px 20px; background-color: #f8f9fa; }}
+                    .container {{ background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 400px; margin: 0 auto; }}
+                    h2 {{ color: {text_color}; margin-bottom: 10px; }}
+                    p {{ color: #6c757d; margin-bottom: 30px; }}
+                    .btn {{
+                        display: inline-block; padding: 12px 24px; font-size: 16px; font-weight: bold;
+                        color: white; background-color: #007bff; text-decoration: none;
+                        border-radius: 50px; transition: opacity 0.3s;
+                    }}
+                    .btn:hover {{ opacity: 0.9; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h2>{transaction_status}</h2>
+                    <p>Mã giao dịch: <strong>{vnp_TxnRef}</strong></p>
+
+                    <a href="{app_url}" class="btn">Quay về ứng dụng</a>
+                </div>
+
+                <script>
+                    // Tự động chuyển hướng về App sau 1 giây
+                    setTimeout(function() {{
+                        window.location.href = "{app_url}";
+                    }}, 1000);
+                </script>
+            </body>
+            </html>
+            """
+
+        return HttpResponse(html_content)
+
+    @action(methods=['get'], detail=False, url_path='vnpay-ipn', permission_classes=[AllowAny])
+    def vnpay_ipn(self, request):
+        inputData = request.GET
+        print('Okie')
+        if not validate_vnpay_signature(inputData, VNP_HASH_SECRET):
+            return JsonResponse({"RspCode": "97", "Message": "Invalid Signature"})
+
+        vnp_ResponseCode = inputData.get('vnp_ResponseCode')
+        vnp_TxnRef = inputData.get('vnp_TxnRef')
+        vnp_Amount = inputData.get('vnp_Amount')
+
+        try:
+            receipt = Receipt.objects.get(transaction_id=vnp_TxnRef)
+
+            if int(vnp_Amount) != int(receipt.amount) * 100:
+                return JsonResponse({"RspCode": "04", "Message": "Invalid Amount"})
+            if receipt.is_paid:
+                return JsonResponse({"RspCode": "02", "Message": "Order Already Confirmed"})
+            if vnp_ResponseCode == '00':
+                receipt.is_paid = True
+                receipt.status = PaymentStatus.SUCCESS
+                receipt.save()
+
+                if receipt.related_job and receipt.service_pack:
+                    job = receipt.related_job
+                    job.is_featured = True
+                    job.save()
+
+                return JsonResponse({"RspCode": "00", "Message": "Confirm Success"})
+            else:
+                receipt.status = PaymentStatus.FAILED
+                receipt.save()
+                return JsonResponse({"RspCode": "00", "Message": "Confirm Success"})
+
+        except Receipt.DoesNotExist:
+            return JsonResponse({"RspCode": "01", "Message": "Order Not Found"})
+        except Exception as e:
+            print(f"IPN Error: {str(e)}")
+            return JsonResponse({"RspCode": "99", "Message": "Unknown Error"})

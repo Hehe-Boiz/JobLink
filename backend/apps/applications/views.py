@@ -1,5 +1,7 @@
 from rest_framework import viewsets, permissions, status, generics
 from rest_framework.decorators import action
+
+from ..core.paginators import StandardResultsSetPagination
 from ..users.models import CandidateProfile
 from ..users.serializers import CandidateProfileSerializer
 from .models import Application
@@ -13,21 +15,32 @@ from rest_framework.exceptions import PermissionDenied
 class EmployerApplicationViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveUpdateAPIView):
     serializer_class = EmployerApplicationSerializer
     permission_classes = [IsEmployerApproved]
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
         user = self.request.user
-        ep = user.employer_profile
-
         if not user.is_authenticated:
             return Application.objects.none()
-        qs = Application.objects.filter(job__posted_by=ep).select_related("job", "candidate")
+        qs = Application.objects.filter(job__posted_by=user.employer_profile).select_related("job", "candidate",
+                                                                                             "candidate__user")
         job_id = self.request.query_params.get("job_id")
-        st = self.request.query_params.get("status")
         if job_id:
             qs = qs.filter(job_id=job_id)
+        st = self.request.query_params.get("status")
         if st:
             qs = qs.filter(status=st)
-        return qs
+
+        # 3. Tìm kiếm (Thay thế logic q lúc nãy)
+        q = self.request.query_params.get('q')
+        if q:
+            from django.db.models import Q
+            qs = qs.filter(
+                Q(candidate__user__first_name__icontains=q) |
+                Q(candidate__user__last_name__icontains=q) |
+                Q(candidate__user__email__icontains=q)
+            )
+
+        return qs.order_by('-created_date')
 
     @action(methods=['get'], url_path='candidate-profile', detail=True)
     def get_candidate_profile(self, request, pk):

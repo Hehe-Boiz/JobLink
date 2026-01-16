@@ -57,7 +57,7 @@ class Job(BaseModel):
     benefits = RichTextField()
 
     company_name = models.CharField(max_length=255)
-
+    is_featured = models.BooleanField(default=False)
     category = models.ForeignKey(JobCategory, on_delete=models.PROTECT, related_name="jobs")
     location = models.ForeignKey(Location, on_delete=models.PROTECT, related_name="jobs")
     address = models.TextField(blank=True, default="")

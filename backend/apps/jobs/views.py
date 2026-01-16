@@ -1,12 +1,12 @@
 from rest_framework import viewsets, filters, status, generics
 from rest_framework.permissions import AllowAny
 from ..users.permissions import IsEmployerApproved, IsCandidate
-from .models import Job, BookmarkJob, JobCategory, Location, EmploymentType
+from .models import Job, BookmarkJob, JobCategory, Location, EmploymentType, Tag
 from ..core.paginators import StandardResultsSetPagination
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
 from .serializers import CandidateJobSerializer, CandidateJobDetailSerializer, EmployerJobSerializer, \
-    CandidateBookmarkJobSerializer, JobCategorySerializer, LocationSerializer
+    CandidateBookmarkJobSerializer, JobCategorySerializer, LocationSerializer, TagSerializer
 from ..applications.serializers import EmployerApplicationSerializer
 from ..users.permissions import IsEmployerApproved, IsCandidate
 from rest_framework.response import Response
@@ -17,7 +17,7 @@ from django.db.models import Count, Q
 
 
 class JobViewCandidate(viewsets.ReadOnlyModelViewSet):
-    permission_classes = [IsCandidate]
+    # permission_classes = [IsCandidate]
     queryset = Job.objects.filter(deadline__gte=timezone.now())
     pagination_class = StandardResultsSetPagination
 
@@ -84,15 +84,20 @@ class JobViewCandidate(viewsets.ReadOnlyModelViewSet):
 
 class EmployerJobViewSet(viewsets.ViewSet, generics.ListCreateAPIView, generics.UpdateAPIView,
                          generics.DestroyAPIView):
+    queryset = Job.objects.filter(active=True)
     serializer_class = EmployerJobSerializer
     permission_classes = [IsEmployerApproved]
     pagination_class = StandardResultsSetPagination
     def get_queryset(self):
         user = self.request.user
-
+        query = self.queryset
+        q = self.request.query_params.get('q')
+        if q:
+            query = query.filter(title__icontains=q)
         if not user.is_authenticated:
             return Job.objects.none()
-        return Job.objects.filter(posted_by=user.employer_profile, active=True).select_related("category", "location").order_by('-created_date')
+
+        return query.filter(posted_by=user.employer_profile).select_related("category", "location").order_by('-created_date')
 
     def destroy(self, request, *args, **kwargs):
         job = self.get_object()
@@ -109,11 +114,6 @@ class EmployerJobViewSet(viewsets.ViewSet, generics.ListCreateAPIView, generics.
             posted_by=ep,
             company_name=ep.company_name,
         )
-
-    @action(methods=['get'], url_path='applications', detail=True)
-    def get_applications(self, request, pk):
-        applications = self.get_object().applications.filter(active=True)
-        return Response(EmployerApplicationSerializer(applications, many=True).data, status=status.HTTP_200_OK)
 
 class BookmarkJobViewSet(viewsets.ModelViewSet):
     serializer_class = CandidateBookmarkJobSerializer
@@ -164,3 +164,9 @@ class LocationViewSet(viewsets.ViewSet, generics.ListAPIView):
     serializer_class = LocationSerializer
     queryset = Location.objects.all()
     permission_classes = [AllowAny]
+
+class TagViewSet(viewsets.ViewSet, generics.ListAPIView):
+    serializer_class = TagSerializer
+    queryset = Tag.objects.all()
+    permission_classes = [AllowAny]
+    pagination_class = None
