@@ -1,19 +1,19 @@
-import React, {useState, useMemo, useContext, useEffect} from "react";
-import {SafeAreaView} from "react-native-safe-area-context";
-import {ScrollView, TouchableOpacity, View, StyleSheet, Image, Alert, ActivityIndicator} from "react-native";
-import {MaterialCommunityIcons} from '@expo/vector-icons';
+import React, { useState, useMemo, useContext, useEffect } from "react";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { ScrollView, TouchableOpacity, View, StyleSheet, Image, Alert, ActivityIndicator } from "react-native";
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import CustomText from "../../components/common/CustomText";
 import JobDescriptionTab from "../../components/Job/JobDetail/JobDetailDescription";
 import CompanyTab from "../../components/Job/JobDetail/JobDetailCompany";
 import styles from '../../styles/Job/JobDetailStyles'
 import JobApplicantsTab from "../../components/Job/JobDetail/JobApplicantsTab";
-import {MyUserContext} from "../../utils/contexts/MyContext";
-import {Portal, Dialog, Button} from 'react-native-paper';
+import { MyUserContext } from "../../utils/contexts/MyContext";
+import { Portal, Dialog, Button } from 'react-native-paper';
 import JobLogo from "../../components/Job/JobLogo";
 import CustomHeader from "../../components/common/CustomHeader"
 import CustomFooter from "../../components/common/CustomFooter";
-import Apis, {endpoints, authApis} from '../../utils/Apis';
-import {formatTimeElapsed, stripHtmlTags} from "../../utils/Helper";
+import Apis, { endpoints, authApis } from '../../utils/Apis';
+import { formatTimeElapsed, stripHtmlTags } from "../../utils/Helper";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const MOCK_APPLICANTS = [
@@ -47,8 +47,8 @@ const MOCK_APPLICANTS = [
 ];
 
 
-const JobDetail = ({navigation, route}) => {
-    const {jobId, initialData} = route.params || {};
+const JobDetail = ({ navigation, route }) => {
+    const { jobId, initialData } = route.params || {};
     const [user,] = useContext(MyUserContext)
     const applicants = MOCK_APPLICANTS;
     const [activeTab, setActiveTab] = useState(0);
@@ -63,11 +63,11 @@ const JobDetail = ({navigation, route}) => {
             if (prevSaved) {
                 if (job.bookmark_id) {
                     await api.delete(`${endpoints['bookmarks']}${job.bookmark_id}/`);
-                    setJob(prev => ({...prev, bookmark_id: null}));
+                    setJob(prev => ({ ...prev, bookmark_id: null }));
                 }
             } else {
-                const res = await api.post(endpoints['bookmarks'], {job_id: job.id});
-                setJob(prev => ({...prev, bookmark_id: res.data.id}));
+                const res = await api.post(endpoints['bookmarks'], { job_id: job.id });
+                setJob(prev => ({ ...prev, bookmark_id: res.data.id }));
             }
         } catch (error) {
             console.error(error);
@@ -98,10 +98,10 @@ const JobDetail = ({navigation, route}) => {
             street: stripHtmlTags(data.company?.address) || "Chưa cập nhật địa chỉ",
 
             info: [
-                {title: "Mức lương", value: salaryString},
-                {title: "Kinh nghiệm", value: data.experience ? `${data.experience} năm` : "Không yêu cầu"},
-                {title: "Hình thức", value: data.employment_type?.replace('_', ' ') || "Full Time"},
-                {title: "Hạn nộp", value: data.deadline ? new Date(data.deadline).toLocaleDateString() : "Vô thời hạn"},
+                { title: "Mức lương", value: salaryString },
+                { title: "Kinh nghiệm", value: data.experience ? `${data.experience} năm` : "Không yêu cầu" },
+                { title: "Hình thức", value: data.employment_type?.replace('_', ' ') || "Full Time" },
+                { title: "Hạn nộp", value: data.deadline ? new Date(data.deadline).toLocaleDateString() : "Vô thời hạn" },
             ],
 
             facilities: stripHtmlTags(data.benefits) || "Chưa có thông tin đãi ngộ",
@@ -119,8 +119,8 @@ const JobDetail = ({navigation, route}) => {
                         title: "Quy mô",
                         value: data.company?.company_size ? `${data.company.company_size} nhân viên` : "N/A"
                     },
-                    {title: "Quốc gia", value: data.company?.country?.name || "Việt Nam"},
-                    {title: "Thành lập", value: data.company?.founded_year || "N/A"},
+                    { title: "Quốc gia", value: data.company?.country?.name || "Việt Nam" },
+                    { title: "Thành lập", value: data.company?.founded_year || "N/A" },
                 ]
             },
 
@@ -164,20 +164,20 @@ const JobDetail = ({navigation, route}) => {
     );
 
     const handleApply = () => {
-        navigation.navigate('ApplyJob', {jobId: job.id, jobTitle: job.title});
+        navigation.navigate('ApplyJob', { jobId: job.id, jobTitle: job.title });
     };
 
     if (loading && !job) {
         return (
-            <View style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}>
-                <ActivityIndicator size="large" color="#FF9228"/>
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                <ActivityIndicator size="large" color="#FF9228" />
             </View>
         );
     }
 
     if (!job) {
         return (
-            <View style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}>
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
                 <CustomText>Không tìm thấy công việc.</CustomText>
             </View>
         );
@@ -185,14 +185,24 @@ const JobDetail = ({navigation, route}) => {
 
     // const isEmployer = user.role == "EMPLOYER" ? true : false;
     return (
-        <View style={{flex: 1}}>
+        <View style={{ flex: 1 }}>
             <SafeAreaView style={[styles.container]} edges={['top', 'left', 'right']}>
-                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{paddingBottom: 130}}>
-                    <CustomHeader navigation={navigation}/>
+                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 130 }}>
+                    <CustomHeader navigation={navigation} />
 
                     <View style={styles.section}>
-                        <JobLogo item={job}/>
-
+                        <JobLogo item={job} />
+                        {isEmployer && (
+                            <TouchableOpacity
+                                style={styles.viewCandidateButton}
+                                onPress={() => navigation.navigate('JobApplicants', { job: job })}
+                            >
+                                <MaterialCommunityIcons name="account-group" size={20} color="#1976D2" style={{ marginRight: 8 }} />
+                                <CustomText style={styles.viewCandidateButtonText}>
+                                    Xem danh sách ứng viên
+                                </CustomText>
+                            </TouchableOpacity>
+                        )}
                         <View style={styles.tabContainer}>
                             <TouchableOpacity
                                 style={[styles.tabButton, activeTab === 0 && styles.activeTab]}
@@ -211,22 +221,9 @@ const JobDetail = ({navigation, route}) => {
                                     Company
                                 </CustomText>
                             </TouchableOpacity>
-                            {isEmployer &&
-                                <TouchableOpacity
-                                    style={[styles.tabButton, activeTab === 2 && styles.activeTab]}
-                                    onPress={() => setActiveTab(2)}
-                                >
-                                    <CustomText style={[styles.tabText, activeTab === 2 && styles.activeTabText]}>
-                                        Applicants
-                                    </CustomText>
-                                </TouchableOpacity>
-                            }
                         </View>
-
-                        {activeTab === 0 && <JobDescriptionTab item={job}/>}
-                        {activeTab === 1 && <CompanyTab item={job.companyData}/>}
-                        {activeTab === 2 && isEmployer && <JobApplicantsTab job={route.params.job}/>}
-
+                        {activeTab === 0 && <JobDescriptionTab item={job} />}
+                        {activeTab === 1 && <CompanyTab item={job.companyData} />}
                     </View>
                 </ScrollView>
             </SafeAreaView>

@@ -19,6 +19,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import AppDatePicker from '../../components/common/AppDatePicker';
 import { validateForm } from '../../utils/validate/Employer/ValidatePostJob';
 import { useDialog } from '../../hooks/useDialog';
+import MultiChipSelector from '../../components/Employer/MultiChipSelector';
 
 const PostJob = ({ navigation, route }) => {
 
@@ -28,8 +29,10 @@ const PostJob = ({ navigation, route }) => {
     });
     const [categories, setCategories] = useState([]);
     const [locations, setLocations] = useState([]);
+    const [tags, setTags] = useState([]);
     const [selectedCategory, setSelectedCategory] = useState(null);
     const [selectedLocation, setSelectedLocation] = useState(null);
+    const [selectedTags, setSelectedTags] = useState([]);
     const [jobType, setJobType] = useState('FULL_TIME');
     const jobTypes = ['FULL_TIME', 'PART_TIME', 'REMOTE', 'INTERN']
     const [level, setLevel] = useState('JUNIOR');
@@ -41,8 +44,10 @@ const PostJob = ({ navigation, route }) => {
             try {
                 let resCat = await Apis.get(endpoints['categories']);
                 let resLoc = await Apis.get(endpoints['locations']);
+                let resTag = await Apis.get(endpoints['tags']);
                 setCategories(resCat.data);
                 setLocations(resLoc.data);
+                setTags(resTag.data);
             } catch (e) {
                 console.error("Lỗi tải danh mục:", e);
             }
@@ -54,7 +59,15 @@ const PostJob = ({ navigation, route }) => {
         setJobData(prev => ({ ...prev, [key]: value }));
     };
 
-
+    const toggleTag = (tagId) => {
+        setSelectedTags(prev => {
+            if (prev.includes(tagId)) {
+                return prev.filter(id => id !== tagId);
+            } else {
+                return [...prev, tagId];
+            }
+        });
+    };
     const handlePost = async () => {
         const [isValid, errors] = validateForm(jobData);
         if (!isValid) {
@@ -90,7 +103,8 @@ const PostJob = ({ navigation, route }) => {
                 description: jobData.description,
                 requirements: jobData.requirements,
                 benefits: jobData.benefits,
-                deadline: formattedDeadline 
+                deadline: formattedDeadline,
+                tags: selectedTags,
             };
 
             console.log("Sending Payload:", payload);
@@ -157,7 +171,12 @@ const PostJob = ({ navigation, route }) => {
                         selectedValue={selectedCategory}
                         onSelect={setSelectedCategory}
                     />
-
+                    <MultiChipSelector 
+                        label="Kỹ năng yêu cầu (Tags)"
+                        data={tags}
+                        selectedIds={selectedTags}
+                        onToggle={toggleTag}
+                    />
                     <AppSelector
                         label="Địa điểm làm việc"
                         required

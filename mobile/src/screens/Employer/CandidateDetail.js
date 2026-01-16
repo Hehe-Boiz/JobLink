@@ -28,6 +28,7 @@ const CandidateDetail = ({ route, navigation }) => {
       setLoading(true);
       let res = await authApis(token).get(endpoints['candidate_by_applications_in_employer_jobs'](application.id));
       setCandidate(res.data);
+      console.log(res.data);
     } catch (ex) {
       console.error(ex);
       Alert.alert("Lỗi", "Không tải được thông tin ứng viên.");
@@ -127,7 +128,7 @@ const CandidateDetail = ({ route, navigation }) => {
           
           <View style={styles.profileCard}>
             <Image
-              source={{ uri: "https://res.cloudinary.com/dblaqnihz/image/upload/v1767259778/lqtx6e6mymgyywf978v8.png" }}
+              source={{ uri: candidate?.user?.avatar }}
               style={styles.profileAvatar}
             />
 

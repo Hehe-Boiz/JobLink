@@ -68,7 +68,14 @@ const EmployerJobs = ({ navigation }) => {
 
         return () => clearTimeout(timer);
     }, [page, profile]);
-
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            setQ(searchText);
+        }, 500);
+        return () => {
+            clearTimeout(handler);
+        };
+    }, [searchText]);
     useEffect(() => {
         setPage(1);
     }, [q]);
@@ -164,9 +171,10 @@ const EmployerJobs = ({ navigation }) => {
                     renderItem={({ item }) => (
                         <JobCard
                             job={item}
-                            onPress={() => navigation.navigate('JobDetail', { job: item })}
+                            onPress={() => navigation.navigate('JobDetail', { jobId: item.id })}
                             onEdit={() => handleEditJob(item)}
                             onDelete={() => handleDeleteJob(item.id)}
+                            onBuyService={() => navigation.navigate('BuyService', { job: item })}
                         />
                     )}
                     ListEmptyComponent={

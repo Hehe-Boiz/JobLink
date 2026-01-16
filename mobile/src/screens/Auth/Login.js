@@ -16,7 +16,7 @@ import {
     statusCodes,
     isErrorWithCode
 } from '@react-native-google-signin/google-signin';
-import { CLIENT_ID, CLIENT_SECRET } from '@env';//
+import { CLIENT_ID, CLIENT_SECRET } from '@env';//Client
 
 const Login = ({route}) => {
     const navigation = useNavigation();
@@ -202,6 +202,7 @@ const Login = ({route}) => {
                         } else {
                             const role = userRes.data.role;
                             console.log(role);
+                            navigation.navigate('EmployerMain');
                         }
                     } else {
                         navigation.navigate('CandidateMain');
