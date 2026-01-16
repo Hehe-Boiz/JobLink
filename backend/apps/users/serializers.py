@@ -1,8 +1,8 @@
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from rest_framework import serializers
-
-from .models import UserRole, CandidateProfile, EmployerProfile
+from .models import UserRole, CandidateProfile, EmployerProfile, Language, Skill, WorkExperience, Education, \
+    Appreciation
 from ..core.serializers import MediaURLSerializer
 
 User = get_user_model()
@@ -13,8 +13,9 @@ class UserSerializer(MediaURLSerializer):
 
     class Meta:
         model = User
+        # bạn có thể bỏ bớt field nếu muốn ngắn hơn
         fields = [
-            "id",
+            # "id",
             "username",
             "email",
             "password",
@@ -29,6 +30,7 @@ class UserSerializer(MediaURLSerializer):
         ]
         extra_kwargs = {
             "password": {"write_only": True, "required": False},
+            # role không cho đổi lung tung qua API user update (đổi role do admin)
             "role": {"read_only": True},
             "created_date": {"read_only": True},
         }
@@ -62,15 +64,95 @@ class UserSerializer(MediaURLSerializer):
         return instance
 
 
+class WorkExperienceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WorkExperience
+        exclude = ['candidate']
+
+
+class EducationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Education
+        exclude = ['candidate']
+
+
+class AppreciationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Appreciation
+        exclude = ['candidate']
+
+
+class LanguageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Language
+        exclude = ['candidate']
+
+
+class SkillSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Skill
+        fields = ['id', 'name']
+
+
 class CandidateProfileSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
+    skills = serializers.ListField(
+        child=serializers.CharField(max_length=100),
+        write_only=True,
+        required=False
+    )
+    skill_list = SkillSerializer(source='skills', many=True, read_only=True)
+    work_experiences = WorkExperienceSerializer(many=True, read_only=True)
+    educations = EducationSerializer(many=True, read_only=True)
+    languages = LanguageSerializer(many=True, read_only=True)
+    appreciations = AppreciationSerializer(many=True, read_only=True)
+    bio = serializers.CharField(source='user.bio', required=False, allow_blank=True)
+
     class Meta:
         model = CandidateProfile
-        fields = ['user', 'address','dob', 'specialization', 'education_status', 'school_name']
+        fields = ['user', 'address', 'dob', 'specialization', 'education_status', 'school_name', 'skills', 'skill_list',
+                  'work_experiences', 'educations', 'languages', 'appreciations', 'bio', 'resume', 'resume_name', 'gender']
+        read_only_fields = ['resume_name']
+
+    def update(self, instance, validated_data):
+        skills_data = validated_data.pop('skills', None)
+        bio_data = validated_data.pop('user', {}).get('bio')
+
+        if 'resume' in validated_data:
+            uploaded_file = validated_data['resume']
+            if uploaded_file:
+                instance.resume_name = uploaded_file.name
+
+        instance = super().update(instance, validated_data)
+
+        if skills_data is not None:
+            instance.skills.clear()
+            for skill_name in skills_data:
+                skill_obj, created = Skill.objects.get_or_create(name=skill_name.strip())
+                instance.skills.add(skill_obj)
+
+        if bio_data is not None:
+            instance.user.bio = bio_data
+            instance.user.save()
+
+        return instance
+
+    def validate_resume(self, value):
+        if value:
+            limit_mb = 5
+            if value.size > limit_mb * 1024 * 1024:
+                raise serializers.ValidationError(f"File too large. Max size is {limit_mb}MB.")
+
+            if value.content_type != 'application/pdf':
+                if not value.name.lower().endswith('.pdf'):
+                    raise serializers.ValidationError("Only PDF files are allowed.")
+
+        return value
 
 
 class EmployerProfileSerializer(MediaURLSerializer):
     user = UserSerializer(read_only=True)
+
     class Meta:
         model = EmployerProfile
         fields = [
@@ -91,6 +173,7 @@ class EmployerProfileSerializer(MediaURLSerializer):
 
 
 class AdminEmployerSerializer(EmployerProfileSerializer):
+    # thêm thông tin user đầy đủ để admin xem nhanh
     user_detail = UserSerializer(source="user", read_only=True)
     verified_by_detail = UserSerializer(source="verified_by", read_only=True)
 
@@ -131,6 +214,7 @@ class CandidateRegisterSerializer(BaseRegisterSerializer):
             **user_data
         )
 
+        # Tạo Profile
         CandidateProfile.objects.create(
             user=user,
         )
@@ -159,6 +243,7 @@ class EmployerRegisterSerializer(BaseRegisterSerializer):
             role=UserRole.EMPLOYER,
             **user_data
         )
+
         EmployerProfile.objects.create(
             user=user,
             company_name=company_name,

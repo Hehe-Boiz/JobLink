@@ -1,268 +1,275 @@
 import random
+from datetime import timedelta
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from django.db import transaction
 from faker import Faker
-from datetime import timedelta
 
 from apps.payments.models import ServicePack
-# Import Models
-# Đảm bảo đường dẫn import đúng với cấu trúc dự án của bạn
-from apps.users.models import User, UserRole, VerificationStatus, CandidateProfile, EmployerProfile, EducationStatus
-from apps.jobs.models import JobCategory, Location, Job, Tag, EmploymentType, ExperienceLevel
+# Import models
+from apps.users.models import (
+    User, UserRole, VerificationStatus, CandidateProfile,
+    EmployerProfile, EducationStatus, Skill, Gender,
+    WorkExperience, Education, Language
+)
+from apps.jobs.models import (
+    JobCategory, Location, Job, Tag, EmploymentType, ExperienceLevel
+)
 from apps.applications.models import Application, ApplicationStatus
 
 
 class Command(BaseCommand):
-    help = "Tạo dữ liệu giả: Job (có views), EmployerProfile, Application (CandidateProfile)"
+    help = "Tạo dữ liệu giả (Mock Data) chuẩn theo models.py mới"
+
+    def __init__(self):
+        super().__init__()
+        self.fake = Faker(['vi_VN'])
 
     def handle(self, *args, **kwargs):
         self.stdout.write("🚀 Đang khởi tạo dữ liệu giả...")
-        fake = Faker(['vi_VN'])
 
+        # [White Box Explanation] Transaction.atomic:
+        # Cơ chế này đảm bảo tính toàn vẹn dữ liệu (ACID).
+        # Nếu bất kỳ dòng code nào bên trong block này bị lỗi,
+        # toàn bộ dữ liệu đã tạo trước đó trong block sẽ bị rollback (hủy bỏ).
+        # Giúp tránh tình trạng database bị "rác" do tạo dở dang.
         with transaction.atomic():
-            # ==========================================
-            # 1. TẠO ADMIN
-            # ==========================================
-            self.stdout.write("- Đang tạo Admin...")
-            admin_email = 'admin@gmail.com'
-            if not User.objects.filter(email=admin_email).exists():
-                User.objects.create_superuser(
-                    username='admin',
-                    email=admin_email,
-                    password='123456',
-                    first_name='Super',
-                    last_name='Admin'
+            self._clean_data()
+
+            admin = self._create_admin()
+            skills = self._create_skills()
+            recruiters = self._create_employers(admin)
+            candidates = self._create_candidates(skills)
+            jobs = self._create_jobs(recruiters)
+            self._create_applications(candidates, jobs)
+
+        self.stdout.write(self.style.SUCCESS('✅ Đã tạo dữ liệu giả thành công!'))
+
+    def _clean_data(self):
+        """Xóa dữ liệu cũ để tránh trùng lặp khi chạy lại nhiều lần"""
+        self.stdout.write("🗑️  Đang xóa dữ liệu cũ...")
+        # Lưu ý: Xóa User sẽ cascade xóa Profile, Application, v.v.
+        User.objects.exclude(is_superuser=True).delete()
+        Job.objects.all().delete()
+        Skill.objects.all().delete()
+        Tag.objects.all().delete()
+
+    def _create_admin(self):
+        self.stdout.write("👤 Đang tạo Admin...")
+        admin_email = 'admin@gmail.com'
+        user, created = User.objects.get_or_create(
+            email=admin_email,
+            defaults={
+                'username': 'admin',
+                'password': 'password123',  # Nên dùng set_password ngoài đời thực, nhưng seed data thì tạm chấp nhận
+                'first_name': 'Super',
+                'last_name': 'Admin',
+                'is_staff': True,
+                'is_superuser': True,
+                'role': UserRole.ADMIN
+            }
+        )
+        if created:
+            user.set_password('123456')
+            user.save()
+        return user
+
+    def _create_skills(self):
+        self.stdout.write("🛠️  Đang tạo Skills...")
+        skill_names = [
+            'Leadership', 'Teamwork', 'Communication', 'Problem Solving',
+            'Critical Thinking', 'Time Management', 'Creativity', 'Adaptability',
+            'Graphic Design', 'Graphic Thinking', 'UI/UX Design', 'Adobe Indesign',
+            'Web Design', 'InDesign', 'Canva Design', 'User Interface Design',
+            'Product Design', 'User Experience Design', 'Figma', 'Sketch',
+            'JavaScript', 'React', 'React Native', 'Python', 'Java', 'Node.js',
+            'Project Management', 'Agile', 'Scrum', 'Data Analysis',
+            'Marketing', 'SEO', 'Content Writing', 'Public Speaking',
+            'English', 'Vietnamese', 'Japanese', 'Chinese',
+            'Responsibility', 'Target oriented', 'Consistent', 'Visioner',
+            'Good communication skills', 'Negotiation', 'Decision Making',
+        ]
+        skills = []
+        for name in skill_names:
+            skill, _ = Skill.objects.get_or_create(name=name)
+            skills.append(skill)
+        return skills
+
+    def _create_employers(self, admin_user):
+        self.stdout.write("🏢 Đang tạo Nhà tuyển dụng...")
+        created_recruiters = []
+
+        for i in range(10):
+            email = f"recruiter_{i}@company.com"
+            user = User.objects.create_user(
+                username=f"recruiter_{i}",
+                email=email,
+                password='123456',
+                role=UserRole.EMPLOYER,
+                first_name=self.fake.first_name(),
+                last_name=self.fake.last_name(),
+                phone=self.fake.phone_number(),
+                bio=self.fake.catch_phrase()
+            )
+
+            # Logic xác thực: 5 người đầu auto duyệt
+            is_verified = i < 5
+            status = VerificationStatus.APPROVED if is_verified else VerificationStatus.PENDING
+            verified_at = timezone.now() if is_verified else None
+            verified_by = admin_user if is_verified else None
+
+            EmployerProfile.objects.create(
+                user=user,
+                company_name=self.fake.company(),
+                tax_code=self.fake.unique.ean13(),
+                website=self.fake.url(),
+                description=self.fake.paragraph(nb_sentences=3),
+                address=self.fake.address(),
+                status=status,
+                verified_at=verified_at,
+                verified_by=verified_by
+            )
+
+            if is_verified:
+                created_recruiters.append(user)
+
+        return created_recruiters
+
+    def _create_candidates(self, skills):
+        self.stdout.write("👨‍🎓 Đang tạo Ứng viên & Profile chi tiết...")
+        candidates = []
+
+        for i in range(20):
+            email = f"candidate_{i}@gmail.com"
+            user = User.objects.create_user(
+                username=f"candidate_{i}",
+                email=email,
+                password='123456',
+                role=UserRole.CANDIDATE,
+                first_name=self.fake.first_name(),
+                last_name=self.fake.last_name(),
+                phone=self.fake.phone_number()
+            )
+
+            # Tạo Candidate Profile
+            profile = CandidateProfile.objects.create(
+                user=user,
+                gender=random.choice(Gender.choices)[0],  # [NEW] Random giới tính
+                address=self.fake.address(),
+                experience_years=random.randint(0, 10),
+                dob=self.fake.date_of_birth(minimum_age=18, maximum_age=35),
+                specialization=self.fake.job(),
+                school_name="Đại học Công Nghệ Thông Tin",
+                education_status=random.choice(EducationStatus.choices)[0]
+            )
+
+            # [NEW] Gán Skill (ManyToMany)
+            # Random chọn 3-5 skill từ danh sách đã tạo
+            random_skills = random.sample(skills, k=random.randint(3, 5))
+            profile.skills.set(random_skills)
+
+            # [NEW] Tạo dữ liệu phụ: Education & WorkExperience
+            self._create_candidate_details(profile)
+
+            candidates.append(user)
+
+        return candidates
+
+    def _create_candidate_details(self, profile):
+        """Hàm phụ để tạo kinh nghiệm làm việc và học vấn cho ứng viên"""
+
+        # Tạo 1-2 Học vấn
+        for _ in range(random.randint(1, 2)):
+            Education.objects.create(
+                candidate=profile,
+                institution=self.fake.company(),  # Giả lập tên trường
+                level="Đại học",
+                field_of_study="Công nghệ thông tin",
+                start_date=self.fake.date_between(start_date='-5y', end_date='-4y'),
+                end_date=self.fake.date_between(start_date='-4y', end_date='-1y'),
+                description=self.fake.sentence()
+            )
+
+        # Tạo 1-3 Kinh nghiệm làm việc (nếu có kinh nghiệm)
+        if profile.experience_years > 0:
+            for _ in range(random.randint(1, 3)):
+                start = self.fake.date_between(start_date='-3y', end_date='-1y')
+                WorkExperience.objects.create(
+                    candidate=profile,
+                    job_title=self.fake.job(),
+                    company=self.fake.company(),
+                    start_date=start,
+                    end_date=start + timedelta(days=365),
+                    description=self.fake.paragraph(nb_sentences=2)
                 )
 
-            # Lấy instance admin để làm người duyệt hồ sơ
-            admin_user = User.objects.get(email=admin_email)
+    def _create_service_packs(self):
+        self.stdout.write("📦 Đang tạo Service Packs...")
+        data_packs = [
+            {"name": "Tin Cơ Bản (1 ngày)", "price": 20000, "duration_days": 1, "pack_type": "JOB_PUSH"},
+            {"name": "Tin Nổi Bật (7 ngày)", "price": 500000, "duration_days": 7, "pack_type": "JOB_PUSH"},
+            {"name": "Tin VIP (30 ngày)", "price": 1500000, "duration_days": 30, "pack_type": "JOB_PUSH"},
+        ]
+        for p in data_packs:
+            ServicePack.objects.get_or_create(
+                name=p["name"],
+                defaults={"price": p["price"], "duration_days": p["duration_days"], "pack_type": p["pack_type"]}
+            )
 
-            # ==========================================
-            # 2. TẠO NHÀ TUYỂN DỤNG (EMPLOYER + PROFILE)
-            # ==========================================
-            self.stdout.write("- Đang tạo Nhà tuyển dụng...")
-            recruiters = []  # Danh sách User recruiter
+    def _create_jobs(self, recruiters):
+        self.stdout.write("💼 Đang tạo Jobs (kèm views & featured)...")
+        if not recruiters: return []
 
-            for i in range(10):
-                email = f"recruiter_{i}@company.com"
+        categories = [JobCategory.objects.get_or_create(name=n)[0] for n in ["IT Phần mềm", "Marketing", "Sales"]]
+        locations = [Location.objects.get_or_create(name=n)[0] for n in ["Hồ Chí Minh", "Hà Nội", "Đà Nẵng"]]
+        tags = [Tag.objects.get_or_create(name=n)[0] for n in ["Java", "Python", "React", "NodeJS"]]
 
-                # Check user tồn tại chưa
-                if not User.objects.filter(email=email).exists():
-                    user = User.objects.create_user(
-                        username=f"recruiter_{i}",
-                        email=email,
-                        password='123456',
-                        role=UserRole.EMPLOYER,
-                        first_name=fake.first_name(),
-                        last_name=fake.last_name(),
-                        phone=fake.phone_number()
-                    )
+        created_jobs = []
+        for _ in range(50):
+            recruiter = random.choice(recruiters)
+            base_salary = random.randint(10, 50) * 1000000
 
-                    # Random trạng thái
-                    status = random.choice(VerificationStatus.choices)[0]
-                    # Nếu Approved thì phải có người duyệt + ngày duyệt
-                    verified_at = timezone.now() if status == VerificationStatus.APPROVED else None
-                    verified_by = admin_user if status == VerificationStatus.APPROVED else None
+            # [LOGIC MỚI] Random Featured: 20% cơ hội là tin nổi bật
+            is_featured = random.choices([True, False], weights=[20, 80], k=1)[0]
 
-                    EmployerProfile.objects.create(
-                        user=user,
-                        company_name=fake.company(),
-                        tax_code=fake.unique.ean13(),
-                        website=fake.url(),
-                        description=fake.paragraph(nb_sentences=3),
-                        address=fake.address(),
-                        status=status,
-                        verified_at=verified_at,
-                        verified_by=verified_by
-                    )
+            job = Job.objects.create(
+                posted_by=recruiter.employer_profile,
+                title=f"{self.fake.job()} ({random.choice(['Junior', 'Senior'])})",
+                description=f"<p>{self.fake.paragraph()}</p>",
+                requirements=f"<ul><li>{self.fake.sentence()}</li></ul>",
+                benefits=f"<ul><li>Lương tháng 13</li></ul>",
+                company_name=recruiter.employer_profile.company_name,
+                category=random.choice(categories),
+                location=random.choice(locations),
+                address=recruiter.employer_profile.address,
+                employment_type=random.choice(EmploymentType.choices)[0],
+                experience_level=random.choice(ExperienceLevel.choices)[0],
+                salary_min=base_salary,
+                salary_max=base_salary + 5000000,
+                deadline=timezone.now().date() + timedelta(days=30),
 
-                    if status == VerificationStatus.APPROVED:
-                        recruiters.append(user)
-                else:
-                    # Nếu user đã có, kiểm tra xem có được duyệt không để add vào list
-                    u = User.objects.get(email=email)
-                    if hasattr(u, 'employer_profile') and u.employer_profile.status == VerificationStatus.APPROVED:
-                        recruiters.append(u)
+                # Random views và featured trực tiếp tại đây
+                views=random.randint(10, 5000),
+                is_featured=is_featured
+            )
+            job.tags.set(random.sample(tags, k=2))
+            created_jobs.append(job)
 
-            # ==========================================
-            # 3. TẠO ỨNG VIÊN (CANDIDATE + PROFILE)
-            # ==========================================
-            self.stdout.write("- Đang tạo Ứng viên...")
-            candidates_profiles = []  # Lưu list CandidateProfile để dùng tạo Application
+        return created_jobs
 
-            for i in range(20):
-                email = f"candidate_{i}@gmail.com"
-                if not User.objects.filter(email=email).exists():
-                    user = User.objects.create_user(
-                        username=f"candidate_{i}",
-                        email=email,
-                        password='123456',
-                        role=UserRole.CANDIDATE,
-                        first_name=fake.first_name(),
-                        last_name=fake.last_name(),
-                        phone=fake.phone_number()
-                    )
+    def _create_applications(self, candidates, jobs):
+        self.stdout.write("📄 Đang tạo Applications...")
+        if not candidates or not jobs:
+            return
 
-                    # Dữ liệu ngẫu nhiên
-                    specializations = ["React Native", "Python Backend", "Digital Marketing", "Business Analyst"]
-                    schools = ["Đại học Bách Khoa", "Đại học CNTT", "RMIT", "FPT University"]
-
-                    profile = CandidateProfile.objects.create(
-                        user=user,
-                        address=fake.address(),
-                        experience_years=random.randint(0, 10),
-                        dob=fake.date_of_birth(minimum_age=18, maximum_age=40),
-                        specialization=random.choice(specializations),
-                        school_name=random.choice(schools),
-                        education_status="GRADUATED"
-                    )
-                    candidates_profiles.append(profile)
-                else:
-                    u = User.objects.get(email=email)
-                    if hasattr(u, 'candidate_profile'):
-                        candidates_profiles.append(u.candidate_profile)
-
-            # ==========================================
-            # 4. TẠO GÓI DỊCH VỤ (SERVICE PACKS) - [MỚI]
-            # ==========================================
-            self.stdout.write("- Đang tạo Gói dịch vụ (Service Packs)...")
-
-            # Danh sách gói mẫu (Thực tế)
-            service_packs_data = [
-                {
-                    "name": "Đẩy tin nhanh (1 Ngày)",
-                    "price": 20000,
-                    "duration_days": 1,
-                    "pack_type": "JOB_PUSH",
-                    "description": "Đẩy tin lên đầu danh sách tìm kiếm trong 24h."
-                },
-                {
-                    "name": "Tin Nổi Bật (3 Ngày)",
-                    "price": 50000,
-                    "duration_days": 3,
-                    "pack_type": "JOB_PUSH",
-                    "description": "Ghim tin nổi bật và tiếp cận ứng viên nhanh hơn."
-                },
-                {
-                    "name": "Combo Tuần (7 Ngày)",
-                    "price": 100000,
-                    "duration_days": 7,
-                    "pack_type": "VIP_TOP",
-                    "description": "Tiết kiệm 30%. Tin luôn nằm trong top đầu trang chủ."
-                },
-                {
-                    "name": "Gói VIP Tuyển Dụng (30 Ngày)",
-                    "price": 500000,
-                    "duration_days": 30,
-                    "pack_type": "VIP_TOP",
-                    "description": "Giải pháp tuyển dụng toàn diện. Banner riêng và đẩy tin tự động mỗi ngày."
-                }
-            ]
-
-            for pack_data in service_packs_data:
-                # Dùng get_or_create để tránh tạo trùng lặp nếu chạy seed nhiều lần
-                ServicePack.objects.get_or_create(
-                    name=pack_data["name"],
-                    defaults={
-                        "price": pack_data["price"],
-                        "duration_days": pack_data["duration_days"],
-                        "pack_type": pack_data["pack_type"],
-                        "description": pack_data["description"]
-                    }
+        for candidate in candidates:
+            # Mỗi ứng viên nộp bừa 3-5 job
+            random_jobs = random.sample(jobs, k=random.randint(3, 5))
+            for job in random_jobs:
+                Application.objects.create(
+                    user=candidate,
+                    job=job,
+                    status=random.choice(ApplicationStatus.choices)[0],
+                    cover_letter=self.fake.paragraph(),
+                    employer_note=self.fake.sentence() if random.random() > 0.7 else ""
                 )
-            # ==========================================
-            # 4. TẠO JOBS (Job -> EmployerProfile)
-            # ==========================================
-            self.stdout.write("- Đang tạo Job Categories & Locations...")
-
-            categories = [JobCategory.objects.get_or_create(name=n)[0] for n in
-                          ["IT Phần mềm", "Marketing", "Sales", "Kế toán", "Design"]]
-            locations = [Location.objects.get_or_create(name=n)[0] for n in
-                         ["Hồ Chí Minh", "Hà Nội", "Đà Nẵng", "Cần Thơ"]]
-            tags = [Tag.objects.get_or_create(name=n)[0] for n in
-                    ["Python", "Java", "React", "English", "Fullstack", "NodeJS"]]
-
-            self.stdout.write(f"- Đang tạo Jobs cho {len(recruiters)} nhà tuyển dụng...")
-
-            # Xóa hết Job cũ để tránh rác
-            Job.objects.all().delete()
-
-            all_created_jobs = []
-
-            for _ in range(50):
-                if not recruiters: break
-
-                # Lấy ngẫu nhiên user recruiter, sau đó lấy profile
-                recruiter_user = random.choice(recruiters)
-                employer_profile = recruiter_user.employer_profile
-
-                base_salary = random.randint(5, 50) * 1000000
-
-                # --- [NEW] Tạo số view ảo ---
-                random_views = random.randint(50, 5000)
-
-                job = Job.objects.create(
-                    posted_by=employer_profile,  # <--- SỬA: Trỏ vào EmployerProfile
-
-                    title=f"{fake.job()} ({random.choice(['Senior', 'Junior', 'Fresher'])})",
-                    company_name=employer_profile.company_name,
-                    category=random.choice(categories),
-                    location=random.choice(locations),
-
-                    salary_min=base_salary,
-                    salary_max=base_salary + 5000000,
-                    deadline=timezone.now().date() + timedelta(days=random.randint(5, 60)),
-
-                    description=f"<p>{fake.paragraph(nb_sentences=5)}</p>",
-                    requirements=f"<ul><li>{fake.sentence()}</li></ul>",
-                    benefits=f"<ul><li>Lương tháng 13</li></ul>",
-
-                    views=random_views  # <--- SỬA: Thêm Views
-                )
-                job.tags.set(random.sample(tags, k=2))
-                all_created_jobs.append(job)
-
-            # ==========================================
-            # 5. TẠO APPLICATIONS (App -> CandidateProfile)
-            # ==========================================
-            if not all_created_jobs or not candidates_profiles:
-                self.stdout.write(self.style.WARNING("⚠️ Thiếu Job hoặc Candidate để tạo Application."))
-                return
-
-
-            self.stdout.write("- Đang tạo Hồ sơ ứng tuyển (Applications)...")
-            Application.objects.all().delete()
-
-            app_count = 0
-
-            for profile in candidates_profiles:
-                # Logic: Nếu Job ít thì lấy hết, nhiều thì random 3-8 cái
-                k = random.randint(3, 8)
-                if k > len(all_created_jobs):
-                    k = len(all_created_jobs)
-
-                random_jobs = random.sample(all_created_jobs, k=k)
-
-                for job in random_jobs:
-                    status = random.choice(ApplicationStatus.choices)[0]
-                    rating = None
-                    employer_note = ""
-
-                    if status != ApplicationStatus.SUBMITTED:
-                        rating = random.randint(1, 5) if random.random() > 0.3 else None
-                        rating = random.randint(1, 5) if random.random() > 0.3 else None
-                        employer_note = fake.sentence() if random.random() > 0.5 else ""
-
-                    Application.objects.create(
-                        candidate=profile,  # <--- SỬA: Trỏ vào CandidateProfile
-                        job=job,
-                        status=status,
-                        cover_letter=f"Kính gửi {job.company_name},\n\nTôi rất thích vị trí {job.title}. {fake.paragraph()}",
-                        employer_note=employer_note,
-                        rating=rating
-                    )
-                    app_count += 1
-
-            self.stdout.write(
-                self.style.SUCCESS(f'✅ Đã tạo dữ liệu thành công! (Jobs: {len(all_created_jobs)}, Apps: {app_count})'))

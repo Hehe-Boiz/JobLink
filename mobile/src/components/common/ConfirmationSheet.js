@@ -24,41 +24,50 @@ const ConfirmationSheet = ({
     const translateY = useRef(new Animated.Value(screenHeight)).current;
 
     const config =
-        type === 'remove_appreciation'
+        type === 'remove_resume'
             ? {
-                title: 'Remove Appreciation ?',
-                subtitle: 'Are you sure you want to remove this award?',
-                primaryBtnText: 'CONTINUE FILLING',
-                secondaryBtnText: 'UNDO CHANGES',
-                secondaryBtnColor: '#D6CDFE',
+                title: 'Remove Resume ?',
+                subtitle: 'Are you sure you want to remove this file?',
+                primaryBtnText: 'CANCEL',
+                secondaryBtnText: 'YES, REMOVE',
+                secondaryBtnColor: '#FF4B55',
                 secondaryTextColor: '#FFF',
             }
-            : type === 'remove_language'
+            : type === 'remove_appreciation'
                 ? {
-                    title: `Remove Language} ?`,
-                    subtitle: 'Are you sure you want to delete this language?',
-                    primaryBtnText: 'CONTINUE FILLING',
-                    secondaryBtnText: 'UNDO CHANGES',
-                    secondaryBtnColor: '#D6CDFE',
+                    title: 'Remove Appreciation ?',
+                    subtitle: 'Are you sure you want to remove this award?',
+                    primaryBtnText: 'CANCEL',
+                    secondaryBtnText: 'YES, REMOVE',
+                    secondaryBtnColor: '#FF4B55',
                     secondaryTextColor: '#FFF',
                 }
-                : type === 'remove'
+                : type === 'remove_language'
                     ? {
-                        title: 'Remove Work Experience?',
-                        subtitle: 'Are you sure you want to remove this experience permanently?',
+                        title: `Remove Language ?`,
+                        subtitle: 'Are you sure you want to delete this language?',
                         primaryBtnText: 'CANCEL',
                         secondaryBtnText: 'YES, REMOVE',
                         secondaryBtnColor: '#FF4B55',
                         secondaryTextColor: '#FFF',
                     }
-                    : {
-                        title: 'Undo Changes ?',
-                        subtitle: 'Are you sure you want to change what you entered?',
-                        primaryBtnText: 'CONTINUE FILLING',
-                        secondaryBtnText: 'UNDO CHANGES',
-                        secondaryBtnColor: '#D6CDFE',
-                        secondaryTextColor: '#FFF',
-                    };
+                    : type === 'remove'
+                        ? {
+                            title: 'Remove Work Experience?',
+                            subtitle: 'Are you sure you want to remove this experience permanently?',
+                            primaryBtnText: 'CANCEL',
+                            secondaryBtnText: 'YES, REMOVE',
+                            secondaryBtnColor: '#FF4B55',
+                            secondaryTextColor: '#FFF',
+                        }
+                        : {
+                            title: 'Undo Changes ?',
+                            subtitle: 'Are you sure you want to change what you entered?',
+                            primaryBtnText: 'CONTINUE FILLING',
+                            secondaryBtnText: 'UNDO CHANGES',
+                            secondaryBtnColor: '#D6CDFE',
+                            secondaryTextColor: '#FFF',
+                        };
 
 
     useEffect(() => {

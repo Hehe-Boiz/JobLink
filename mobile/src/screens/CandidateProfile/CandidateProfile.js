@@ -1,5 +1,5 @@
-import React, {useContext, useState, useEffect} from 'react';
-import {View, ScrollView, Image, TouchableOpacity, ActivityIndicator} from 'react-native';
+import React, {useContext, useState, useEffect, useCallback} from 'react';
+import {View, ScrollView, Image, TouchableOpacity, ActivityIndicator, Alert} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import CustomText from '../../components/common/CustomText';
 import {MaterialCommunityIcons} from '@expo/vector-icons';
@@ -7,8 +7,10 @@ import BgHeader from '../../../assets/images/Background_1.svg';
 import styles from '../../styles/CandidateProfile/CandidateProfileStyles';
 import {MyUserContext} from "../../utils/contexts/MyContext";
 import {authApis, endpoints} from "../../utils/Apis";
-import {useIsFocused} from '@react-navigation/native';
+import {useIsFocused, useFocusEffect} from '@react-navigation/native';
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import {ALL_LANGUAGES} from './AddLanguage';
+import ConfirmationSheet from "../../components/common/ConfirmationSheet";
 
 
 const SectionHeader = ({icon, title, onAdd, onEdit, hasData}) => (
@@ -46,7 +48,7 @@ const WorkExperienceSection = ({data, onAdd, onEdit}) => (
                     <CustomText style={styles.experienceTitle}>{item.title}</CustomText>
                     <CustomText style={styles.experienceCompany}>{item.company}</CustomText>
                     <CustomText
-                        style={styles.experienceDate}>{item.startDate} - {item.endDate} • {item.duration}</CustomText>
+                        style={styles.experienceDate}>{item.startDate} - {item.endDate}</CustomText>
                 </View>
                 <TouchableOpacity onPress={() => onEdit(item)}>
                     <MaterialCommunityIcons name="pencil-outline" size={20} color="#FF9228"/>
@@ -74,12 +76,13 @@ const EducationSection = ({data, onAdd, onEdit}) => (
     </View>
 );
 
-const SkillsSection = ({data, onEdit}) => {
+const SkillsSection = ({data, onEdit, onAdd}) => {
     const visibleSkills = data?.slice(0, 5) || [];
     const moreCount = (data?.length || 0) - 5;
     return (
         <View style={styles.card}>
-            <SectionHeader icon="star-four-points-outline" title="Skill" hasData={data?.length > 0} onEdit={onEdit}/>
+            <SectionHeader icon="star-four-points-outline" title="Skill" hasData={data?.length > 0} onEdit={onEdit}
+                           onAdd={onAdd}/>
             <View style={styles.tagsContainer}>
                 {visibleSkills.map((skill, index) => (
                     <View key={index} style={styles.tag}><CustomText style={styles.tagText}>{skill}</CustomText></View>
@@ -93,12 +96,13 @@ const SkillsSection = ({data, onEdit}) => {
     );
 };
 
-const LanguageSection = ({data, onEdit}) => (
+const LanguageSection = ({data, onEdit, onAdd}) => (
     <View style={styles.card}>
-        <SectionHeader icon="translate" title="Language" hasData={data?.length > 0} onEdit={onEdit}/>
+        <SectionHeader icon="translate" title="Language" hasData={data?.length > 0} onEdit={onEdit} onAdd={onAdd}/>
         <View style={styles.tagsContainer}>
-            {data?.map((lang, index) => (
-                <View key={index} style={styles.tag}><CustomText style={styles.tagText}>{lang}</CustomText></View>
+            {data?.map((item) => (
+                <View key={item.id} style={styles.tag}><CustomText
+                    style={styles.tagText}>{item.language} {item.is_first_language ? "(Native)" : ""}</CustomText></View>
             ))}
         </View>
     </View>
@@ -142,73 +146,113 @@ const ResumeSection = ({data, onAdd, onDelete}) => (
     </View>
 );
 
-const MOCK_DATA = {
-    workExperience: [
-        {
-            id: '1',
-            title: 'Manager',
-            company: 'Amazon Inc',
-            startDate: 'Jan 2015',
-            endDate: 'Feb 2022',
-            duration: '5 Years'
-        }
-    ],
-    education: [
-        {
-            id: '1',
-            degree: 'Information Technology',
-            school: 'University of Oxford',
-            startDate: 'Sep 2010',
-            endDate: 'Aug 2013'
-        }
-    ],
-    skills: ['Leadership', 'Teamwork', 'Visioner', 'Target oriented'],
-    languages: ['English', 'German', 'Spanish'],
-    appreciation: [
-        {id: '1', title: 'Wireless Symposium (RWS)', subtitle: 'Young Scientist', year: '2014'}
-    ],
-    resume: {name: 'Jamet kudasi - CV - UI/UX Designer', size: '867 Kb', date: '14 Feb 2022'}
-};
-
 const CandidateProfile = ({navigation}) => {
     const [user, dispatch] = useContext(MyUserContext);
     const [profileData, setProfileData] = useState(null);
     const [loading, setLoading] = useState(true);
-    const isFocused = useIsFocused(); // Hook để biết khi nào màn hình này được focus lại
+    const isFocused = useIsFocused();
+    const [showDeleteResume, setShowDeleteResume] = useState(false);
 
-    useEffect(() => {
-        const fetchProfile = async () => {
-            try {
-                const token = await AsyncStorage.getItem('token');
-                if (!token) {
-                    setLoading(false);
-                    return;
-                }
 
-                const res = await authApis(token).get(endpoints.candidate_profile);
-                const backendData = res.data;
-
-                setProfileData({
-                    fullName: backendData.user.full_name,
-                    avatar: backendData.user.avatar,
-                    location: backendData.address || "No Address",
-                    aboutMe: backendData.user.bio,
-                    follower: 120,
-                    following: 23,
-                    ...MOCK_DATA
-                });
-
-            } catch (err) {
-                console.error("Lỗi fetch profile:", err);
-            } finally {
+    const fetchProfile = useCallback(async () => {
+        try {
+            const token = await AsyncStorage.getItem('token');
+            if (!token) {
                 setLoading(false);
+                return;
             }
-        };
 
-        if (isFocused) {
-            fetchProfile();
+            const res = await authApis(token).get(endpoints.candidate_profile);
+            const data = res.data;
+
+            const mappedData = {
+                fullName: data.user.full_name,
+                avatar: data.user.avatar,
+                location: data.address || "Chưa cập nhật",
+                aboutMe: data.user.bio,
+                follower: 0,
+                following: 0,
+                email: data.user.email,
+                phone: data.user.phone,
+                dob: data.dob,
+                gender: data.gender,
+
+                skills: data.skill_list?.map(s => s.name) || [],
+
+                workExperience: data.work_experiences?.map(w => ({
+                    id: w.id,
+                    title: w.job_title || w.title,
+                    company: w.company_name || w.company,
+                    startDate: w.start_date,
+                    endDate: w.end_date ? w.end_date : "Present",
+                    description: w.description
+                })) || [],
+
+                education: data.educations?.map(e => ({
+                    id: e.id,
+                    degree: e.level ? `${e.level} - ${e.field_of_study}` : e.field_of_study,
+                    school: e.institution,
+                    startDate: e.start_date,
+                    endDate: e.end_date ? e.end_date : "Present",
+                    description: e.description
+                })) || [],
+
+                languages: data.languages?.map(lang => ({
+                    ...lang,
+                    flag: ALL_LANGUAGES[lang.language] || 'https://flagcdn.com/w160/gb.png' // Fallback flag nếu không tìm thấy
+                })) || [],
+
+                appreciation: data.appreciations?.map(a => ({
+                    id: a.id,
+                    title: a.award_name,
+                    subtitle: a.category,
+                    year: a.end_date,
+                    description: a.description
+                })) || [],
+                resume: data.resume ? {
+                    name: data.resume_name || "My Resume.pdf",
+                    size: "PDF",
+                    date: "Uploaded",
+                    uri: data.resume
+                } : null,
+            };
+            setProfileData(mappedData);
+
+        } catch (err) {
+            console.error("Lỗi fetch profile:", err);
+        } finally {
+            setLoading(false);
         }
-    }, [isFocused, user]);
+    }, [user]);
+
+    const handleDeleteResume = () => {
+        setShowDeleteResume(true);
+    };
+
+    const onConfirmDelete = async () => {
+        setShowDeleteResume(false);
+
+        try {
+            setLoading(true);
+            const token = await AsyncStorage.getItem('token');
+
+            await authApis(token).delete(`${endpoints.candidate_profile}resume/`);
+
+            await fetchProfile();
+
+        } catch (err) {
+            console.error("Delete error:", err);
+            Alert.alert("Error", "Could not delete resume.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useFocusEffect(
+        useCallback(() => {
+            fetchProfile();
+        }, [])
+    );
 
     if (loading) {
         return (
@@ -235,7 +279,7 @@ const CandidateProfile = ({navigation}) => {
                                 </TouchableOpacity>
                                 <TouchableOpacity
                                     style={styles.iconButton}
-                                    onPress={() => navigation.navigate('SettingsScreen')} // Chuyển sang Settings
+                                    onPress={() => navigation.navigate('SettingsScreen')}
                                 >
                                     <MaterialCommunityIcons name="cog-outline" size={24} color="#FFF"/>
                                 </TouchableOpacity>
@@ -258,7 +302,10 @@ const CandidateProfile = ({navigation}) => {
                             <TouchableOpacity
                                 style={styles.editButton}
                                 activeOpacity={0.8}
-                                onPress={() => navigation.navigate('EditProfile')}
+                                onPress={() => navigation.navigate('EditProfile',{
+                                    data: profileData,
+                                    onSave: fetchProfile
+                                })}
                             >
                                 <CustomText style={styles.editButtonText}>Edit profile</CustomText>
                                 <MaterialCommunityIcons name="pencil-outline" size={16} color="#FFF"/>
@@ -290,11 +337,13 @@ const CandidateProfile = ({navigation}) => {
 
                 <SkillsSection
                     data={profileData?.skills}
-                    onEdit={() => navigation.navigate('SkillList', {skills: profileData?.skills})}
+                    onEdit={() => navigation.navigate('AddSkill', {skills: profileData?.skills})}
+                    onAdd={() => navigation.navigate('AddSkill')}
                 />
 
                 <LanguageSection
                     data={profileData?.languages}
+                    onAdd={() => navigation.navigate('AddLanguage', {onSelect: fetchProfile})}
                     onEdit={() => navigation.navigate('LanguageList', {languages: profileData?.languages})}
                 />
 
@@ -307,11 +356,25 @@ const CandidateProfile = ({navigation}) => {
                 <ResumeSection
                     data={profileData?.resume}
                     onAdd={() => navigation.navigate('AddResume')}
-                    onDelete={() => console.log('Delete resume logic')}
+                    onDelete={handleDeleteResume}
                 />
 
                 <View style={{height: 100}}/>
             </ScrollView>
+            <ConfirmationSheet
+                visible={showDeleteResume}
+                onConfirm={onConfirmDelete}
+                onClose={() => setShowDeleteResume(false)}
+                type="remove_resume"
+            />
+            {loading && (
+                <View style={{
+                    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                    backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center'
+                }}>
+                    <ActivityIndicator size="large" color="#FF9228"/>
+                </View>
+            )}
         </View>
     );
 };

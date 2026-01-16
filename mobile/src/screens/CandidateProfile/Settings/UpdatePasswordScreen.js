@@ -1,9 +1,12 @@
-import React, {useState} from "react";
-import {View, StyleSheet, TouchableOpacity, TextInput} from "react-native";
+import React, {useState, useContext} from "react";
+import {View, StyleSheet, TouchableOpacity, TextInput, Alert} from "react-native";
 import {SafeAreaView} from "react-native-safe-area-context";
 import {MaterialCommunityIcons} from "@expo/vector-icons";
 import CustomText from "../../../components/common/CustomText";
 import CustomHeader from "../../../components/common/CustomHeader";
+import { MyUserContext } from "../../../utils/contexts/MyContext";
+import { authApis, endpoints } from "../../../utils/Apis";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const PasswordInput = ({label, value, onChangeText}) => {
     const [secure, setSecure] = useState(true);
@@ -36,17 +39,61 @@ const PasswordInput = ({label, value, onChangeText}) => {
 };
 
 const UpdatePasswordScreen = ({navigation}) => {
+    const [user] = useContext(MyUserContext);
     const [oldPass, setOldPass] = useState("");
     const [newPass, setNewPass] = useState("");
     const [confirm, setConfirm] = useState("");
+    const [loading, setLoading] = useState(false);
 
-    const onUpdate = () => {
-        // TODO: validate + call API
+    const onUpdate = async () => {
+        if (!oldPass || !newPass || !confirm) {
+            Alert.alert("Thiếu thông tin", "Vui lòng điền đầy đủ các trường mật khẩu.");
+            return;
+        }
+
+        if (newPass !== confirm) {
+            Alert.alert("Lỗi", "Mật khẩu xác nhận không khớp với mật khẩu mới.");
+            return;
+        }
+
+        if (newPass.length < 6) {
+             Alert.alert("Mật khẩu yếu", "Mật khẩu mới nên có ít nhất 6 ký tự.");
+             return;
+        }
+
+        setLoading(true);
+        try {
+            // const token = await AsyncStorage.getItem('token');
+            // const payload = {
+            //     current_password: oldPass,
+            //     new_password: newPass
+            // };
+            // const res = await authApis(token).patch(endpoints.update_user, payload);
+
+            setLoading(false);
+            Alert.alert("Thành công", "Mật khẩu đã được cập nhật!", [
+                { text: "OK", onPress: () => navigation.goBack() }
+            ]);
+
+        } catch (error) {
+            setLoading(false);
+            console.error(error);
+
+            let errorMessage = "Đã có lỗi xảy ra. Vui lòng thử lại.";
+            if (error.response) {
+                if (error.response.data?.current_password) {
+                    errorMessage = "Mật khẩu cũ không chính xác.";
+                } else if (error.response.data?.detail) {
+                    errorMessage = error.response.data.detail;
+                }
+            }
+            Alert.alert("Thất bại", errorMessage);
+        }
     };
 
     return (
         <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
-            <CustomHeader/>
+            <CustomHeader navigation={navigation}/>
 
             <CustomText style={styles.title}>Update Password</CustomText>
 
@@ -58,7 +105,7 @@ const UpdatePasswordScreen = ({navigation}) => {
             </View>
 
             <View style={styles.bottomArea}>
-                <TouchableOpacity activeOpacity={0.9} style={styles.primaryBtn} onPress={onUpdate}>
+                <TouchableOpacity activeOpacity={0.9} style={styles.primaryBtn} onPress={onUpdate} disabled={loading}>
                     <CustomText style={styles.primaryText}>UPDATE</CustomText>
                 </TouchableOpacity>
             </View>

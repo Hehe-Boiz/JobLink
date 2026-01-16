@@ -1,12 +1,11 @@
 import axios from "axios";
 
-const BASE_URL = 'http://192.168.1.15:8000/';
+const BASE_URL = 'http://192.168.1.23:8000/';
 
 export const endpoints = {
     'register_candidate': '/register/candidate/',
     'register_employer': '/register/employer/',
     'login': '/o/token/',
-    'login_google': '/auth/google/login/',
     'logout': '/o/revoke_token/',
     'current_user': '/users/current-user/',
     'current_employer': '/employers/me/',
@@ -30,6 +29,11 @@ export const endpoints = {
     'create_payment': '/payments/receipts/create-payment/',
     'confirm_payment': '/payments/receipts/confirm-payment/',
     'history_payment': '/payments/receipts/',
+    'work_experience': '/work-experience/',
+    'education': '/education/',
+    'languages': '/languages/',
+    'appreciations': '/appreciations/',
+    'skills': '/skills/',
 };
 
 export const authApis = (token) => {

@@ -10,17 +10,31 @@ import {MaterialCommunityIcons} from '@expo/vector-icons';
 import {useFocusEffect} from '@react-navigation/native';
 import CustomText from '../../components/common/CustomText';
 import SkillChip from "../../components/common/SkillChip";
+import { authApis, endpoints } from '../../utils/Apis';
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const SkillList = ({navigation, route}) => {
-    // Skills ban đầu (có thể từ API hoặc route params)
-    const initialSkills = route?.params?.skills || [
-        'Leadership', 'Teamwork', 'Visioner', 'Target oriented',
-        'Consistent', 'Good communication skills', 'English', 'Responsibility'
-    ];
+    const [skills, setSkills] = useState(route.params?.skills || []);
+    const [loading, setLoading] = useState(false);
+    const handleUpdateSkills = (newSkills) => {
+        setSkills(newSkills);
+    };
 
-    const [skills, setSkills] = useState(initialSkills);
+    const fetchSkills = async () => {
+        try {
+            setLoading(true);
+            const token = await AsyncStorage.getItem('token');
+            const res = await authApis(token).get(endpoints.candidate_profile);
 
-    // Callback khi quay về từ AddSkill
+            const skillNames = res.data.skill_list.map(s => s.name);
+            setSkills(skillNames);
+        } catch (error) {
+            console.error(error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const handleSkillsUpdate = useCallback((newSkills) => {
         setSkills(newSkills);
     }, []);
@@ -30,7 +44,6 @@ const SkillList = ({navigation, route}) => {
     };
 
     const handleBack = () => {
-        // Trả về skills đã cập nhật nếu có callback
         if (route?.params?.onSave) {
             route.params.onSave(skills);
         }
@@ -40,7 +53,7 @@ const SkillList = ({navigation, route}) => {
     const handleChange = () => {
         navigation.navigate('AddSkill', {
             skills: skills,
-            onSave: handleSkillsUpdate,
+            onSave: handleUpdateSkills
         });
     };
 

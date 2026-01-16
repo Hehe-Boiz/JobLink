@@ -30,8 +30,9 @@ import SettingsScreen from "../screens/CandidateProfile/Settings/SettingsScreen"
 import UpdatePasswordScreen from "../screens/CandidateProfile/Settings/UpdatePasswordScreen";
 import NotificationsScreen from "../screens/Candidate/Notifications/NotificationsScreen";
 import NotificationDetailScreen from "../screens/Candidate/Notifications/NotificationDetailScreen";
+import AddSkill from "../screens/CandidateProfile/AddSkill";
+import AddLanguage from "../screens/CandidateProfile/AddLanguage";
 import BuyService from '../screens/Service/BuyService';
-import * as Linking from 'expo-linking';
 import JobApplicants from '../screens/Employer/JobApplicants';
 import PaymentResult from '../screens/Service/PaymentResult';
 import { MyUserContext } from '../utils/contexts/MyContext';
@@ -48,15 +49,21 @@ export default function AppNavigator() {
                     initialRouteName="Login"
                     screenOptions={{ headerShown: false }}
                 >
-                    <Stack.Screen name="Login" component={Login} />
-                    <Stack.Screen name="CandidateRegister" component={CandidateRegister} />
-                    <Stack.Screen name="EmployerRegister" component={EmployerRegister} />
-                    <Stack.Screen name="EmployerMain" component={EmployerTabs} />
-                    <Stack.Screen name="CandidateMain" component={CandidateTabs} />
-                    <Stack.Screen name="JobDetail" component={JobDetail} />
-                    <Stack.Screen name="ApplyJob" component={ApplyJob} />
-                    <Stack.Screen name="CandidateDetail" component={CandidateDetail} />
-                    <Stack.Screen name="PostJob" component={PostJob} />
+                    <Stack.Screen name="Login" component={Login}/>
+                    <Stack.Screen name="CandidateRegister" component={CandidateRegister}/>
+                    <Stack.Screen name="EmployerRegister" component={EmployerRegister}/>
+                    <Stack.Screen name="EmployerMain" component={EmployerTabs}/>
+                    <Stack.Screen name="CandidateMain" component={CandidateTabs}/>
+                    <Stack.Screen name="JobDetail" component={JobDetail}/>
+                    <Stack.Screen name="ApplyJob" component={ApplyJob}/>
+                    <Stack.Screen name="JobApplicants" component={JobApplicants}/>
+                    <Stack.Screen name="CandidateDetail" component={CandidateDetail}/>
+                    <Stack.Screen name="PostJob" component={PostJob}/>
+                    <Stack.Screen name="EmployerEditProfile" component={EmployerEditProfile}/>
+                    <Stack.Screen name="CandidateSearchResults" component={CandidateSearchResults}/>
+                    <Stack.Screen name="CandidateSearchJob" component={CandidateSearchJob}/>
+                    <Stack.Screen name="CandidateFilterCategory" component={CandidateFilterCategory}/>
+                    <Stack.Screen name="CandidateSearchAdvance" component={CandidateSearchAdvance}/>
                     <Stack.Screen
                         name="JobApplicants"
                         component={JobApplicants}
@@ -67,26 +74,24 @@ export default function AppNavigator() {
                         component={PaymentResult}
                         options={{ headerShown: false }}
                     />
-                    <Stack.Screen name="EmployerEditProfile" component={EmployerEditProfile} />
-                    <Stack.Screen name="CandidateSearchResults" component={CandidateSearchResults} />
-                    <Stack.Screen name="CandidateSearchJob" component={CandidateSearchJob} />
-                    <Stack.Screen name="CandidateFilterCategory" component={CandidateFilterCategory} />
-                    <Stack.Screen name="CandidateSearchAdvance" component={CandidateSearchAdvance} />
-                    <Stack.Screen name="CompanyDetail" component={CompanyDetail} />
-                    <Stack.Screen name="CandidateProfile" component={CandidateProfile} />
-                    <Stack.Screen name="EditProfile" component={EditProfile} />
-                    <Stack.Screen name="EditAboutMe" component={EditAboutMe} />
-                    <Stack.Screen name="AddWorkExperience" component={AddWorkExperience} />
-                    <Stack.Screen name="AddEducation" component={AddEducation} />
-                    <Stack.Screen name="SkillList" component={SkillList} />
-                    <Stack.Screen name="LanguageList" component={LanguageList} />
-                    <Stack.Screen name="AppreciationForm" component={AppreciationForm} />
                     <Stack.Screen name="BuyService" component={BuyService} />
-                    <Stack.Screen name="AddResume" component={AddResume} />
-                    <Stack.Screen name="SettingsScreen" component={SettingsScreen} />
-                    <Stack.Screen name="UpdatePasswordScreen" component={UpdatePasswordScreen} />
-                    <Stack.Screen name="Notifications" component={NotificationsScreen} />
-                    <Stack.Screen name="NotificationDetail" component={NotificationDetailScreen} />
+                    <Stack.Screen name="CompanyDetail" component={CompanyDetail}/>
+                    <Stack.Screen name="CandidateProfile" component={CandidateProfile}/>
+                    <Stack.Screen name="EditProfile" component={EditProfile}/>
+                    <Stack.Screen name="EditAboutMe" component={EditAboutMe}/>
+                    <Stack.Screen name="AddWorkExperience" component={AddWorkExperience}/>
+                    <Stack.Screen name="AddEducation" component={AddEducation}/>
+                    <Stack.Screen name="SkillList" component={SkillList}/>
+                    <Stack.Screen name="LanguageList" component={LanguageList}/>
+                    <Stack.Screen name="AppreciationForm" component={AppreciationForm}/>
+                    <Stack.Screen name="AddResume" component={AddResume}/>
+                    <Stack.Screen name="SettingsScreen" component={SettingsScreen}/>
+                    <Stack.Screen name="UpdatePasswordScreen" component={UpdatePasswordScreen}/>
+                    <Stack.Screen name="Notifications" component={NotificationsScreen}/>
+                    <Stack.Screen name="NotificationDetail" component={NotificationDetailScreen}/>
+                    <Stack.Screen name="AddSkill" component={AddSkill}/>
+                    <Stack.Screen name="AddLanguage" component={AddLanguage}/>
+
                 </Stack.Navigator>
             </NavigationContainer>
         </Provider>

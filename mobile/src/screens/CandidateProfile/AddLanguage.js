@@ -29,7 +29,6 @@ const AddLanguage = ({navigation, route}) => {
     const [search, setSearch] = useState('');
     const [selectedId, setSelectedId] = useState(null);
 
-    // danh sách ngôn ngữ đã có để show dấu check
     const existingIds = route?.params?.existingIds || [];
 
     const filtered = useMemo(() => {
@@ -39,10 +38,17 @@ const AddLanguage = ({navigation, route}) => {
     }, [search]);
 
     const handleSelect = (lang) => {
-        setSelectedId(lang.id);
+        navigation.navigate('LanguageDetail', {
+            language: {
+                ...lang,
+                oral: 1,
+                written: 1,
+                isFirst: false
+            },
+            onSave: route?.params?.onSelect,
 
-        if (route?.params?.onSelect) route.params.onSelect(lang);
-        navigation.goBack();
+            isAdd: true
+        });
     };
 
     const renderItem = ({item}) => {

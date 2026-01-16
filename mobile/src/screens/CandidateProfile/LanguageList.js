@@ -1,33 +1,25 @@
-import React, {useState} from 'react';
+import React, {useState, useEffect, useContext} from 'react';
 import {
     View,
     FlatList,
     TouchableOpacity,
     StyleSheet,
     Alert,
-    Image,
+    Image, ActivityIndicator, ScrollView, RefreshControl
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {MaterialCommunityIcons} from '@expo/vector-icons';
 import ConfirmationSheet from "../../components/common/ConfirmationSheet";
-
+import {endpoints, authApis} from '../../utils/Apis';
+import {MyUserContext} from '../../utils/contexts/MyContext';
 import CustomText from '../../components/common/CustomText';
 import CustomHeader from '../../components/common/CustomHeader';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import {ALL_LANGUAGES} from './AddLanguage';
 
-const ALL_LANGUAGES = [
-    {id: 'id', name: 'Indonesian', flag: 'https://flagcdn.com/w160/id.png'},
-    {id: 'en', name: 'English', flag: 'https://flagcdn.com/w160/gb.png'},
-    {id: 'ar', name: 'Arabic', flag: 'https://flagcdn.com/w160/sa.png'},
-    {id: 'my', name: 'Malaysian', flag: 'https://flagcdn.com/w160/my.png'},
-    {id: 'fr', name: 'French', flag: 'https://flagcdn.com/w160/fr.png'},
-    {id: 'de', name: 'German', flag: 'https://flagcdn.com/w160/de.png'},
-];
-
-const LanguageList = ({navigation}) => {
-    const [userLanguages, setUserLanguages] = useState([
-        {...ALL_LANGUAGES[0], isFirst: true, oral: 10, written: 10},
-        {...ALL_LANGUAGES[1], isFirst: false, oral: 8, written: 8},
-    ]);
+const LanguageList = ({navigation, route}) => {
+    const [userLanguages, setUserLanguages] = useState([]);
+    const [loading, setLoading] = useState(false);
     const [removeVisible, setRemoveVisible] = useState(false);
     const [pendingRemove, setPendingRemove] = useState(null);
 
@@ -36,43 +28,78 @@ const LanguageList = ({navigation}) => {
         setRemoveVisible(true);
     };
 
-    const handleDelete = (id) => {
-        Alert.alert(
-            'Remove Language?',
-            'Are you sure you want to delete this language?',
-            [
-                {text: 'Cancel', style: 'cancel'},
-                {
-                    text: 'Delete',
-                    style: 'destructive',
-                    onPress: () => setUserLanguages((prev) => prev.filter((l) => l.id !== id)),
-                },
-            ]
-        );
+    const getFlag = (langName) => {
+        const found = ALL_LANGUAGES.find(l => l.name === langName);
+        return found.flag;
     };
 
-    const updateLanguage = (updatedLang) => {
-        setUserLanguages((prev) => prev.map((l) => (l.id === updatedLang.id ? updatedLang : l)));
-    };
+    const confirmDelete = async () => {
+        if (!pendingRemove) return;
+        try {
+            const token = await AsyncStorage.getItem('token');
+            const api = authApis(token);
+            await api.delete(`${endpoints.languages}${pendingRemove.id}/`);
 
-    const addNewLanguage = (newLang) => {
-        if (!userLanguages.find((l) => l.id === newLang.id)) {
-            setUserLanguages((prev) => [
-                ...prev,
-                {...newLang, isFirst: false, oral: 1, written: 1},
-            ]);
+            setUserLanguages(prev => prev.filter(l => l.id !== pendingRemove.id));
+        } catch (error) {
+            Alert.alert("Lỗi", "Không thể xóa ngôn ngữ.");
+        } finally {
+            setRemoveVisible(false);
+            setPendingRemove(null);
         }
     };
 
-    const renderItem = ({item}) => {
+    const loadData = async () => {
+        setLoading(true);
+        try {
+            const token = await AsyncStorage.getItem('token')
+            const api = authApis(token);
+            const res = await api.get(endpoints.languages);
+
+            const sourceData = Array.isArray(res.data) ? res.data : (res.data.results || []);
+
+            const mappedData = sourceData.map(item => {
+                return {
+                    ...item,
+                    name: item.language,
+                    oral: item.oral_level,
+                    written: item.written_level,
+                    isFirst: item.is_first_language,
+                    flag: getFlag(item.language)
+                };
+            });
+
+            setUserLanguages(mappedData);
+        } catch (error) {
+            console.error(error);
+            Alert.alert("Lỗi", "Không thể tải danh sách ngôn ngữ.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        loadData();
+    }, []);
+
+
+
+    const addNewLanguage = async (finalData) => {
+        loadData();
+    };
+
+
+    const renderLanguageItem = (item) => {
         return (
             <TouchableOpacity
+                key={item.id}
                 activeOpacity={0.9}
                 style={styles.card}
                 onPress={() =>
                     navigation.navigate('LanguageDetail', {
                         language: item,
-                        onSave: updateLanguage,
+                        isAdd: false,
+                        onSave: loadData,
                     })
                 }
             >
@@ -116,11 +143,12 @@ const LanguageList = ({navigation}) => {
                 <CustomText style={styles.headerTitle}>Language</CustomText>
 
                 <TouchableOpacity
+
                     activeOpacity={0.8}
                     onPress={() =>
                         navigation.navigate('AddLanguage', {
-                            onSelect: addNewLanguage,
-                            existingIds: userLanguages.map(l => l.id),
+                            onSelect: loadData,
+                            existingIds: userLanguages.map(l => l.name),
                         })
                     }
 
@@ -134,16 +162,30 @@ const LanguageList = ({navigation}) => {
                 </TouchableOpacity>
             </View>
 
-            <FlatList
-                data={userLanguages}
-                renderItem={renderItem}
-                keyExtractor={(item) => item.id}
+            <ScrollView
                 contentContainerStyle={styles.listContent}
                 showsVerticalScrollIndicator={false}
-            />
+                refreshControl={
+                    <RefreshControl
+                        refreshing={loading}
+                        onRefresh={loadData}
+                        colors={['#6A5ACD']}
+                    />
+                }
+            >
+                {userLanguages && userLanguages.length > 0 ? (
+                    userLanguages.map((item) => renderLanguageItem(item))
+                ) : (
+                    !loading && (
+                        <View style={{alignItems: 'center', marginTop: 50}}>
+                            <CustomText style={{color: '#999'}}>No languages added yet</CustomText>
+                        </View>
+                    )
+                )}
+            </ScrollView>
 
             <View style={styles.footer}>
-                <TouchableOpacity activeOpacity={0.9} style={styles.saveButton}>
+                <TouchableOpacity activeOpacity={0.9} style={styles.saveButton} onPress={() => navigation.goBack()}>
                     <CustomText style={styles.saveButtonText}>SAVE</CustomText>
                 </TouchableOpacity>
             </View>
@@ -155,13 +197,7 @@ const LanguageList = ({navigation}) => {
                     setRemoveVisible(false);
                     setPendingRemove(null);
                 }}
-                onConfirm={() => {
-                    if (pendingRemove) {
-                        setUserLanguages(prev => prev.filter(l => l.id !== pendingRemove.id));
-                    }
-                    setRemoveVisible(false);
-                    setPendingRemove(null);
-                }}
+                onConfirm={confirmDelete}
             />
 
         </SafeAreaView>

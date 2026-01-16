@@ -1,4 +1,3 @@
-// src/screens/Candidate/Profile/EditProfile.js
 import React, {useState} from 'react';
 import {
     View,
@@ -8,7 +7,7 @@ import {
     ScrollView,
     Image,
     KeyboardAvoidingView,
-    Platform,
+    Platform, Alert, ActivityIndicator
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {MaterialCommunityIcons} from '@expo/vector-icons';
@@ -16,6 +15,9 @@ import CustomText from '../../components/common/CustomText';
 import BgHeader from '../../../assets/images/Background_1.svg';
 import CustomSelector from "../../components/common/CustomSelector";
 import DayMonthYearInput from "../../components/common/DayMonthYear/DayMonthYearInput";
+import {authApis, endpoints} from '../../utils/Apis';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as ImagePicker from 'expo-image-picker';
 
 const PHONE_CODES = [
     {id: 1, name: '+1 (US/CA)', code: '+1'},
@@ -25,45 +27,156 @@ const PHONE_CODES = [
     {id: 5, name: '+65 (SG)', code: '+65'},
 ];
 
+const getMonthNumber = (mon) => {
+    const months = {
+        'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04', 'May': '05', 'Jun': '06',
+        'Jul': '07', 'Aug': '08', 'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
+    };
+    return months[mon] || '01';
+}
+
+const getMonthName = (num) => {
+    const map = {
+        '01': 'Jan', '02': 'Feb', '03': 'Mar', '04': 'Apr', '05': 'May', '06': 'Jun',
+        '07': 'Jul', '08': 'Aug', '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dec'
+    };
+    const paddedNum = num.toString().padStart(2, '0');
+    return map[paddedNum] || 'Jan';
+};
+
 
 const EditProfile = ({navigation, route}) => {
     const initial = route?.params?.data || {};
+    const [loading, setLoading] = useState(false);
 
     const [form, setForm] = useState({
-        fullName: initial.fullName ?? 'Brandone Louis',
-        dob: initial.dob ?? '06 August 1992',
-        gender: initial.gender ?? 'male', // 'male' | 'female'
-        email: initial.email ?? 'Brandonelouis@gmail.com',
-        phoneCode: initial.phoneCode ?? '+1',
-        phone: initial.phone ?? '619 3456 7890',
-        location: initial.location ?? 'California, United states',
-        avatar: initial.avatar ?? 'https://i.pravatar.cc/150?img=12', // demo
+        fullName: initial.fullName || '',
+        dobRaw: initial.dob || null,
+        gender: initial.gender ? initial.gender.toLowerCase() : null,
+        email: initial.email || '',
+        phone: initial.phone || '',
+        location: initial.location || '',
+        avatar: initial.avatar || null,
     });
 
     const [phoneCodeItem, setPhoneCodeItem] = useState(() => {
-        // map từ form.phoneCode (string) sang item object
         const found = PHONE_CODES.find(x => x.code === (initial.phoneCode ?? '+1'));
         return found ? {id: found.id, name: found.name} : {id: 1, name: '+1 (US/CA)'};
     });
 
-    const [dob, setDob] = useState({day: '06', month: 'Aug', year: 1992});
+    const [dob, setDob] = useState(() => {
+        if (initial.dob) {
+            const parts = initial.dob.split('-');
+            if (parts.length === 3) {
+                return {
+                    year: parseInt(parts[0]),
+                    month: getMonthName(parts[1]),
+                    day: parts[2]
+                };
+            }
+        }
+        return null;
+    });
 
-    const onSave = () => {
-        route?.params?.onSave?.(form);
-        navigation.goBack();
+    const onChangeImage = async () => {
+        let result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 1,
+        });
+
+        if (!result.canceled) {
+            setForm(p => ({...p, avatar: result.assets[0].uri}));
+        }
     };
 
-    const onPickDob = () => {
-        // TODO: mở DatePicker modal của bạn
-    };
+    const onSave = async () => {
+        setLoading(true);
+        try {
+            const token = await AsyncStorage.getItem('token');
+            const api = authApis(token);
+            const userData = new FormData();
 
-    const onChangeImage = () => {
-        // TODO: mở ImagePicker của bạn
+            const oldName = initial.fullName || '';
+            const newName = form.fullName || '';
+
+            if (newName.trim() !== oldName.trim()) {
+                console.log("Phát hiện tên thay đổi, đang cập nhật...");
+
+                const nameParts = newName.trim().split(' ');
+                const lastName = nameParts.length > 1 ? nameParts.pop() : '';
+                const firstName = nameParts.join(' ');
+
+                userData.append('first_name', lastName);
+                userData.append('last_name', firstName);
+            }
+
+            if (form.phone !== initial.phone) {
+                 userData.append('phone', form.phone);
+            }
+
+            if (form.avatar && form.avatar.startsWith('file://')) {
+                const filename = form.avatar.split('/').pop();
+                const match = /\.(\w+)$/.exec(filename);
+                const type = match ? `image/${match[1]}` : `image`;
+
+                userData.append('avatar', {
+                    uri: form.avatar,
+                    name: filename,
+                    type: type,
+                });
+            }
+
+
+            const profileData = {
+                address: form.location,
+            };
+
+            if (form.gender) {
+                profileData.gender = form.gender.toUpperCase();
+            }
+
+            if (dob) {
+                const formattedDob = `${dob.year}-${getMonthNumber(dob.month)}-${dob.day}`;
+                profileData.dob = formattedDob;
+            }
+
+            console.log("updating profile...");
+
+            const promises = [];
+
+            if (userData._parts && userData._parts.length > 0) {
+                 promises.push(api.patch(endpoints.update_user, userData, {
+                    headers: { "Content-Type": "multipart/form-data" }
+                }));
+            }
+
+            promises.push(api.patch(endpoints.update_candidate_profile, profileData));
+
+            await Promise.all(promises);
+            Alert.alert("Success", "Profile updated successfully!");
+
+            if (route?.params?.onSave) {
+                route.params.onSave();
+            }
+            navigation.goBack();
+
+        } catch (error) {
+            console.error(error);
+            let msg = "Update failed";
+            if (error.response) {
+                console.log(error.response.data);
+                msg = JSON.stringify(error.response.data);
+            }
+            Alert.alert("Error", msg);
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
         <SafeAreaView style={styles.container} edges={['left', 'right']}>
-            {/* Header BG giống CandidateProfile */}
             <View style={styles.headerContainer}>
                 <BgHeader
                     width="100%"
@@ -72,7 +185,6 @@ const EditProfile = ({navigation, route}) => {
                     preserveAspectRatio="none"
                 />
 
-                {/* SafeArea để ăn padding status bar đúng */}
                 <SafeAreaView edges={['top']} style={styles.headerSafe}>
                     {/* Back */}
                     <TouchableOpacity
@@ -84,7 +196,6 @@ const EditProfile = ({navigation, route}) => {
                         <MaterialCommunityIcons name="arrow-left" size={24} color="#FFF"/>
                     </TouchableOpacity>
 
-                    {/* Right icons */}
                     <View style={styles.rightIcons}>
                         <TouchableOpacity hitSlop={10} activeOpacity={0.9} style={styles.iconBtn}>
                             <MaterialCommunityIcons
@@ -98,16 +209,13 @@ const EditProfile = ({navigation, route}) => {
                         </TouchableOpacity>
                     </View>
 
-                    {/* ===== Profile block ===== */}
                     <View style={styles.profileBlock}>
-                        {/* Avatar ở trên */}
                         <Image source={{uri: form.avatar}} style={styles.avatar}/>
 
-                        {/* Row: text trái (2 dòng) + button phải (canh giữa theo chiều dọc) */}
                         <View style={styles.infoRow}>
                             <View style={styles.textCol}>
-                                <CustomText style={styles.name}>Orlando Diggs</CustomText>
-                                <CustomText style={styles.locationText}>California, USA</CustomText>
+                                <CustomText style={styles.name}>{form.fullName || "User Name"}</CustomText>
+                                <CustomText style={styles.locationText}>{form.location || "Location not set"}</CustomText>
                             </View>
 
                             <TouchableOpacity
@@ -130,7 +238,6 @@ const EditProfile = ({navigation, route}) => {
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={styles.content}
                 >
-                    {/* Fullname */}
                     <CustomText style={styles.label}>Fullname</CustomText>
                     <View style={styles.inputWrap}>
                         <TextInput
@@ -142,25 +249,21 @@ const EditProfile = ({navigation, route}) => {
                         />
                     </View>
 
-                    {/* Date of birth */}
                     <CustomText style={styles.label}>Date of birth</CustomText>
                     <DayMonthYearInput
                         label={null}
-                        value={dob} // { day, month, year }
-                        placeholder="Select Date of birth"
+                        value={dob || { day: '', month: '', year: '' }}
+                        placeholder="Chưa nhập ngày sinh"
                         onChange={(v) => {
-                            // v = { day:'06', month:'Aug', year:1992 }
                             setDob(v);
-                            setForm((p) => ({...p, dob: `${v.day} ${v.month} ${v.year}`}));
                         }}
                     />
 
-                    {/* Gender */}
                     <CustomText style={styles.label}>Gender</CustomText>
                     <View style={styles.genderRow}>
                         <TouchableOpacity
                             activeOpacity={0.9}
-                            style={styles.genderBox}
+                            style={[styles.genderBox, form.gender === 'male' && { borderColor: '#FF8A00', backgroundColor: '#FFF5E5' }]}
                             onPress={() => setForm((p) => ({...p, gender: 'male'}))}
                         >
                             <MaterialCommunityIcons
@@ -184,8 +287,12 @@ const EditProfile = ({navigation, route}) => {
                             <CustomText style={styles.genderText}>Female</CustomText>
                         </TouchableOpacity>
                     </View>
+                    {!form.gender && (
+                         <CustomText style={{fontSize: 12, color: '#999', marginTop: 5, marginLeft: 5}}>
+                             * Chưa chọn giới tính
+                         </CustomText>
+                    )}
 
-                    {/* Email */}
                     <CustomText style={styles.label}>Email address</CustomText>
                     <View style={styles.inputWrap}>
                         <TextInput
@@ -198,7 +305,6 @@ const EditProfile = ({navigation, route}) => {
                         />
                     </View>
 
-                    {/* Phone */}
                     <CustomText style={styles.label}>Phone number</CustomText>
                     <View style={styles.phoneRow}>
                         <View style={{width: 130, marginTop: 5}}>
@@ -228,7 +334,6 @@ const EditProfile = ({navigation, route}) => {
                         </View>
                     </View>
 
-                    {/* Location */}
                     <CustomText style={styles.label}>Location</CustomText>
                     <View style={styles.inputWrap}>
                         <TextInput
@@ -243,10 +348,14 @@ const EditProfile = ({navigation, route}) => {
                     <View style={{height: 140}}/>
                 </ScrollView>
 
-                {/* SAVE fixed bottom */}
                 <View style={styles.footer}>
-                    <TouchableOpacity activeOpacity={0.9} style={styles.saveBtn} onPress={onSave}>
-                        <CustomText style={styles.saveText}>SAVE</CustomText>
+                    <TouchableOpacity activeOpacity={0.9} style={[styles.saveBtn, loading && {opacity: 0.7}]}
+                                      onPress={onSave} disabled={loading}>
+                        {loading ? (
+                            <ActivityIndicator size="small" color="#FFFFFF"/>
+                        ) : (
+                            <CustomText style={styles.saveText}>SAVE</CustomText>
+                        )}
                     </TouchableOpacity>
                 </View>
             </KeyboardAvoidingView>
@@ -317,7 +426,6 @@ const styles = StyleSheet.create({
         marginBottom: 10,
     },
 
-    // Row dưới avatar: text trái, button phải
     infoRow: {
         width: '100%',
         flexDirection: 'row',
