@@ -11,6 +11,9 @@ from django.utils import timezone
 from .utils.momo_utils import create_momo_payment
 from .utils.vnpay_utils import create_vnpay_payment_url, get_client_ip, validate_vnpay_signature, VNP_HASH_SECRET
 from django.http import HttpResponse
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 class ServicePackViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [AllowAny]
@@ -50,7 +53,7 @@ class ReceiptViewSet(viewsets.ViewSet, generics.ListAPIView):
             order_id = f"JOBLINK_{receipt.id}_{int(timezone.now().timestamp())}"
             ip_addr = get_client_ip(request)
 
-            domain = "https://f56a2699b479.ngrok-free.app"
+            domain = os.getenv('URL_BACKEND')
             return_url = f"{domain}/payments/receipts/vnpay-return/"
             payment_url = create_vnpay_payment_url(
                 order_id=order_id,
