@@ -259,9 +259,9 @@ export default StyleSheet.create({
         borderTopWidth: 0
     },
     postedTime: {
-        fontSize: 12,
+        fontSize: 14,
         color: '#AAA6B9',
-        fontWeight: '400'
+        fontWeight: '500'
     },
 
     fabSearch: {

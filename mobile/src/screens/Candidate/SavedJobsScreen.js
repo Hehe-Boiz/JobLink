@@ -34,6 +34,40 @@ const SavedJobsScreen = ({navigation}) => {
     const translateY = useRef(new Animated.Value(screenHeight)).current;
     const [loading, setLoading] = useState(false);
 
+    const [isCompareMode, setIsCompareMode] = useState(false);
+    const [selectedCompareList, setSelectedCompareList] = useState([]);
+
+    const handleToggleSelect = useCallback((job) => {
+        const exists = selectedCompareList.find(j => j.id === job.id);
+
+        if (exists) {
+            setSelectedCompareList(prev => prev.filter(j => j.id !== job.id));
+        } else {
+            if (selectedCompareList.length < 5) {
+                setSelectedCompareList(prev => [...prev, job]);
+            } else {
+                Alert.alert("Giới hạn", "Bạn chỉ có thể so sánh tối đa 5 công việc cùng lúc.");
+            }
+        }
+    }, [selectedCompareList]);
+
+    const toggleCompareMode = () => {
+        if (isCompareMode) {
+            setIsCompareMode(false);
+            setSelectedCompareList([]);
+        } else {
+            setIsCompareMode(true);
+        }
+    };
+
+    const goToComparison = () => {
+        if (selectedCompareList.length < 2) {
+            Alert.alert("Thông báo", "Vui lòng chọn ít nhất 2 công việc để so sánh.");
+            return;
+        }
+        navigation.navigate("JobComparison", {selectedJobs: selectedCompareList});
+    };
+
     const openSheet = useCallback((job) => {
         setSelectedJob(job);
         setSheetVisible(true);
@@ -124,6 +158,7 @@ const SavedJobsScreen = ({navigation}) => {
                     salary: salaryString,
                     period: 'Tháng',
                     tags: [
+                        job.category?.name,
                         job.employment_type?.replace('_', ' '),
                         ...(job.tags || []).map(t => t.name || t)
                     ].filter(Boolean),
@@ -175,9 +210,7 @@ const SavedJobsScreen = ({navigation}) => {
                             setLoading(true);
 
                             const token = await AsyncStorage.getItem('token');
-
                             await authApis(token).delete(`${endpoints['bookmarks']}delete-all/`);
-
                             setSavedJobs([]);
 
 
@@ -205,21 +238,40 @@ const SavedJobsScreen = ({navigation}) => {
     }, [selectedJob, closeSheet, handleToggleSave]);
 
     const renderItem = useCallback(({item}) => {
+        const isSelected = selectedCompareList.find(j => j.id === item.id);
+
         return (
             <View style={{marginBottom: 6}}>
+                {isCompareMode && (
+                    <TouchableOpacity
+                        style={styles.selectionOverlay}
+                        onPress={() => handleToggleSelect(item)}
+                        activeOpacity={0.8}
+                    >
+                        <View style={[styles.checkBox, isSelected && styles.checkBoxSelected]}>
+                            {isSelected && <MaterialCommunityIcons name="check" size={16} color="#FFF"/>}
+                        </View>
+                    </TouchableOpacity>
+                )}
                 <JobCard
                     item={item}
                     variant="search"
                     onSavePress={() => handleToggleSave(item.id)}
                     onApplyPress={() => handleApply(item.id)}
-                    showMore
+                    showMore={!isCompareMode}
                     onMorePress={(job) => openSheet(job)}
                     action="more"
-                    onPress={() => navigation.navigate("JobDetail", {jobId: item.id})}
+                    onPress={() => {
+                        if (isCompareMode) {
+                            handleToggleSelect(item);
+                        } else {
+                            navigation.navigate("JobDetail", {jobId: item.id});
+                        }
+                    }}
                 />
             </View>
         );
-    }, [handleApply, handleToggleSave, openSheet, navigation]);
+    }, [handleApply, handleToggleSave, openSheet, navigation, isCompareMode, selectedCompareList, handleToggleSelect]);
 
     const keyExtractor = useCallback((item) => item.id.toString(), []);
 
@@ -230,10 +282,17 @@ const SavedJobsScreen = ({navigation}) => {
             <View style={styles.container}>
                 <View style={styles.headerRow}>
                     <CustomText style={styles.headerTitle}>Save Job</CustomText>
-
                     {hasSavings && (
+                        <TouchableOpacity onPress={toggleCompareMode} style={{marginRight: 15}}>
+                            <CustomText style={styles.compareText}>
+                                {isCompareMode ? "Hủy" : "So sánh"}
+                            </CustomText>
+                        </TouchableOpacity>
+                    )}
+
+                    {hasSavings && !isCompareMode && (
                         <TouchableOpacity onPress={handleDeleteAll} activeOpacity={0.7}>
-                            <CustomText style={styles.deleteAll}>Delete all</CustomText>
+                            <CustomText style={styles.deleteAll}>Delete All</CustomText>
                         </TouchableOpacity>
                     )}
                 </View>
@@ -258,9 +317,29 @@ const SavedJobsScreen = ({navigation}) => {
                         <TouchableOpacity
                             style={styles.findBtn}
                             activeOpacity={0.85}
-                            onPress={() => navigation?.navigate?.("CandidateSearch")}
+                            onPress={() => navigation?.navigate?.("CandidateSearchJob")}
                         >
                             <CustomText style={styles.findBtnText}>FIND A JOB</CustomText>
+                        </TouchableOpacity>
+                    </View>
+                )}
+
+                {isCompareMode && (
+                    <View style={styles.floatingBar}>
+                        <View>
+                            <CustomText style={styles.floatingTitle}>Đã chọn {selectedCompareList.length}/5</CustomText>
+                            <CustomText style={styles.floatingSub}>Chọn ít nhất 2 công việc</CustomText>
+                        </View>
+                        <TouchableOpacity
+                            style={[
+                                styles.compareButton,
+                                selectedCompareList.length < 2 && styles.compareButtonDisabled
+                            ]}
+                            onPress={goToComparison}
+                            disabled={selectedCompareList.length < 2}
+                        >
+                            <CustomText style={styles.compareButtonText}>So sánh ngay</CustomText>
+                            <MaterialCommunityIcons name="arrow-right" size={18} color="#FFF"/>
                         </TouchableOpacity>
                     </View>
                 )}
@@ -347,7 +426,7 @@ const styles = StyleSheet.create({
         color: "#1E1E1E"
     },
     deleteAll: {
-        fontSize: 14,
+        fontSize: 16,
         fontWeight: "600",
         color: "#F28B2C"
     },
@@ -479,5 +558,73 @@ const styles = StyleSheet.create({
         backgroundColor: "rgba(0,0,0,0.28)",
         justifyContent: "flex-end",
     },
+    selectionOverlay: {
+        position: 'absolute',
+        top: 10,
+        right: 10,
+        zIndex: 10,
+        padding: 5
+    },
+    checkBox: {
+        width: 24,
+        height: 24,
+        borderRadius: 6,
+        borderWidth: 2,
+        borderColor: '#130160',
+        backgroundColor: '#FFF',
+        alignItems: 'center',
+        justifyContent: 'center'
+    },
+    checkBoxSelected: {
+        backgroundColor: '#130160',
+    },
 
+    floatingBar: {
+        position: 'absolute',
+        bottom: 20,
+        left: 20,
+        right: 20,
+        backgroundColor: '#FFFFFF',
+        borderRadius: 16,
+        padding: 16,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        shadowColor: "#000",
+        shadowOffset: {width: 0, height: 4},
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+        elevation: 10,
+    },
+    floatingTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#130160'
+    },
+    floatingSub: {
+        fontSize: 12,
+        color: '#6B6F76'
+    },
+    compareButton: {
+        backgroundColor: '#130160',
+        paddingVertical: 10,
+        paddingHorizontal: 16,
+        borderRadius: 10,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6
+    },
+    compareButtonDisabled: {
+        backgroundColor: '#A0A0A0',
+    },
+    compareButtonText: {
+        color: '#FFFFFF',
+        fontWeight: '700',
+        fontSize: 14
+    },
+    compareText: {
+        fontSize: 16,
+        fontWeight: "700",
+        color: "#130160"
+    }
 });

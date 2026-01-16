@@ -28,7 +28,6 @@ const theme = {
 export default function App() {
   const [user, dispatch] = useReducer(MyUserReducer, null);
   const [fontsLoaded] = useFonts({
-    // Regular weights (non-italic)
     'DMSans-Thin': require('./assets/fonts/DM_Sans/static/DMSans-Thin.ttf'),
     'DMSans-ExtraLight': require('./assets/fonts/DM_Sans/static/DMSans-ExtraLight.ttf'),
     'DMSans-Light': require('./assets/fonts/DM_Sans/static/DMSans-Light.ttf'),
@@ -39,7 +38,6 @@ export default function App() {
     'DMSans-ExtraBold': require('./assets/fonts/DM_Sans/static/DMSans-ExtraBold.ttf'),
     'DMSans-Black': require('./assets/fonts/DM_Sans/static/DMSans-Black.ttf'),
 
-    // Italic weights (optional - uncomment if you use italic)
     'DMSans-ThinItalic': require('./assets/fonts/DM_Sans/static/DMSans-ThinItalic.ttf'),
     'DMSans-ExtraLightItalic': require('./assets/fonts/DM_Sans/static/DMSans-ExtraLightItalic.ttf'),
     'DMSans-LightItalic': require('./assets/fonts/DM_Sans/static/DMSans-LightItalic.ttf'),
