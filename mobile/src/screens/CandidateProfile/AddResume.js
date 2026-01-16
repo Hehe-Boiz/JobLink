@@ -1,4 +1,4 @@
-import React, {useState} from "react";
+import React, {useState, useContext} from "react";
 import {View, TouchableOpacity, Image, Alert, StyleSheet} from "react-native";
 import {SafeAreaView} from "react-native-safe-area-context";
 import {MaterialCommunityIcons} from "@expo/vector-icons";
@@ -6,11 +6,16 @@ import CustomHeader from "../../components/common/CustomHeader";
 import CustomText from "../../components/common/CustomText";
 import styles from "../../styles/Job/ApplyJobStyles";
 import myStyles from "../../styles/MyStyles";
+import {MyUserContext} from "../../utils/contexts/MyContext";
+import {authApis, endpoints} from "../../utils/Apis";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import * as DocumentPicker from "expo-document-picker";
 
 const AddResume = ({navigation}) => {
     const [resume, setResume] = useState(null);
+    const [user, dispatch] = useContext(MyUserContext);
+    const [loading, setLoading] = useState(false);
 
     const pickPdf = async () => {
         const res = await DocumentPicker.getDocumentAsync({
@@ -24,7 +29,6 @@ const AddResume = ({navigation}) => {
         const file = res.assets?.[0];
         if (!file) return;
 
-        // check 5MB
         if (typeof file.size === "number" && file.size > 5 * 1024 * 1024) {
             Alert.alert("File too large", "Max size is 5MB.");
             return;
@@ -37,6 +41,44 @@ const AddResume = ({navigation}) => {
             mimeType: file.mimeType,
         });
     };
+
+    const handleUploadResume = async () => {
+        if (!resume) return;
+
+        setLoading(true);
+        try {
+            const token = await AsyncStorage.getItem('token');
+
+            const formData = new FormData();
+
+            formData.append('resume', {
+                uri: resume.uri,
+                name: resume.name,
+                type: resume.mimeType || 'application/pdf'
+            });
+
+            await authApis(token).patch(endpoints.update_candidate_profile, formData, {
+                headers: {
+                    "Content-Type": "multipart/form-data",
+                },
+            });
+            Alert.alert("Success", "Resume uploaded successfully!");
+            navigation.goBack();
+
+        } catch (error) {
+            console.error(error);
+            let msg = "Failed to upload resume.";
+            if (error.response && error.response.data) {
+                if (error.response.data.resume) {
+                    msg = error.response.data.resume[0];
+                }
+            }
+            Alert.alert("Upload Failed", msg);
+        } finally {
+            setLoading(false);
+        }
+    };
+
 
     const removeFile = () => setResume(null);
 
@@ -101,7 +143,7 @@ const AddResume = ({navigation}) => {
                     activeOpacity={0.9}
                     style={[styles.applyBtn, !resume && {opacity: 0.5}]}
                     disabled={!resume}
-                    onPress={() => navigation.goBack()}
+                    onPress={handleUploadResume}
                 >
                     <CustomText style={styles.applyBtnText}>SAVE</CustomText>
                 </TouchableOpacity>

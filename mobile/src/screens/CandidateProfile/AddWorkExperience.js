@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, {useState} from 'react';
 import {
     View,
     TextInput,
@@ -8,19 +8,23 @@ import {
     TouchableWithoutFeedback,
     Keyboard,
     ScrollView,
+    Alert,
+    ActivityIndicator
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import {SafeAreaView} from 'react-native-safe-area-context';
+import {MaterialCommunityIcons} from '@expo/vector-icons';
 import CustomText from '../../components/common/CustomText';
 import styles from '../../styles/CandidateProfile/AddWorkExperienceStyles';
 import ConfirmationSheet from '../../components/common/ConfirmationSheet';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import {authApis, endpoints} from "../../utils/Apis";
 
 import MonthYearInput from '../../components/common/MonthYear/MonthYearInput';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const parseDateToPickerValue = (dateInput) => {
-    if (!dateInput) return null;
+    if (!dateInput || dateInput === 'Present') return null;
     const d = new Date(dateInput);
     if (isNaN(d.getTime())) return null;
     return {
@@ -29,14 +33,15 @@ const parseDateToPickerValue = (dateInput) => {
     };
 };
 
-const convertPickerToDate = (pickerValue) => {
+const formatForAPI = (pickerValue) => {
     if (!pickerValue) return null;
     const monthIndex = MONTHS.indexOf(pickerValue.month);
-    return new Date(pickerValue.year, monthIndex, 1);
+    const monthStr = String(monthIndex + 1).padStart(2, '0');
+    return `${pickerValue.year}-${monthStr}-01`;
 };
 
-const AddWorkExperience = ({ navigation, route }) => {
-    const initialData = route?.params?.data || {};
+const AddWorkExperience = ({navigation, route}) => {
+    const initialData = route?.params?.experience || {};
     const isEdit = !!initialData.id;
 
     const [jobTitle, setJobTitle] = useState(initialData.title || '');
@@ -45,11 +50,14 @@ const AddWorkExperience = ({ navigation, route }) => {
     const [startDate, setStartDate] = useState(parseDateToPickerValue(initialData.startDate));
     const [endDate, setEndDate] = useState(parseDateToPickerValue(initialData.endDate));
 
-    const [isCurrentPosition, setIsCurrentPosition] = useState(initialData.isCurrentPosition || false);
+    const [isCurrentPosition, setIsCurrentPosition] = useState(
+        initialData.endDate === 'Present' || (!initialData.endDate && !!initialData.startDate)
+    );
     const [description, setDescription] = useState(initialData.description || '');
 
     const [showSheet, setShowSheet] = useState(false);
-    const [sheetType, setSheetType] = useState('undo'); // 'undo' | 'remove'
+    const [sheetType, setSheetType] = useState('undo');
+    const [loading, setLoading] = useState(false);
 
     const hasChanges = () => {
         const initialStart = JSON.stringify(parseDateToPickerValue(initialData.startDate));
@@ -57,6 +65,8 @@ const AddWorkExperience = ({ navigation, route }) => {
 
         const initialEnd = JSON.stringify(parseDateToPickerValue(initialData.endDate));
         const currentEnd = JSON.stringify(endDate);
+
+        const initialIsCurrent = initialData.endDate === 'Present';
 
         return (
             jobTitle !== (initialData.title || '') ||
@@ -78,17 +88,38 @@ const AddWorkExperience = ({ navigation, route }) => {
         }
     };
 
-    const handleSave = () => {
-        const data = {
-            title: jobTitle,
-            company,
-            startDate: convertPickerToDate(startDate),
-            endDate: isCurrentPosition ? null : convertPickerToDate(endDate),
-            isCurrentPosition,
-            description
-        };
-        console.log('Saving work experience:', data);
-        navigation?.goBack ? navigation.goBack() : console.log('Saved and go back');
+    const handleSave = async () => {
+        setLoading(true);
+        try {
+            const token = await AsyncStorage.getItem('token');
+            const payload = {
+                job_title: jobTitle,
+                company: company,
+                start_date: formatForAPI(startDate),
+                end_date: isCurrentPosition ? null : formatForAPI(endDate),
+                is_current: isCurrentPosition,
+                description: description
+            };
+
+            console.log("Payload:", payload);
+
+            let res;
+            if (isEdit) {
+                res = await authApis(token).patch(`${endpoints.work_experience}${initialData.id}/`, payload);
+            } else {
+                res = await authApis(token).post(endpoints.work_experience, payload);
+            }
+
+            if (res.status === 200 || res.status === 201) {
+                navigation.goBack();
+            }
+        } catch (error) {
+            console.error("Lỗi save work experience:", error);
+            console.log("Response data:", error.response?.data);
+            Alert.alert("Lỗi", "Vui lòng kiểm tra lại thông tin nhập.");
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handleToggleCurrentPosition = () => {
@@ -99,15 +130,31 @@ const AddWorkExperience = ({ navigation, route }) => {
         }
     };
 
-    const onConfirmAction = () => {
-        setShowSheet(false);
-        if (sheetType === 'undo') {
-            navigation?.goBack ? navigation.goBack() : console.log('Undo');
-        } else {
-            console.log('Removing work experience:', initialData.id);
-            navigation?.goBack ? navigation.goBack() : console.log('Removed');
+    const handleDelete = async () => {
+        if (!isEdit) return;
+        setLoading(true);
+        try {
+            const token = await AsyncStorage.getItem('token');
+            await authApis(token).delete(`${endpoints.work_experience}${initialData.id}/`);
+            navigation.goBack();
+        } catch (error) {
+            console.error("Lỗi xóa:", error);
+            Alert.alert("Lỗi", "Không thể xóa mục này.");
+        } finally {
+            setLoading(false);
+            setShowSheet(false);
         }
     };
+
+    const onConfirmAction = () => {
+        if (sheetType === 'undo') {
+            setShowSheet(false);
+            navigation.goBack();
+        } else {
+            handleDelete();
+        }
+    };
+
 
     const handleRemovePress = () => {
         Keyboard.dismiss();
@@ -124,7 +171,7 @@ const AddWorkExperience = ({ navigation, route }) => {
                 <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                     <View style={styles.content}>
                         <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-                            <MaterialCommunityIcons name="arrow-left" size={28} color="#150B3D" />
+                            <MaterialCommunityIcons name="arrow-left" size={28} color="#150B3D"/>
                         </TouchableOpacity>
 
                         <CustomText style={styles.title}>
@@ -158,7 +205,7 @@ const AddWorkExperience = ({ navigation, route }) => {
                             </View>
 
                             <View style={styles.dateRow}>
-                                <View style={{ flex: 1, marginRight: 10 }}>
+                                <View style={{flex: 1, marginRight: 10}}>
                                     <MonthYearInput
                                         label="Start date"
                                         value={startDate}
@@ -167,12 +214,15 @@ const AddWorkExperience = ({ navigation, route }) => {
                                     />
                                 </View>
 
-                                <View style={{ flex: 1, marginLeft: 10 }}>
+                                <View style={{flex: 1, marginLeft: 10}}>
                                     {isCurrentPosition ? (
                                         <View>
                                             <CustomText style={styles.label}>End date</CustomText>
-                                            <View style={[styles.input, { backgroundColor: '#F9F9F9', justifyContent: 'center' }]}>
-                                                <CustomText style={{ color: '#AAA6B9' }}>Present</CustomText>
+                                            <View style={[styles.input, {
+                                                backgroundColor: '#F9F9F9',
+                                                justifyContent: 'center'
+                                            }]}>
+                                                <CustomText style={{color: '#AAA6B9'}}>Present</CustomText>
                                             </View>
                                         </View>
                                     ) : (
@@ -217,7 +267,7 @@ const AddWorkExperience = ({ navigation, route }) => {
                         </ScrollView>
 
                         <View style={styles.buttonContainer}>
-                             {isEdit && (
+                            {isEdit && (
                                 <TouchableOpacity
                                     style={styles.removeButton}
                                     onPress={handleRemovePress}
@@ -231,7 +281,11 @@ const AddWorkExperience = ({ navigation, route }) => {
                                 onPress={handleSave}
                                 activeOpacity={0.8}
                             >
-                                <CustomText style={styles.saveButtonText}>SAVE</CustomText>
+                                {loading ? (
+                                    <ActivityIndicator color="#FFF" />
+                                ) : (
+                                    <CustomText style={styles.saveButtonText}>SAVE</CustomText>
+                                )}
                             </TouchableOpacity>
                         </View>
                     </View>

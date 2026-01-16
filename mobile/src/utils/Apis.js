@@ -23,6 +23,11 @@ export const endpoints = {
     'candidate_profile': '/candidates/me/',
     'update_user': '/users/current-user/',
     'update_candidate_profile': '/candidates/me/',
+    'work_experience': '/work-experience/',
+    'education': '/education/',
+    'languages': '/languages/',
+    'appreciations': '/appreciations/',
+    'skills': '/skills/',
 };
 
 export const authApis = (token) => {

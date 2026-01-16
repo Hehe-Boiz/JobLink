@@ -1,4 +1,4 @@
-import React, {useState, useRef, useEffect} from "react";
+import React, {useState, useRef, useEffect, useContext} from "react";
 import {
     View,
     StyleSheet,
@@ -14,13 +14,14 @@ import {SafeAreaView} from "react-native-safe-area-context";
 import {MaterialCommunityIcons} from "@expo/vector-icons";
 import CustomText from "../../../components/common/CustomText";
 import CustomHeader from "../../../components/common/CustomHeader";
+import {MyUserContext} from "../../../utils/contexts/MyContext";
 
 const {height: SCREEN_HEIGHT} = Dimensions.get("window");
 
 const SettingItemCard = ({
                              icon,
                              label,
-                             rightType, // "switch" | "chevron"
+                             rightType,
                              switchValue,
                              onSwitchChange,
                              onPress,
@@ -51,11 +52,11 @@ const SettingItemCard = ({
 };
 
 const SettingsScreen = ({navigation}) => {
+    const [user, dispatch] = useContext(MyUserContext);
     const [noti, setNoti] = useState(true);
     const [darkMode, setDarkMode] = useState(false);
     const [logoutVisible, setLogoutVisible] = useState(false);
 
-    // ===== Bottom sheet animation (Logout) =====
     const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
 
     useEffect(() => {
@@ -105,15 +106,18 @@ const SettingsScreen = ({navigation}) => {
 
     const onConfirmLogout = () => {
         closeLogoutSheet();
-        // TODO: logout logic
+        dispatch({type: "logout"});
+        navigation.reset({
+            index: 0,
+            routes: [{name: "Login"}],
+        });
     };
 
     return (
         <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
-            <CustomHeader/>
+            <CustomHeader navigation={navigation}/>
             <CustomText style={styles.headerTitle}>Settings</CustomText>
 
-            {/* Cards list (mỗi item 1 card) */}
             <View style={styles.list}>
                 <SettingItemCard
                     icon="bell-outline"
@@ -135,7 +139,7 @@ const SettingsScreen = ({navigation}) => {
                     icon="lock-outline"
                     label="Password"
                     rightType="chevron"
-                    onPress={() => navigation.navigate("UpdatePassword")}
+                    onPress={() => navigation.navigate("UpdatePasswordScreen")}
                 />
 
                 <SettingItemCard
@@ -152,7 +156,6 @@ const SettingsScreen = ({navigation}) => {
                 </TouchableOpacity>
             </View>
 
-            {/* Logout Bottom Sheet */}
             <Modal visible={logoutVisible} transparent animationType="none" statusBarTranslucent>
                 <TouchableWithoutFeedback onPress={closeLogoutSheet}>
                     <View style={styles.sheetOverlay}>

@@ -1,21 +1,25 @@
 import React, {useMemo, useState} from 'react';
-import {View, TouchableOpacity, StyleSheet, Image} from 'react-native';
+import {View, TouchableOpacity, StyleSheet, Image, Alert} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {MaterialCommunityIcons} from '@expo/vector-icons';
-
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import CustomText from '../../components/common/CustomText';
 import CustomHeader from '../../components/common/CustomHeader';
 import LevelPickerModal from './LevelPickerModal';
+import {authApis, endpoints} from "../../utils/Apis";
 
 const LanguageDetail = ({navigation, route}) => {
     const langFromRoute = route?.params?.language;
+    const isAddMode = route?.params?.isAdd;
+    const [loading, setLoading] = useState(false);
 
     const [lang, setLang] = useState(() => ({
         ...langFromRoute,
-        // fallback nếu thiếu
-        isFirst: !!langFromRoute?.isFirst,
-        oral: typeof langFromRoute?.oral === 'number' ? langFromRoute.oral : 0,
-        written: typeof langFromRoute?.written === 'number' ? langFromRoute.written : 0,
+        isFirst: !!langFromRoute?.is_first_language || !!langFromRoute?.isFirst,
+        oral: (typeof langFromRoute?.oral_level === 'number' ? langFromRoute.oral_level : langFromRoute?.oral) || 0,
+        written: (typeof langFromRoute?.written_level === 'number' ? langFromRoute.written_level : langFromRoute?.written) || 0,
+        name: langFromRoute?.name || langFromRoute?.language || "",
+        flag: langFromRoute?.flag
     }));
 
     const [picker, setPicker] = useState({visible: false, field: 'oral'});
@@ -32,9 +36,49 @@ const LanguageDetail = ({navigation, route}) => {
         setLang((prev) => ({...prev, [picker.field]: level}));
     };
 
-    const onSave = () => {
-        if (route?.params?.onSave) route.params.onSave(lang);
-        navigation.goBack();
+    const onSave = async () => {
+        if (lang.oral === 0 && lang.written === 0) {
+            Alert.alert("Lưu ý", "Vui lòng chọn trình độ ngôn ngữ.");
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const token = await AsyncStorage.getItem('token');
+
+            const payload = {
+                language: lang.name,
+                oral_level: lang.oral,
+                written_level: lang.written,
+                is_first_language: lang.isFirst
+            };
+
+            console.log("Sending to Backend:", payload);
+
+            if (isAddMode) {
+                await authApis(token).post(endpoints.languages, payload);
+            } else {
+                if (langFromRoute?.id) {
+                    await authApis(token).patch(`${endpoints.languages}${langFromRoute.id}/`, payload);
+                }
+            }
+
+            if (route?.params?.onSave) {
+                route.params.onSave();
+            }
+
+            if (isAddMode) {
+                navigation.pop(2);
+            } else {
+                navigation.goBack();
+            }
+
+        } catch (error) {
+            console.error("Lỗi API:", error);
+            Alert.alert("Lỗi", "Không thể lưu thay đổi. Vui lòng thử lại.");
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
@@ -151,7 +195,7 @@ const styles = StyleSheet.create({
         paddingVertical: 14,
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent:  'space-between',
+        justifyContent: 'space-between',
     },
     divider: {
         height: 1,
@@ -180,8 +224,8 @@ const styles = StyleSheet.create({
         height: 35,
         borderRadius: 15,
         overflow: 'hidden',
-        marginRight:  10,
-        borderWidth:   1,
+        marginRight: 10,
+        borderWidth: 1,
         borderColor: '#EFEFF5',
     }
     ,

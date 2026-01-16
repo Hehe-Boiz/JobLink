@@ -31,6 +31,8 @@ import SettingsScreen from "../screens/CandidateProfile/Settings/SettingsScreen"
 import UpdatePasswordScreen from "../screens/CandidateProfile/Settings/UpdatePasswordScreen";
 import NotificationsScreen from "../screens/Candidate/Notifications/NotificationsScreen";
 import NotificationDetailScreen from "../screens/Candidate/Notifications/NotificationDetailScreen";
+import AddSkill from "../screens/CandidateProfile/AddSkill";
+import AddLanguage from "../screens/CandidateProfile/AddLanguage";
 
 
 const Stack = createStackNavigator();
@@ -71,6 +73,8 @@ export default function AppNavigator() {
                     <Stack.Screen name="UpdatePasswordScreen" component={UpdatePasswordScreen}/>
                     <Stack.Screen name="Notifications" component={NotificationsScreen}/>
                     <Stack.Screen name="NotificationDetail" component={NotificationDetailScreen}/>
+                    <Stack.Screen name="AddSkill" component={AddSkill}/>
+                    <Stack.Screen name="AddLanguage" component={AddLanguage}/>
 
                 </Stack.Navigator>
             </NavigationContainer>
