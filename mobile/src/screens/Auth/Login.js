@@ -16,7 +16,7 @@ import {
     statusCodes,
     isErrorWithCode
 } from '@react-native-google-signin/google-signin';
-import { CLIENT_ID, CLIENT_SECRET } from '@env';//Client
+import { CLIENT_ID, CLIENT_SECRET } from '@env';
 
 const Login = ({route}) => {
     const navigation = useNavigation();
@@ -205,6 +205,7 @@ const Login = ({route}) => {
                             navigation.navigate('EmployerMain');
                         }
                     } else {
+                        await AsyncStorage.setItem('token', res.data.access_token);
                         navigation.navigate('CandidateMain');
                     }
                 }, 100);

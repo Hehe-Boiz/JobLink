@@ -55,6 +55,7 @@ const CandidateHome = () => {
         try {
             const token = await AsyncStorage.getItem('token');
             let res = await authApis(token).get(endpoints['jobs']);
+            console.log(res.data);
             const apiJobs = res.data.results;
             const formattedJobs = apiJobs.map(job => {
                 const minSalary = job.salary_min ? (job.salary_min / 1000000).toFixed(0) + 'M' : '';
@@ -126,6 +127,7 @@ const CandidateHome = () => {
     const handleSaveJob = async (job) => {
         try {
             const token = await AsyncStorage.getItem('token');
+            console.log(token)
             const oldJobs = [...jobs];
 
             setJobs(prevJobs => prevJobs.map(j => {
@@ -139,6 +141,7 @@ const CandidateHome = () => {
                 await authApis(token).delete(`${endpoints['bookmarks']}${job.bookmark_id}/`);
                 console.log("Đã hủy lưu job");
             } else {
+                console.log(token);
                 let res = await authApis(token).post(endpoints['bookmarks'], {
                     job_id: job.id
                 });

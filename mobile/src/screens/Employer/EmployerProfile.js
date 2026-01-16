@@ -11,7 +11,7 @@ import { useDialog } from '../../hooks/useDialog';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Apis, { endpoints } from '../../utils/Apis';
 import { useEmployer } from '../../hooks/useEmployer';
-import { CLIENT_ID, CLIENT_SECRET } from '@env';//id
+import { CLIENT_ID, CLIENT_SECRET } from '@env';//rebuild
 const EmployerProfile = ({ navigation }) => {
     const { showDialog } = useDialog();
    

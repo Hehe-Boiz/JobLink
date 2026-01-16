@@ -59,7 +59,8 @@ const JobDetail = ({ navigation, route }) => {
         setIsSaved(!isSaved);
 
         try {
-            const api = authApis(user.token);
+            const token = await AsyncStorage.getItem('token');
+            const api = authApis(token);
             if (prevSaved) {
                 if (job.bookmark_id) {
                     await api.delete(`${endpoints['bookmarks']}${job.bookmark_id}/`);

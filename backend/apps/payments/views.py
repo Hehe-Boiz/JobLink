@@ -50,7 +50,7 @@ class ReceiptViewSet(viewsets.ViewSet, generics.ListAPIView):
             order_id = f"JOBLINK_{receipt.id}_{int(timezone.now().timestamp())}"
             ip_addr = get_client_ip(request)
 
-            domain = "https://7649697af433.ngrok-free.app"
+            domain = "https://f56a2699b479.ngrok-free.app"
             return_url = f"{domain}/payments/receipts/vnpay-return/"
             payment_url = create_vnpay_payment_url(
                 order_id=order_id,

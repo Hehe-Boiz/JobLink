@@ -56,7 +56,6 @@ export default function AppNavigator() {
                     <Stack.Screen name="CandidateMain" component={CandidateTabs}/>
                     <Stack.Screen name="JobDetail" component={JobDetail}/>
                     <Stack.Screen name="ApplyJob" component={ApplyJob}/>
-                    <Stack.Screen name="JobApplicants" component={JobApplicants}/>
                     <Stack.Screen name="CandidateDetail" component={CandidateDetail}/>
                     <Stack.Screen name="PostJob" component={PostJob}/>
                     <Stack.Screen name="EmployerEditProfile" component={EmployerEditProfile}/>

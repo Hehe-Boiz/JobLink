@@ -171,7 +171,7 @@ class Command(BaseCommand):
             # [NEW] Tạo dữ liệu phụ: Education & WorkExperience
             self._create_candidate_details(profile)
 
-            candidates.append(user)
+            candidates.append(profile)
 
         return candidates
 
@@ -267,7 +267,7 @@ class Command(BaseCommand):
             random_jobs = random.sample(jobs, k=random.randint(3, 5))
             for job in random_jobs:
                 Application.objects.create(
-                    user=candidate,
+                    candidate=candidate,
                     job=job,
                     status=random.choice(ApplicationStatus.choices)[0],
                     cover_letter=self.fake.paragraph(),

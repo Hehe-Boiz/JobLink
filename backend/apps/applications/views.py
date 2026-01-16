@@ -55,16 +55,23 @@ class CandidateApplicationViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if not user.is_authenticated:
             return Application.objects.none()
-        return Application.objects.filter(user=user).select_related('job')
+        return Application.objects.filter(candidate=user.candidate_profile).select_related(
+            'job',
+            'job__category',  # Lấy luôn Category
+            'job__location',  # Lấy luôn Location
+            'job__posted_by'
+        ).prefetch_related(
+            'job__tags'  # Lấy luôn Tags (ManyToMany)
+        )
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        serializer.save(candidate=self.request.user.candidate_profile)
 
     def create(self, request, *args, **kwargs):
         try:
             return super().create(request, *args, **kwargs)
         except Exception as e:
-            if "uniq_user_job_application" in str(e):
+            if "uniq_candidate_job_application" in str(e):
                 return Response(
                     {"detail": "Bạn đã ứng tuyển công việc này rồi."},
                     status=status.HTTP_400_BAD_REQUEST
