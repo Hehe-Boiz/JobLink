@@ -2,7 +2,7 @@ import React, {useState, useRef, useEffect} from 'react';
 import {View, TouchableOpacity, ScrollView, PanResponder, ActivityIndicator} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {MaterialCommunityIcons} from '@expo/vector-icons';
-import AsyncStorage from "@react-native-async-storage/async-storage"; // Import thêm
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import CustomText from '../../components/common/CustomText';
 import CustomFooter from '../../components/common/CustomFooter';
 import CustomSelector from '../../components/common/CustomSelector';

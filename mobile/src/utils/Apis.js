@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const BASE_URL = 'http://192.168.1.15:8000/';
+const BASE_URL = 'http://192.168.1.23:8000/';
 
 export const endpoints = {
     'register_candidate': '/register/candidate/',
@@ -34,6 +34,7 @@ export const endpoints = {
     'languages': '/languages/',
     'appreciations': '/appreciations/',
     'skills': '/skills/',
+    'compare': '/jobs/compare/'
 };
 
 export const authApis = (token) => {

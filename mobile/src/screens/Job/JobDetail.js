@@ -152,7 +152,7 @@ const JobDetail = ({ navigation, route }) => {
         };
 
         loadFullDetail();
-    }, [jobId, user?.token]);
+    }, [jobId]);
 
     const SaveButton = (
         <TouchableOpacity style={styles.btnBookmark} onPress={toggleSave}>

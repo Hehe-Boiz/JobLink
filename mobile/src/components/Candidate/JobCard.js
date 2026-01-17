@@ -12,7 +12,8 @@ const JobCard = ({
                      variant = "home",
                      action = "bookmark", // 'bookmark' | 'more'
                      onMorePress,
-                     onPress
+                     onPress,
+                     showMore = true
                  }) => {
     const scaleValue = useRef(new Animated.Value(1)).current;
     const bookmarkScale = useRef(new Animated.Value(1)).current;
@@ -161,7 +162,7 @@ const JobCard = ({
                     </View>
                 </View>
 
-                {action === "bookmark" ? renderBookmark() : renderMore()}
+               {showMore && (action === "bookmark" ? renderBookmark() : renderMore())}
             </View>
 
             <View style={[styles.tagsContainer, {marginBottom: 15, marginTop: 5}]}>
@@ -173,7 +174,7 @@ const JobCard = ({
             </View>
 
             <View style={styles.searchFooterRow}>
-                <CustomText style={styles.postedTime}>{item.posted || "25 minute ago"}</CustomText>
+                <CustomText style={styles.postedTime}>{item.posted || ""}</CustomText>
 
                 <CustomText style={styles.salary}>
                     {item.salary}

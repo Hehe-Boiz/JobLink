@@ -199,7 +199,7 @@ const CandidateProfile = ({navigation}) => {
 
                 languages: data.languages?.map(lang => ({
                     ...lang,
-                    flag: ALL_LANGUAGES[lang.language] || 'https://flagcdn.com/w160/gb.png' // Fallback flag nếu không tìm thấy
+                    flag: ALL_LANGUAGES[lang.language] || 'https://flagcdn.com/w160/gb.png'
                 })) || [],
 
                 appreciation: data.appreciations?.map(a => ({
@@ -270,7 +270,7 @@ const CandidateProfile = ({navigation}) => {
                     <View style={styles.profileContent}>
                         <View style={styles.topBar}>
                             <Image
-                                source={profileData?.avatar ? {uri: profileData.avatar.startsWith('http') ? profileData.avatar : `http://192.168.1.23:8000${profileData.avatar}`} : {uri: 'https://i.pravatar.cc/300'}}
+                                source={{uri: profileData.avatar}}
                                 style={styles.avatar}
                             />
                             <View style={styles.topIcons}>
