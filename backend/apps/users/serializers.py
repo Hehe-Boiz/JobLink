@@ -13,7 +13,6 @@ class UserSerializer(MediaURLSerializer):
 
     class Meta:
         model = User
-        # bạn có thể bỏ bớt field nếu muốn ngắn hơn
         fields = [
             # "id",
             "username",
