@@ -62,7 +62,7 @@ const CustomText = ({style, children, ...props}) => {
 const styles = StyleSheet.create({
     default: {
         fontFamily: 'DMSans-Regular',
-        includeFontPadding: false, // Better text rendering on Android
+        includeFontPadding: false,
     },
 });
 

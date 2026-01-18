@@ -172,7 +172,6 @@ class EmployerProfileSerializer(MediaURLSerializer):
 
 
 class AdminEmployerSerializer(EmployerProfileSerializer):
-    # thêm thông tin user đầy đủ để admin xem nhanh
     user_detail = UserSerializer(source="user", read_only=True)
     verified_by_detail = UserSerializer(source="verified_by", read_only=True)
 
@@ -198,7 +197,6 @@ class BaseRegisterSerializer(serializers.Serializer):
 
 
 class CandidateRegisterSerializer(BaseRegisterSerializer):
-    @transaction.atomic
     def create(self, validated_data):
 
         password = validated_data.pop("password")
@@ -226,7 +224,6 @@ class EmployerRegisterSerializer(BaseRegisterSerializer):
     tax_code = serializers.CharField(required=False, allow_blank=True)
     website = serializers.URLField(required=False, allow_blank=True)
 
-    @transaction.atomic
     def create(self, validated_data):
         password = validated_data.pop("password")
         email = validated_data.pop("email")

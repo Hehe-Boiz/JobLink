@@ -17,7 +17,7 @@ from django.db.models import Count, Q
 
 
 class JobViewCandidate(viewsets.ReadOnlyModelViewSet):
-    permission_classes = [IsCandidate]
+    permission_classes = [AllowAny]
     queryset = Job.objects.filter(deadline__gte=timezone.now())
     pagination_class = StandardResultsSetPagination
 
@@ -65,7 +65,7 @@ class JobViewCandidate(viewsets.ReadOnlyModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        serializer = CandidateJobDetailSerializer(jobs, many=True)
+        serializer = CandidateJobDetailSerializer(jobs, many=True, context={'request': request})
 
         return Response(serializer.data, status=status.HTTP_200_OK)
 

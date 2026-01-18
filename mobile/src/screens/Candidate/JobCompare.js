@@ -74,7 +74,7 @@ const ComparisonSection = ({title, jobs, dataKey, colors, formatFn}) => {
 };
 
 const JobComparison = ({navigation, route}) => {
-    const {selectedJobs = []} = route.params || {};
+    const selectedJobs = route.params.selectedJobs;
     const [sameCategory, setSameCategory] = useState(true);
     const [detailedJobs, setDetailedJobs] = useState([]);
     const [loading, setLoading] = useState(true);

@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const BASE_URL = 'http://192.168.1.23:8000/';
+const BASE_URL = 'https://42c308f8bc04.ngrok-free.app';
 
 export const endpoints = {
     'register_candidate': '/register/candidate/',

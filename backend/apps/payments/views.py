@@ -138,7 +138,6 @@ class ReceiptViewSet(viewsets.ViewSet, generics.ListAPIView):
                 </div>
 
                 <script>
-                    // Tự động chuyển hướng về App sau 1 giây
                     setTimeout(function() {{
                         window.location.href = "{app_url}";
                     }}, 1000);
