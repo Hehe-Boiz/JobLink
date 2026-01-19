@@ -1,33 +1,34 @@
 from rest_framework import viewsets, filters, status, generics
 from rest_framework.permissions import AllowAny
-
-from .models import Job, BookmarkJob, JobCategory, Location
+from ..users.permissions import IsEmployerApproved, IsCandidate
+from .models import Job, BookmarkJob, JobCategory, Location, EmploymentType, Tag
 from ..core.paginators import StandardResultsSetPagination
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
 from .serializers import CandidateJobSerializer, CandidateJobDetailSerializer, EmployerJobSerializer, \
-    CandidateBookmarkJobSerializer, JobCategorySerializer, LocationSerializer
-from apps.applications.serializers import EmployerApplicationSerializer
+    CandidateBookmarkJobSerializer, JobCategorySerializer, LocationSerializer, TagSerializer
+from ..applications.serializers import EmployerApplicationSerializer
 from ..users.permissions import IsEmployerApproved, IsCandidate
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from .filters import JobFilter
+from django.db.models import Count, Q
 
 
-# danh sách và chi tiết job
 class JobViewCandidate(viewsets.ReadOnlyModelViewSet):
+    permission_classes = [AllowAny]
     queryset = Job.objects.filter(deadline__gte=timezone.now())
     pagination_class = StandardResultsSetPagination
 
     filter_backends = [
-        DjangoFilterBackend, # Lọc theo các trường cố định
-        filters.SearchFilter, # hỗ trợ tìm kiếm theo từ khóa
-        filters.OrderingFilter, # sắp xếp kết quả
+        DjangoFilterBackend,
+        filters.SearchFilter,
+        filters.OrderingFilter,
     ]
     filterset_class = JobFilter
-    search_fields = ['title', 'company_name']  # cấu hình cho SearchFilter
-    ordering_fields = ['salary_min', 'salary_max', 'created_date']  # các trường người dùng được sắp xếp
-    ordering = ['-created_date']  # sắp xếp mặc định
+    search_fields = ['title', 'company_name']
+    ordering_fields = ['salary_min', 'salary_max', 'created_date']
+    ordering = ['-created_date']
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -63,22 +64,47 @@ class JobViewCandidate(viewsets.ReadOnlyModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        serializer = CandidateJobDetailSerializer(jobs, many=True)
+        first_category_id = jobs[0].category_id
+        is_same_category = all(job.category_id == first_category_id for job in jobs)
 
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        serializer = CandidateJobDetailSerializer(jobs, many=True, context={'request': request})
+
+        return Response({
+            "same_category": is_same_category,
+            "data": serializer.data
+        }, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['get'], url_path='stats')
+    def stats(self, request):
+        qs = self.get_queryset()
+
+        data = qs.aggregate(
+            remote_count=Count('id', filter=Q(employment_type=EmploymentType.REMOTE)),
+            full_time_count=Count('id', filter=Q(employment_type=EmploymentType.FULL_TIME)),
+            part_time_count=Count('id', filter=Q(employment_type=EmploymentType.PART_TIME))
+        )
+
+        return Response(data, status=status.HTTP_200_OK)
 
 
 class EmployerJobViewSet(viewsets.ViewSet, generics.ListCreateAPIView, generics.UpdateAPIView,
                          generics.DestroyAPIView):
+    queryset = Job.objects.filter(active=True)
     serializer_class = EmployerJobSerializer
     permission_classes = [IsEmployerApproved]
     pagination_class = StandardResultsSetPagination
+
     def get_queryset(self):
         user = self.request.user
-
+        query = self.queryset
+        q = self.request.query_params.get('q')
+        if q:
+            query = query.filter(title__icontains=q)
         if not user.is_authenticated:
             return Job.objects.none()
-        return Job.objects.filter(posted_by=user, active=True).select_related("category", "location").order_by('-created_date')
+
+        return query.filter(posted_by=user.employer_profile).select_related("category", "location").order_by(
+            '-created_date')
 
     def destroy(self, request, *args, **kwargs):
         job = self.get_object()
@@ -92,14 +118,10 @@ class EmployerJobViewSet(viewsets.ViewSet, generics.ListCreateAPIView, generics.
     def perform_create(self, serializer):
         ep = self.request.user.employer_profile
         serializer.save(
-            posted_by=self.request.user,
+            posted_by=ep,
             company_name=ep.company_name,
         )
 
-    @action(methods=['get'], url_path='applications', detail=True)
-    def get_applications(self, request, pk):
-        applications = self.get_object().applications.filter(active=True)
-        return Response(EmployerApplicationSerializer(applications, many=True).data, status=status.HTTP_200_OK)
 
 class BookmarkJobViewSet(viewsets.ModelViewSet):
     serializer_class = CandidateBookmarkJobSerializer
@@ -112,10 +134,9 @@ class BookmarkJobViewSet(viewsets.ModelViewSet):
         return BookmarkJob.objects.none()
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)  # gán vào giai đoạn này vì backend chỉ tin chính nó
+        serializer.save(user=self.request.user)
 
     def create(self, request, *args, **kwargs):
-        # Bắt lỗi nếu đã lưu rồi mà bấm lưu tiếp
         try:
             return super().create(request, *args, **kwargs)
         except Exception as e:
@@ -125,6 +146,24 @@ class BookmarkJobViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             raise e
+
+    @action(detail=False, methods=['delete'], url_path='delete-all')
+    def delete_all(self, request):
+        queryset = self.get_queryset()
+        count = queryset.count()
+        if count == 0:
+            return Response(
+                {"detail": "Danh sách đã trống."},
+                status=status.HTTP_200_OK
+            )
+        queryset.delete()
+
+        return Response(
+            {"detail": f"{count} công việc đã lưu."},
+            status=status.HTTP_200_OK
+        )
+
+
 class JobCategoryViewSet(viewsets.ViewSet, generics.ListAPIView):
     serializer_class = JobCategorySerializer
     queryset = JobCategory.objects.all()
@@ -135,3 +174,10 @@ class LocationViewSet(viewsets.ViewSet, generics.ListAPIView):
     serializer_class = LocationSerializer
     queryset = Location.objects.all()
     permission_classes = [AllowAny]
+
+
+class TagViewSet(viewsets.ViewSet, generics.ListAPIView):
+    serializer_class = TagSerializer
+    queryset = Tag.objects.all()
+    permission_classes = [AllowAny]
+    pagination_class = None

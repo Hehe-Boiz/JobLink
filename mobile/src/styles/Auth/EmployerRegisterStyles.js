@@ -25,6 +25,12 @@ const styles = StyleSheet.create({
   },
   brandHighlight: { color: '#FF9228' },
 
+  tagline: {
+    fontSize: 14,
+    color: '#524B6B',
+    fontWeight: '500',
+    textAlign: 'center',
+  },
   // --- PROGRESS BAR ---
   progressContainer: {
     flexDirection: 'row',

@@ -13,6 +13,7 @@ const JobApplicantsTab = ({ job }) => {
     const [loading, setLoading] = useState(true);
     const load_applicants = async () => {
         try{
+            console.log(job);
             const token = await AsyncStorage.getItem('token');
             setLoading(true);
             let res = await authApis(token).get(endpoints['applications_by_employer_jobs'](job.id));

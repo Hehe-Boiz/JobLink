@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Image, TouchableOpacity, Animated } from 'react-native';
-import CustomText from '../common/CustomText'; //
+import CustomText from '../common/CustomText'; 
 import styles from '../../styles/Candidate/CompanyListStyles';
 const NO_RESULT_IMG = require('../../../assets/images/Illustrasi.png');
 

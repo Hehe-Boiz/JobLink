@@ -11,74 +11,44 @@ import {
     TouchableWithoutFeedback,
     Keyboard,
     PanResponder,
-    Animated
+    Animated,
+    Alert
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {MaterialCommunityIcons} from '@expo/vector-icons';
 import CustomText from '../../components/common/CustomText';
 import styles from '../../styles/CandidateProfile/EditAboutMeStyles'
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import {authApis, endpoints} from "../../utils/Apis";
+import ConfirmationSheet from '../../components/common/ConfirmationSheet';
 
 const {height: screenHeight} = Dimensions.get('window');
 
 const EditAboutMe = ({navigation, route}) => {
     const initialValue = route?.params?.aboutMe || '';
-
+    const [loading, setLoading] = useState(false);
     const [aboutText, setAboutText] = useState(initialValue);
     const [showUndoSheet, setShowUndoSheet] = useState(false);
     const [hasChanges, setHasChanges] = useState(false);
 
-    const translateY = useRef(new Animated.Value(0)).current;
-
-    const panResponder = useRef(
-        PanResponder.create({
-            onStartShouldSetPanResponder: () => true,
-            onMoveShouldSetPanResponder: (_, gesture) => {
-                return Math.abs(gesture.dy) > Math.abs(gesture.dx);
-            },
-            onPanResponderMove: (_, gesture) => {
-                if (gesture.dy > 0) {
-                    translateY.setValue(gesture.dy);
-                }
-            },
-            onPanResponderRelease: (_, gesture) => {
-                if (gesture.dy > 100) {
-                    closeSheet();
-                } else {
-                    Animated.spring(translateY, {
-                        toValue: 0,
-                        useNativeDriver: true,
-                        tension: 100,
-                        friction: 10,
-                    }).start();
-                }
-            },
-        })
-    ).current;
 
     useEffect(() => {
         setHasChanges(aboutText !== initialValue);
     }, [aboutText, initialValue]);
 
-    const openSheet = () => {
-        translateY.setValue(0);
-        setShowUndoSheet(true);
+    const handleContinueFilling = () => {
+        setShowUndoSheet(false);
     };
 
-    const closeSheet = () => {
-        Animated.timing(translateY, {
-            toValue: screenHeight,
-            duration: 200,
-            useNativeDriver: true,
-        }).start(() => {
-            setShowUndoSheet(false);
-            translateY.setValue(0);
-        });
+    const handleUndoChanges = () => {
+        setAboutText(initialValue);
+        navigation.goBack();
     };
 
     const handleBack = () => {
         if (hasChanges) {
             Keyboard.dismiss();
-            openSheet();
+            setShowUndoSheet();
         } else {
             if (navigation?.goBack) {
                 navigation.goBack();
@@ -88,30 +58,37 @@ const EditAboutMe = ({navigation, route}) => {
         }
     };
 
-    const handleSave = () => {
-        // TODO: Gọi API lưu data
-        console.log('Saving about me:', aboutText);
-        if (navigation?.goBack) {
-            navigation.goBack();
-        } else {
-            console.log('Saved and go back');
+    const handleSave = async () => {
+        if (!hasChanges) {
+             navigation.goBack();
+             return;
         }
-    };
 
-    const handleContinueFilling = () => {
-        closeSheet();
-    };
-
-    const handleUndoChanges = () => {
-        closeSheet();
-        setAboutText(initialValue);
-        setTimeout(() => {
-            if (navigation?.goBack) {
-                navigation.goBack();
-            } else {
-                console.log('Undo and go back');
+        setLoading(true);
+        try {
+            const token = await AsyncStorage.getItem('token');
+            if (!token) {
+                Alert.alert("Lỗi", "Vui lòng đăng nhập lại.");
+                return;
             }
-        }, 250);
+
+            console.log("Sending bio update:", aboutText);
+
+            const response = await authApis(token).patch(endpoints.candidate_profile, {
+                bio: aboutText
+            });
+
+            if (response.status === 200 || response.status === 201) {
+                if (navigation?.goBack) {
+                    navigation.goBack();
+                }
+            }
+        } catch (error) {
+            console.error("Lỗi cập nhật About Me:", error);
+            Alert.alert("Lỗi", "Không thể cập nhật thông tin. Vui lòng thử lại.");
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
@@ -147,6 +124,7 @@ const EditAboutMe = ({navigation, route}) => {
                                 textAlignVertical="top"
                                 value={aboutText}
                                 onChangeText={setAboutText}
+                                editable={!loading}
                             />
                         </View>
 
@@ -163,59 +141,12 @@ const EditAboutMe = ({navigation, route}) => {
                 </TouchableWithoutFeedback>
             </KeyboardAvoidingView>
 
-            <Modal
+            <ConfirmationSheet
                 visible={showUndoSheet}
-                animationType="slide"
-                transparent={true}
-                onRequestClose={closeSheet}
-            >
-                <TouchableWithoutFeedback onPress={closeSheet}>
-                    <View style={styles.modalOverlay}>
-                        <SafeAreaView edges={['top']} style={styles.modalHeader}>
-                            <TouchableOpacity onPress={closeSheet} style={styles.closeButton}>
-                                <MaterialCommunityIcons name="close" size={28} color="#FFF"/>
-                            </TouchableOpacity>
-                        </SafeAreaView>
-
-                        <TouchableWithoutFeedback>
-                            <Animated.View
-                                style={[
-                                    styles.bottomSheet,
-                                    {transform: [{translateY}]}
-                                ]}
-                            >
-                                <View
-                                    style={styles.handleBarContainer}
-                                    {...panResponder.panHandlers}
-                                >
-                                    <View style={styles.sheetHandle}/>
-                                </View>
-
-                                <CustomText style={styles.sheetTitle}>Undo Changes ?</CustomText>
-                                <CustomText style={styles.sheetSubtitle}>
-                                    Are you sure you want to change what you entered?
-                                </CustomText>
-
-                                <TouchableOpacity
-                                    style={styles.continueButton}
-                                    onPress={handleContinueFilling}
-                                    activeOpacity={0.8}
-                                >
-                                    <CustomText style={styles.continueButtonText}>CONTINUE FILLING</CustomText>
-                                </TouchableOpacity>
-
-                                <TouchableOpacity
-                                    style={styles.undoButton}
-                                    onPress={handleUndoChanges}
-                                    activeOpacity={0.8}
-                                >
-                                    <CustomText style={styles.undoButtonText}>UNDO CHANGES</CustomText>
-                                </TouchableOpacity>
-                            </Animated.View>
-                        </TouchableWithoutFeedback>
-                    </View>
-                </TouchableWithoutFeedback>
-            </Modal>
+                onClose={handleContinueFilling}
+                onConfirm={handleUndoChanges}
+                type="undo"
+            />
         </SafeAreaView>
     );
 };

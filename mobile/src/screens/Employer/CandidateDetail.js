@@ -14,19 +14,21 @@ import { useDialog } from '../../hooks/useDialog';
 const CandidateDetail = ({ route, navigation }) => {
   const application = route.params.application;
 
-  // State
+
   const [comment, setComment] = useState('');
   const [rating, setRating] = useState(0);
   const [candidate, setCandidate] = useState({});
   const [loading, setLoading] = useState(true);
   const { showDialog } = useDialog();
-  // Load Data
+ 
   const load_candidate = async () => {
     try {
       const token = await AsyncStorage.getItem('token');
+      console.log(application.candidate_id);
       setLoading(true);
-      let res = await authApis(token).get(endpoints['candidate_by_applications_in_employer_jobs'](application.candidate_id));
+      let res = await authApis(token).get(endpoints['candidate_by_applications_in_employer_jobs'](application.id));
       setCandidate(res.data);
+      console.log(res.data);
     } catch (ex) {
       console.error(ex);
       Alert.alert("Lỗi", "Không tải được thông tin ứng viên.");
@@ -38,7 +40,7 @@ const CandidateDetail = ({ route, navigation }) => {
     try {
       setLoading(true);
       const token = await AsyncStorage.getItem('token');
-      // Giả sử API trả về data đầy đủ gồm education, cv_url...
+      
       let res = await authApis(token).patch(endpoints['update_application'](application.id), {
         comment: comment,
         rating: rating
@@ -75,7 +77,7 @@ const CandidateDetail = ({ route, navigation }) => {
     load_candidate();
   }, []);
 
-  // Xử lý mở CV
+ 
   const handleViewCV = () => {
     const cvUrl = candidate?.cv_url || candidate?.resume;
 
@@ -91,7 +93,7 @@ const CandidateDetail = ({ route, navigation }) => {
       Alert.alert("Thông báo", "Vui lòng chọn số sao để đánh giá!");
       return;
     }
-    // Logic gọi API lưu đánh giá
+    
     console.log(application)
     console.log(comment);
     console.log(rating);
@@ -123,10 +125,10 @@ const CandidateDetail = ({ route, navigation }) => {
 
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
 
-          {/* 1. HEADER PROFILE (Ảnh & Tên & Trạng thái) */}
+          
           <View style={styles.profileCard}>
             <Image
-              source={{ uri: "https://res.cloudinary.com/dblaqnihz/image/upload/v1767259778/lqtx6e6mymgyywf978v8.png" }}
+              source={{ uri: candidate?.user?.avatar }}
               style={styles.profileAvatar}
             />
 
@@ -149,7 +151,7 @@ const CandidateDetail = ({ route, navigation }) => {
             </View>
           </View>
 
-          {/* 2. THÔNG TIN CÁ NHÂN */}
+          
           <Text style={styles.sectionHeader}>Thông tin cá nhân</Text>
           <View style={styles.infoCard}>
             <InfoItem icon="email" label="Email" value={candidate?.user?.email} />
@@ -161,7 +163,7 @@ const CandidateDetail = ({ route, navigation }) => {
             <InfoItem icon="calendar" label="Ngày sinh" value={candidate?.dob || "01/01/1999"} />
           </View>
 
-          {/* 3. HỌC VẤN & KINH NGHIỆM (MỚI) */}
+          
           <Text style={styles.sectionHeader}>Trình độ & Kinh nghiệm</Text>
           <View style={styles.infoCard}>
             {/* Học vấn */}
@@ -178,7 +180,7 @@ const CandidateDetail = ({ route, navigation }) => {
 
             <Divider style={{ marginBottom: 15 }} />
 
-            {/* Kinh nghiệm */}
+            
             <View style={{ flexDirection: 'row' }}>
               <View style={styles.iconBox}>
                 <MaterialCommunityIcons name="briefcase-outline" size={24} color="#FF9228" />
@@ -191,7 +193,7 @@ const CandidateDetail = ({ route, navigation }) => {
             </View>
           </View>
 
-          {/* 4. FILE CV (MỚI - QUAN TRỌNG) */}
+         
           <Text style={styles.sectionHeader}>Hồ sơ đính kèm</Text>
           <TouchableOpacity style={styles.cvCard} onPress={handleViewCV}>
             <View style={styles.cvIconContainer}>
@@ -204,7 +206,7 @@ const CandidateDetail = ({ route, navigation }) => {
             <MaterialCommunityIcons name="eye" size={24} color="#AAA6B9" />
           </TouchableOpacity>
 
-          {/* 5. ĐÁNH GIÁ (GIỮ NGUYÊN NHƯNG ĐẸP HƠN) */}
+          
           <Text style={styles.sectionHeader}>Đánh giá & Ghi chú</Text>
           <View style={[styles.infoCard, { padding: 20 }]}>
             <View style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 20 }}>
@@ -238,9 +240,7 @@ const CandidateDetail = ({ route, navigation }) => {
   );
 };
 
-// --- SUB COMPONENTS & STYLES ---
 
-// Nút nhỏ: Gọi, Email, Nhắn tin
 const IconInfo = ({ icon, text, onPress }) => (
   <TouchableOpacity onPress={onPress} style={{ alignItems: 'center' }}>
     <View style={{ width: 45, height: 45, borderRadius: 25, backgroundColor: '#F5F7FA', justifyContent: 'center', alignItems: 'center', marginBottom: 5 }}>
@@ -250,7 +250,7 @@ const IconInfo = ({ icon, text, onPress }) => (
   </TouchableOpacity>
 );
 
-// Dòng thông tin: Email, Phone...
+
 const InfoItem = ({ icon, label, value }) => (
   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
     <MaterialCommunityIcons name={icon} size={20} color="#AAA6B9" style={{ width: 30 }} />
@@ -261,10 +261,5 @@ const InfoItem = ({ icon, label, value }) => (
   </View>
 );
 
-// --- CSS MỚI ---
-// (Bạn có thể copy đoạn này vào file EmployerStyles.js hoặc để đây)
-const localStyles = {
-  // ... Copy vào EmployerStyles nếu muốn tái sử dụng
-};
 
 export default CandidateDetail;

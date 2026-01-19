@@ -1,7 +1,9 @@
 from rest_framework import viewsets, permissions, status, generics
 from rest_framework.decorators import action
-from apps.users.models import CandidateProfile
-from apps.users.serializers import CandidateProfileSerializer
+
+from ..core.paginators import StandardResultsSetPagination
+from ..users.models import CandidateProfile
+from ..users.serializers import CandidateProfileSerializer
 from .models import Application
 from .serializers import EmployerApplicationSerializer, CandidateApplicationListSerializer, \
     CandidateApplicationWriteSerializer, CandidateApplicationDetailSerializer
@@ -13,26 +15,37 @@ from rest_framework.exceptions import PermissionDenied
 class EmployerApplicationViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveUpdateAPIView):
     serializer_class = EmployerApplicationSerializer
     permission_classes = [IsEmployerApproved]
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
         user = self.request.user
-
         if not user.is_authenticated:
             return Application.objects.none()
-        qs = Application.objects.filter(job__posted_by=user).select_related("job", "user")
+        qs = Application.objects.filter(job__posted_by=user.employer_profile).select_related("job", "candidate",
+                                                                                             "candidate__user")
         job_id = self.request.query_params.get("job_id")
-        st = self.request.query_params.get("status")
         if job_id:
             qs = qs.filter(job_id=job_id)
+        st = self.request.query_params.get("status")
         if st:
             qs = qs.filter(status=st)
-        return qs
+
+        # 3. Tìm kiếm (Thay thế logic q lúc nãy)
+        q = self.request.query_params.get('q')
+        if q:
+            from django.db.models import Q
+            qs = qs.filter(
+                Q(candidate__user__first_name__icontains=q) |
+                Q(candidate__user__last_name__icontains=q) |
+                Q(candidate__user__email__icontains=q)
+            )
+
+        return qs.order_by('-created_date')
 
     @action(methods=['get'], url_path='candidate-profile', detail=True)
     def get_candidate_profile(self, request, pk):
         application = self.get_object()
-        candidate_profile = CandidateProfile.objects.filter(user_id=application.user_id).first()
-        return Response(CandidateProfileSerializer(candidate_profile).data, status=status.HTTP_200_OK)
+        return Response(CandidateProfileSerializer(application.candidate).data, status=status.HTTP_200_OK)
 
 
 class CandidateApplicationViewSet(viewsets.ModelViewSet):
@@ -42,16 +55,23 @@ class CandidateApplicationViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if not user.is_authenticated:
             return Application.objects.none()
-        return Application.objects.filter(user=user).select_related('job')
+        return Application.objects.filter(candidate=user.candidate_profile).select_related(
+            'job',
+            'job__category',
+            'job__location',
+            'job__posted_by'
+        ).prefetch_related(
+            'job__tags'
+        )
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        serializer.save(candidate=self.request.user.candidate_profile)
 
     def create(self, request, *args, **kwargs):
         try:
             return super().create(request, *args, **kwargs)
         except Exception as e:
-            if "uniq_user_job_application" in str(e):
+            if "uniq_candidate_job_application" in str(e):
                 return Response(
                     {"detail": "Bạn đã ứng tuyển công việc này rồi."},
                     status=status.HTTP_400_BAD_REQUEST
@@ -61,7 +81,6 @@ class CandidateApplicationViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         instance = serializer.instance
 
-        # không được sửa khi nhà tuyển dụng đã xem
         if instance.status != 'SUBMITTED':
             raise PermissionDenied("Hồ sơ đã được Nhà tuyển dụng xử lý, bạn không thể chỉnh sửa nữa.")
 

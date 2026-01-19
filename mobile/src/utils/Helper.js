@@ -39,3 +39,57 @@ export const getJobStatus = (deadline) => {
 
     return { label: 'Đang tuyển', color: '#00C566', bg: '#E8FAEF' };
 };
+
+export const formatTimeElapsed = (dateString) => {
+        if (!dateString) return "Vừa xong";
+
+        const now = new Date();
+        const past = new Date(dateString);
+        const diffInSeconds = Math.floor((now - past) / 1000);
+
+        if (diffInSeconds < 60) {
+            return "Vừa xong";
+        }
+
+        const diffInMinutes = Math.floor(diffInSeconds / 60);
+        if (diffInMinutes < 60) {
+            return `${diffInMinutes} phút trước`;
+        }
+
+        const diffInHours = Math.floor(diffInMinutes / 60);
+        if (diffInHours < 24) {
+            return `${diffInHours} giờ trước`;
+        }
+
+        const diffInDays = Math.floor(diffInHours / 24);
+        if (diffInDays < 7) {
+            return `${diffInDays} ngày trước`;
+        }
+
+        const diffInWeeks = Math.floor(diffInDays / 7);
+        if (diffInWeeks < 4) {
+            return `${diffInWeeks} tuần trước`;
+        }
+
+        return `${past.getDate()}/${past.getMonth() + 1}/${past.getFullYear()}`;
+    };
+
+export const stripHtmlTags = (html) => {
+    if (!html) return "";
+
+    let text = html
+        .replace(/<br\s*\/?>/gi, "\n")
+        .replace(/<\/p>/gi, "\n\n")
+        .replace(/<\/li>/gi, "\n");
+
+    text = text.replace(/<[^>]+>/g, "");
+
+    text = text
+        .replace(/&nbsp;/g, " ")
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"');
+
+    return text.trim();
+};

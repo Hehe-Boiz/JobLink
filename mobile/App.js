@@ -1,29 +1,14 @@
 import React, { useEffect, useReducer } from 'react';
 
-import AppNavigator from './src/navigation/AppNavigator'; // File điều hướng chính
+import AppNavigator from './src/navigation/AppNavigator';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { MyUserContext } from './src/utils/contexts/MyContext';
 import MyUserReducer from './src/utils/reducers/MyUserReducer';
-
-// Định nghĩa Theme màu chủ đạo (ví dụ màu Xanh dương cho Job Portal)
 import { Provider as PaperProvider, MD3LightTheme as DefaultTheme } from 'react-native-paper';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
-import JobDetail from "./src/screens/Job/JobDetail";
 import { DialogProvider } from './src/utils/contexts/DialogContext';
-import ApplyJob from "./src/screens/Job/ApplyJob";
-import CandidateSearchJob from "./src/screens/Candidate/CandidateSearchJob";
-import CandidateHome from "./src/screens/Candidate/CandidateHome";
-import CandidateFilterCategory from "./src/screens/Candidate/CandidateFilterCategory";
-import CandidateSearchAdvance from './src/screens/Candidate/CandidateSearchAdvance'
 import { EmployerProvider } from './src/utils/contexts/EmployerContext';
-import CandidateSearchResults from "./src/screens/Candidate/CandidateSearchResults";
-import CompanyList from './src/screens/Candidate/CompanyList'
-import CompanyDetail from "./src/screens/Candidate/CompanyDetail";
-import CandidateProfile from "./src/screens/CandidateProfile/CandidateProfile";
-import EditAboutMe from "./src/screens/CandidateProfile/EditAboutMe";
-import AddWorkExperience from "./src/screens/CandidateProfile/AddWorkExperience";
-import AddEducation from "./src/screens/CandidateProfile/AddEducation";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -34,13 +19,15 @@ const theme = {
     primary: '#FF9228',
     secondary: '#130160ff',
     error: '#dc3545',
+    background: '#ffffff',
+    surface: '#ffffff',
+    text: '#000000',
   },
 };
 
 export default function App() {
   const [user, dispatch] = useReducer(MyUserReducer, null);
   const [fontsLoaded] = useFonts({
-    // Regular weights (non-italic)
     'DMSans-Thin': require('./assets/fonts/DM_Sans/static/DMSans-Thin.ttf'),
     'DMSans-ExtraLight': require('./assets/fonts/DM_Sans/static/DMSans-ExtraLight.ttf'),
     'DMSans-Light': require('./assets/fonts/DM_Sans/static/DMSans-Light.ttf'),
@@ -51,7 +38,6 @@ export default function App() {
     'DMSans-ExtraBold': require('./assets/fonts/DM_Sans/static/DMSans-ExtraBold.ttf'),
     'DMSans-Black': require('./assets/fonts/DM_Sans/static/DMSans-Black.ttf'),
 
-    // Italic weights (optional - uncomment if you use italic)
     'DMSans-ThinItalic': require('./assets/fonts/DM_Sans/static/DMSans-ThinItalic.ttf'),
     'DMSans-ExtraLightItalic': require('./assets/fonts/DM_Sans/static/DMSans-ExtraLightItalic.ttf'),
     'DMSans-LightItalic': require('./assets/fonts/DM_Sans/static/DMSans-LightItalic.ttf'),
@@ -76,9 +62,11 @@ export default function App() {
     <SafeAreaProvider>
       <MyUserContext.Provider value={[user, dispatch]}>
         <PaperProvider theme={theme}>
-          <DialogProvider>
-            <AddWorkExperience />
-          </DialogProvider>
+          <EmployerProvider>
+            <DialogProvider>
+              <AppNavigator />
+            </DialogProvider>
+          </EmployerProvider>
         </PaperProvider>
       </MyUserContext.Provider>
     </SafeAreaProvider>

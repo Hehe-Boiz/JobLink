@@ -37,8 +37,8 @@ import cloudinary.api
 
 cloudinary.config(
     cloud_name="dblaqnihz",
-    api_key="819237389474199",
-    api_secret="mkl7Uy7CBI3LcAT5lsZNAX-_JGg"
+    api_key=os.getenv('CLOUDINARY_API_KEY'),
+    api_secret=os.getenv('CLOUDINARY_API_SECRET')
 )
 # Application definition
 
@@ -53,6 +53,8 @@ INSTALLED_APPS = [
     'apps.core',
     'apps.jobs',
     'apps.applications',
+    'apps.payments',
+    'apps.reports',
     'rest_framework',
     'drf_yasg',
     'oauth2_provider',
@@ -88,7 +90,7 @@ ROOT_URLCONF = 'joblink.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [

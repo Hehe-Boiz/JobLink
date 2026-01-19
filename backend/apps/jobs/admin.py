@@ -38,7 +38,6 @@ class JobAdmin(admin.ModelAdmin):
     search_fields = ('title', 'company_name')
     readonly_fields = ('created_date', 'updated_date')
 
-    # Fieldsets để group các trường trong admin cho đẹp (tùy chọn)
     fieldsets = (
         ('Thông tin cơ bản', {
             'fields': ('title', 'company_name', 'employer_website', 'category', 'location', 'active')

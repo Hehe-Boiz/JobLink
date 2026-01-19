@@ -1,15 +1,14 @@
 import React, { useState } from "react";
 import { Image, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { Button, HelperText, TextInput } from "react-native-paper";
-import styles from "../../styles/Auth/CandidateRegisterStyles"; // Style của JobLink
+import styles from "../../styles/Auth/CandidateRegisterStyles";
 import Apis, { endpoints } from "../../utils/Apis";
 import { Alert } from "react-native";
 const CandidateRegister = ({ navigation }) => {
-  // 1. Cấu hình mảng Fields (Format thầy giáo)
   const info = [
     {
       title: "Full Name",
-      field: "first_name", // Gộp tên vào đây
+      field: "first_name",
       icon: "account-outline"
     },
 
@@ -32,14 +31,14 @@ const CandidateRegister = ({ navigation }) => {
     }
   ];
 
-  // 2. State quản lý
+
   const [user, setUser] = useState({});
   const [err, setErr] = useState(false);
   const [loading, setLoading] = useState(false);
-  // State quản lý ẩn/hiện mật khẩu (mở rộng thêm để UX tốt hơn)
+  
   const [showPass, setShowPass] = useState({});
 
-  // 4. Validate
+ 
   const validate = () => {
     if (!user.password || user.password !== user.confirm) {
       setErr(true);
@@ -49,7 +48,6 @@ const CandidateRegister = ({ navigation }) => {
     return true;
   }
 
-  // 5. Hàm Đăng ký (Logic Loop FormData chuẩn thầy)
   const register = async () => {
     if (validate() === true) {
       try {
@@ -80,7 +78,6 @@ const CandidateRegister = ({ navigation }) => {
           const errorData = ex.response.data;
           console.log("Lỗi Server:", errorData);
 
-          // --- TỪ ĐIỂN DỊCH THUẬT (Frontend Map) ---
           const fieldMap = {
             "email": "Email",
             "username": "Tên đăng nhập",
@@ -90,25 +87,17 @@ const CandidateRegister = ({ navigation }) => {
             "phone": "Số điện thoại",
             "non_field_errors": "Lỗi chung"
           };
-          // -------------------------------------------
 
           if (typeof errorData === 'object') {
             message = "";
             for (let key in errorData) {
-              // 1. Dịch tên trường (VD: email -> Email)
+              
               let vnField = fieldMap[key] || key;
 
               let errContent = errorData[key];
-              if (Array.isArray(errContent)) errContent = errContent[0]; // Lấy lỗi đầu tiên
-
-              // 3. Dịch nội dung lỗi (VD: This field is required -> Không được bỏ trống)
-              // Chuyển về chữ thường để so sánh cho dễ
+              if (Array.isArray(errContent)) errContent = errContent[0];
               let lowerContent = String(errContent).toLowerCase();
-
-              // Tìm trong từ điển, nếu không thấy thì dùng tạm tiếng Anh
               let vnMessage = "";
-
-              // Logic tìm kiếm thông minh (Check xem có chứa từ khóa không)
               if (lowerContent.includes("already exists")) {
                 vnMessage = "đã tồn tại trong hệ thống.";
               } else if (lowerContent.includes("required")) {
@@ -129,14 +118,13 @@ const CandidateRegister = ({ navigation }) => {
     }
   }
 
-  // Hàm phụ trợ để toggle password
   const toggleShow = (field) => {
     setShowPass(prev => ({ ...prev, [field]: !prev[field] }));
   }
 
   return (
     <View style={styles.container}>
-      {/* Header JobLink */}
+     
       <View style={styles.headerContainer}>
         <Text style={styles.appName}>Job<Text style={styles.brandHighlight}>Link</Text></Text>
         <Text style={styles.tagline}>Create a candidate account 🚀</Text>
@@ -146,7 +134,7 @@ const CandidateRegister = ({ navigation }) => {
         <HelperText type="error" visible={err}>
           Mật khẩu KHÔNG khớp!
         </HelperText>
-        {/* --- VÒNG LẶP RENDER INPUT (Format thầy) --- */}
+        
         {info.map(i => {
           const isErrorField = err && (i.field === 'password' || i.field === 'confirm');
           return (
@@ -157,15 +145,11 @@ const CandidateRegister = ({ navigation }) => {
               value={user[i.field]}
               onChangeText={(t) => {
                 setUser({ ...user, [i.field]: t });
-                if (err) setErr(false); // Tự động tắt lỗi khi người dùng nhập lại
+                if (err) setErr(false); 
               }}
               label={i.title}
               mode="outlined"
-
-              // React Native Paper hỗ trợ prop 'error' để tô đỏ tự động
               error={isErrorField}
-
-              // Màu viền khi active (nếu không lỗi thì màu tím, nếu lỗi thì Paper tự xử lý màu đỏ)
               activeOutlineColor={isErrorField ? "red" : "#130160"}
               outlineColor="#EAEAEA"
 
@@ -184,7 +168,7 @@ const CandidateRegister = ({ navigation }) => {
           )
         })}
 
-        {/* Nút Đăng ký */}
+      
         <Button
           loading={loading}
           disabled={loading}
@@ -197,7 +181,7 @@ const CandidateRegister = ({ navigation }) => {
           SIGN UP
         </Button>
 
-        {/* Footer chuyển hướng */}
+       
         <View style={styles.footer}>
           <Text style={styles.footerText}>Already have an account?</Text>
           <TouchableOpacity onPress={() => navigation.reset({
@@ -208,7 +192,7 @@ const CandidateRegister = ({ navigation }) => {
           </TouchableOpacity>
         </View>
 
-        {/* Link sang Employer */}
+       
         <View style={{ marginTop: 10, alignItems: 'center', marginBottom: 30 }}>
           <Text style={{ color: '#95969D', marginBottom: 10 }}>Looking to hire talent?</Text>
           <Button

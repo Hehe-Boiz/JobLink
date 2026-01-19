@@ -59,7 +59,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   textArea: {
-    minHeight: 100, // Chiều cao cho text area
+    minHeight: 100,
     textAlignVertical: 'top',
   }
 });

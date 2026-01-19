@@ -11,22 +11,23 @@ import { useDialog } from '../../hooks/useDialog';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Apis, { endpoints } from '../../utils/Apis';
 import { useEmployer } from '../../hooks/useEmployer';
-
+import { CLIENT_ID, CLIENT_SECRET } from '@env';//rebuild
 const EmployerProfile = ({ navigation }) => {
     const { showDialog } = useDialog();
-    // Giả lập toggle switch 
+   
     const [isNotiEnabled, setIsNotiEnabled] = useState(true);
     const [user, dispatch] = useContext(MyUserContext);
     const { profile, clearEmployerProfile } = useEmployer();
     const logout = async () => {
         try {
+            console.log(CLIENT_ID);
+            console.log(CLIENT_SECRET);
             const token = await AsyncStorage.getItem('token');
-
             if (token) {
                 await Apis.post(endpoints['logout'], {
                     'token': token,
-                    'client_id': '5XCmPUvnuXrvqhLbbifhHnPD3fYqiPA6t59KoH45',
-                    'client_secret': 'rgRooNUhgQ6oaa5WouYu1WqCc5ZI7mXYyhpGhMODmQua1yvHKNKwhQWJvA1eFmBwJtSfuOvzOrvwIfNsRIamWTUZo70xtvpG21eQpIw3FCz8KkDPhWId7XkTE2bplYqc'
+                    'client_id': CLIENT_ID,
+                    'client_secret': CLIENT_SECRET,
                 });
             }
         } catch (ex) {

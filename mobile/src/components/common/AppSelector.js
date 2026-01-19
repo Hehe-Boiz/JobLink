@@ -9,30 +9,29 @@ const AppSelector = ({ label, placeholder, data, selectedValue, onSelect, requir
   const [searchText, setSearchText] = useState('');
   const theme = useTheme()
 
-  // Lọc dữ liệu theo từ khóa tìm kiếm
+
   const filteredData = data.filter(item => 
     item.name.toLowerCase().includes(searchText.toLowerCase())
   );
 
-  // Tìm tên hiển thị của item đã chọn
+
   const selectedItemName = data.find(item => item.id === selectedValue?.id)?.name;
 
   const handleSelect = (item) => {
     onSelect(item);
     setVisible(false);
-    setSearchText(''); // Reset tìm kiếm
+    setSearchText('');
   };
 
   return (
     <View style={styles.container}>
-      {/* Label */}
+
       {label && (
         <Text style={styles.label}>
           {label} {required && <Text style={{ color: 'red' }}>*</Text>}
         </Text>
       )}
 
-      {/* Ô Input giả (Touchable) */}
       <TouchableOpacity 
         style={styles.selectorBox} 
         onPress={() => setVisible(true)}
@@ -44,11 +43,10 @@ const AppSelector = ({ label, placeholder, data, selectedValue, onSelect, requir
         <MaterialCommunityIcons name="chevron-down" size={24} color="#AAA6B9" />
       </TouchableOpacity>
 
-      {/* --- MODAL CHỌN DANH SÁCH --- */}
       <Modal visible={visible} animationType="slide" onRequestClose={() => setVisible(false)}>
         <SafeAreaView style={styles.modalContainer}>
           
-          {/* Header Modal */}
+
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setVisible(false)}>
                <MaterialCommunityIcons name="close" size={28} color="#130160" />
@@ -57,7 +55,6 @@ const AppSelector = ({ label, placeholder, data, selectedValue, onSelect, requir
             <View style={{ width: 28 }} />
           </View>
 
-          {/* Search Bar */}
           <View style={styles.searchContainer}>
             <TextInput
               mode="outlined"
@@ -72,7 +69,6 @@ const AppSelector = ({ label, placeholder, data, selectedValue, onSelect, requir
             />
           </View>
 
-          {/* Danh sách Items */}
           <FlatList
             data={filteredData}
             keyExtractor={(item) => item.id.toString()}
@@ -120,7 +116,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#EAEAEA',
     borderRadius: 10,
-    height: 50, // Khớp chiều cao với AppInput
+    height: 50, 
     paddingHorizontal: 15,
   },
   valueText: {
@@ -131,7 +127,7 @@ const styles = StyleSheet.create({
     color: '#AAA6B9',
   },
   
-  // Modal Styles
+ 
   modalContainer: {
     flex: 1,
     backgroundColor: '#FFFFFF',

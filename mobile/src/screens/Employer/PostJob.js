@@ -7,40 +7,47 @@ import { ScrollView, KeyboardAvoidingView, Platform, Alert, Text, View } from 'r
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from 'react-native-paper';
 
-// IMPORT COMPONENTS ĐÃ TÁCH
+
 import AppHeader from '../../components/common/AppHeader';
 import AppInput from '../../components/common/AppInput';
 import ChipSelector from '../../components/Employer/ChipSelector';
 import Apis, { authApis, endpoints } from '../../utils/Apis';
-// Style import (Nếu cần style riêng cho container)
+
 import styles from '../../styles/Employer/EmployerStyles';
 import AppSelector from '../../components/common/AppSelector';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import AppDatePicker from '../../components/common/AppDatePicker';
 import { validateForm } from '../../utils/validate/Employer/ValidatePostJob';
+import { useDialog } from '../../hooks/useDialog';
+import MultiChipSelector from '../../components/Employer/MultiChipSelector';
 
 const PostJob = ({ navigation, route }) => {
-    // 1. State
+
     const [jobData, setJobData] = useState({
         title: '', location: '', address: '', salaryMin: '', salaryMax: '',
         description: '', requirements: '', benefits: '', deadline: null
     });
     const [categories, setCategories] = useState([]);
     const [locations, setLocations] = useState([]);
+    const [tags, setTags] = useState([]);
     const [selectedCategory, setSelectedCategory] = useState(null);
     const [selectedLocation, setSelectedLocation] = useState(null);
+    const [selectedTags, setSelectedTags] = useState([]);
     const [jobType, setJobType] = useState('FULL_TIME');
     const jobTypes = ['FULL_TIME', 'PART_TIME', 'REMOTE', 'INTERN']
     const [level, setLevel] = useState('JUNIOR');
     const levels = ['INTERN', 'FRESHER', 'JUNIOR', 'MIDDLE', 'SENIOR', 'EXPERT']
     const [loading, setLoading] = useState(false);
+    const { showDialog } = useDialog();
     useEffect(() => {
         const fetchData = async () => {
             try {
                 let resCat = await Apis.get(endpoints['categories']);
                 let resLoc = await Apis.get(endpoints['locations']);
+                let resTag = await Apis.get(endpoints['tags']);
                 setCategories(resCat.data);
                 setLocations(resLoc.data);
+                setTags(resTag.data);
             } catch (e) {
                 console.error("Lỗi tải danh mục:", e);
             }
@@ -52,7 +59,15 @@ const PostJob = ({ navigation, route }) => {
         setJobData(prev => ({ ...prev, [key]: value }));
     };
 
-
+    const toggleTag = (tagId) => {
+        setSelectedTags(prev => {
+            if (prev.includes(tagId)) {
+                return prev.filter(id => id !== tagId);
+            } else {
+                return [...prev, tagId];
+            }
+        });
+    };
     const handlePost = async () => {
         const [isValid, errors] = validateForm(jobData);
         if (!isValid) {
@@ -69,10 +84,10 @@ const PostJob = ({ navigation, route }) => {
                 const d = jobData.deadline;
                 formattedDeadline = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
             }
- 
+
             const payload = {
                 title: jobData.title,
-                company_name: "Tự động lấy từ Profile", 
+                company_name: "Tự động lấy từ Profile",
 
                 category: selectedCategory.id,
                 location: selectedLocation.id,
@@ -81,14 +96,15 @@ const PostJob = ({ navigation, route }) => {
                 employment_type: jobType,
                 experience_level: level,
 
-  
+
                 salary_min: parseInt(jobData.salaryMin) || null,
                 salary_max: parseInt(jobData.salaryMax) || null,
 
                 description: jobData.description,
                 requirements: jobData.requirements,
                 benefits: jobData.benefits,
-                deadline: formattedDeadline // YYYY-MM-DD
+                deadline: formattedDeadline,
+                tags: selectedTags,
             };
 
             console.log("Sending Payload:", payload);
@@ -96,15 +112,28 @@ const PostJob = ({ navigation, route }) => {
             let res = await api.post(endpoints['employer_jobs'], payload);
 
             if (res.status === 201) {
-                Alert.alert("Thành công", "Đăng tin tuyển dụng thành công!");
-                navigation.goBack();
+                showDialog({
+                    type: 'success',
+                    title: 'Đăng tin thành công!',
+                    content: '"Bạn có muốn mua gói Dịch vụ (Tin nổi bật/Gấp) để tiếp cận nhiều ứng viên hơn không?"',
+                    confirmText: 'Mua ngay',
+                    cancelText: 'Để sau',
+                    showCancel: true,
+                    onConfirm: () => {
+                        console.log(res.data);
+                        navigation.replace('BuyService', { job: res.data });
+                    },
+                    onCancel: () => {
+                        navigation.goBack();
+                    }
+                });
             }
 
         } catch (ex) {
             console.error(ex);
             let msg = "Lỗi không xác định";
             if (ex.response && ex.response.data) {
-                msg = JSON.stringify(ex.response.data); 
+                msg = JSON.stringify(ex.response.data);
             }
             Alert.alert("Đăng tin thất bại", msg);
         } finally {
@@ -142,7 +171,12 @@ const PostJob = ({ navigation, route }) => {
                         selectedValue={selectedCategory}
                         onSelect={setSelectedCategory}
                     />
-
+                    <MultiChipSelector 
+                        label="Kỹ năng yêu cầu (Tags)"
+                        data={tags}
+                        selectedIds={selectedTags}
+                        onToggle={toggleTag}
+                    />
                     <AppSelector
                         label="Địa điểm làm việc"
                         required
@@ -177,7 +211,7 @@ const PostJob = ({ navigation, route }) => {
                         value={jobData.deadline}
                         onDateChange={(date) => updateData('deadline', date)}
                     />
-                    {/* PHẦN 2: LƯƠNG */}
+                    
                     <Text style={styles.sectionTitle}>2. Mức lương (Triệu VNĐ)</Text>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                         <AppInput
@@ -214,7 +248,7 @@ const PostJob = ({ navigation, route }) => {
                         onPress={handlePost}
                         loading={loading}
                         disabled={loading}
-                        style={styles.btnPrimary} 
+                        style={styles.btnPrimary}
                         contentStyle={{ height: 50 }}
                     >
                         ĐĂNG TUYỂN DỤNG

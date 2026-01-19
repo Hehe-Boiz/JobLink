@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, {useState, useMemo} from 'react';
 import {
     View,
     TouchableOpacity,
@@ -8,20 +8,22 @@ import {
     Keyboard,
     ScrollView,
     TextInput,
+    ActivityIndicator, Alert
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import {SafeAreaView} from 'react-native-safe-area-context';
+import {MaterialCommunityIcons} from '@expo/vector-icons';
 import CustomText from '../../components/common/CustomText';
 import ConfirmationSheet from '../../components/common/ConfirmationSheet';
 import CustomSelector from '../../components/common/CustomSelector';
 import styles from '../../styles/CandidateProfile/AddWorkExperienceStyles';
-
-import MonthYearInput from '../../components/common/MonthYearInput';
+import {authApis, endpoints} from '../../utils/Apis';
+import MonthYearInput from '../../components/common/MonthYear/MonthYearInput';
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const parseDateToPickerValue = (dateInput) => {
-    if (!dateInput) return null;
+    if (!dateInput || dateInput === 'Present') return null;
     const d = new Date(dateInput);
     if (isNaN(d.getTime())) return null;
     return {
@@ -30,18 +32,18 @@ const parseDateToPickerValue = (dateInput) => {
     };
 };
 
-const convertPickerToDate = (pickerValue) => {
+const formatDateForBackend = (pickerValue) => {
     if (!pickerValue) return null;
-    const monthIndex = MONTHS.indexOf(pickerValue.month);
-    return new Date(pickerValue.year, monthIndex, 1);
+    const monthIndex = MONTHS.indexOf(pickerValue.month) + 1;
+    const monthStr = monthIndex < 10 ? `0${monthIndex}` : monthIndex;
+    return `${pickerValue.year}-${monthStr}-01`;
 };
 
 
-const AddEducation = ({ navigation, route }) => {
-    const initialData = route?.params?.data || {};
-    const isEdit = !!initialData.id;
+const AddEducation = ({navigation, route}) => {
+    const {education, isEdit} = route.params || {};
 
-    const institutionList = [
+    const INSTITUTION_LIST = [
         {id: '1', name: 'University of Oxford'},
         {id: '2', name: 'Harvard University'},
         {id: '3', name: 'MIT'},
@@ -50,7 +52,7 @@ const AddEducation = ({ navigation, route }) => {
         {id: '6', name: 'National University of Singapore'},
         {id: 'OTHER_OPTION', name: 'Other / Tự nhập trường khác'}
     ];
-    const levelList = [
+    const LEVEL_LIST = [
         {id: '1', name: 'High School Diploma'},
         {id: '2', name: 'Associate Degree'},
         {id: '3', name: 'Bachelor\'s Degree'},
@@ -58,6 +60,39 @@ const AddEducation = ({ navigation, route }) => {
         {id: '5', name: 'Ph.D.'},
         {id: 'OTHER_OPTION', name: 'Other / Tự nhập cấp bậc khác'}
     ];
+
+    const initialData = useMemo(() => {
+        if (!isEdit || !education) return {};
+
+        let initLevel = '';
+        let initField = education.degree || '';
+
+        if (education.degree && education.degree.includes(' - ')) {
+            const parts = education.degree.split(' - ');
+            initLevel = parts[0];
+            initField = parts.slice(1).join(' - ');
+        } else {
+            const matchLevel = LEVEL_LIST.find(l => education.degree.startsWith(l.name));
+            if (matchLevel) {
+                initLevel = matchLevel.name;
+                initField = education.degree.replace(matchLevel.name, '').trim().replace(/^- /, '');
+            } else {
+                initField = education.degree;
+            }
+        }
+
+        const isCurrent = education.endDate === 'Present' || (!education.endDate && !!education.startDate);
+
+        return {
+            institution: education.school || '',
+            level: initLevel,
+            fieldOfStudy: initField,
+            startDate: education.startDate,
+            endDate: education.endDate,
+            description: education.description || '',
+            isCurrentPosition: isCurrent
+        };
+    }, [education, isEdit]);
 
     const [formData, setFormData] = useState({
         level: initialData.level || '',
@@ -72,33 +107,51 @@ const AddEducation = ({ navigation, route }) => {
         initialData.isCurrentPosition || false
     );
 
+    const [loading, setLoading] = useState(false);
     const [showSheet, setShowSheet] = useState(false);
     const [sheetType, setSheetType] = useState('undo');
 
-    const isInstitutionInList = (val) => institutionList.some(item => item.name === val);
+    const isInstitutionInList = (val) => INSTITUTION_LIST.some(item => item.name === val);
     const [isManualInstitution, setIsManualInstitution] = useState(
         !!initialData.institution && !isInstitutionInList(initialData.institution)
     );
 
-    const isLevelInList = (val) => levelList.some(item => item.name === val);
+    const isLevelInList = (val) => LEVEL_LIST.some(item => item.name === val);
     const [isManualLevel, setIsManualLevel] = useState(
         !!initialData.level && !isLevelInList(initialData.level)
     );
 
+
     const handleChange = (field, value) => {
-        setFormData(prev => ({ ...prev, [field]: value }));
+        setFormData(prev => ({...prev, [field]: value}));
     };
 
     const handleInstitutionSelect = (item) => {
-        if (!item) { handleChange('institution', ''); return; }
-        if (item.id === 'OTHER_OPTION') { setIsManualInstitution(true); handleChange('institution', ''); }
-        else { handleChange('institution', item.name); setIsManualInstitution(false); }
+        if (!item) {
+            handleChange('institution', '');
+            return;
+        }
+        if (item.id === 'OTHER_OPTION') {
+            setIsManualInstitution(true);
+            handleChange('institution', '');
+        } else {
+            handleChange('institution', item.name);
+            setIsManualInstitution(false);
+        }
     };
 
     const handleLevelSelect = (item) => {
-        if (!item) { handleChange('level', ''); return; }
-        if (item.id === 'OTHER_OPTION') { setIsManualLevel(true); handleChange('level', ''); }
-        else { handleChange('level', item.name); setIsManualLevel(false); }
+        if (!item) {
+            handleChange('level', '');
+            return;
+        }
+        if (item.id === 'OTHER_OPTION') {
+            setIsManualLevel(true);
+            handleChange('level', '');
+        } else {
+            handleChange('level', item.name);
+            setIsManualLevel(false);
+        }
     };
 
     const handleToggleCurrentPosition = () => {
@@ -131,24 +184,66 @@ const AddEducation = ({ navigation, route }) => {
             currentField !== initialField ||
             currentDesc !== initialDesc ||
             currentStart !== initialStart ||
-            currentEnd !== initialEnd
+            currentEnd !== initialEnd ||
+            isCurrentPosition !== (initialData.isCurrentPosition || false)
         );
     };
 
-    const handleSave = () => {
-        const payload = {
-            ...formData,
-            isCurrentPosition,
-            startDate: convertPickerToDate(formData.startDate), // Convert về Date object
-            endDate: isCurrentPosition ? null : convertPickerToDate(formData.endDate),
-        };
+    const handleSave = async () => {
+        if (!formData.institution.trim() || !formData.fieldOfStudy.trim()) {
+            Alert.alert("Missing Information", "Please enter Institution and Field of Study.");
+            return;
+        }
+        if (!formData.startDate) {
+            Alert.alert("Missing Information", "Please select Start Date.");
+            return;
+        }
 
-        // Lưu ý: Nếu Backend cần string 'YYYY-MM-DD', bạn dùng:
-        // startDate: convertPickerToDate(formData.startDate)?.toISOString().split('T')[0],
+        try {
+            setLoading(true);
+            const token = await AsyncStorage.getItem('token');
+            const api = authApis(token);
 
-        console.log('Saving Education Payload:', payload);
-        navigation.goBack();
+            const finalDegree = formData.level
+                ? `${formData.level} - ${formData.fieldOfStudy}`
+                : formData.fieldOfStudy;
+
+            const payload = {
+                institution: formData.institution,
+                level: formData.level,
+                field_of_study: formData.fieldOfStudy,
+                start_date: formatDateForBackend(formData.startDate),
+                end_date: isCurrentPosition ? null : formatDateForBackend(formData.endDate),
+                is_current: isCurrentPosition,
+                description: formData.description
+            };
+
+            if (isEdit) {
+                await api.patch(`${endpoints.education}${education.id}/`, payload);
+            } else {
+                await api.post(endpoints.education, payload);
+            }
+
+            navigation.goBack();
+
+        } catch (error) {
+            console.error("Save error:", error);
+            const errorMsg = error.response?.data
+                ? JSON.stringify(error.response.data)
+                : "Failed to save education details.";
+            Alert.alert("Error", errorMsg);
+        } finally {
+            setLoading(false);
+        }
     };
+
+    const handleDelete = async () => {
+        if (!isEdit || !education?.id) return;
+
+        setSheetType('remove');
+        setShowSheet(true);
+    };
+
 
     const handleBack = () => {
         if (checkHasChanges()) {
@@ -160,13 +255,25 @@ const AddEducation = ({ navigation, route }) => {
         }
     };
 
-    const onConfirmAction = () => {
+    const onConfirmAction = async () => {
         setShowSheet(false);
+
         if (sheetType === 'undo') {
             navigation.goBack();
         } else if (sheetType === 'remove') {
-            console.log('Deleting...');
-            navigation.goBack();
+            try {
+                setLoading(true);
+                const token = await AsyncStorage.getItem('token');
+
+                await authApis(token).delete(`${endpoints.education}${education.id}/`);
+
+                navigation.goBack();
+            } catch (error) {
+                console.error("Delete error:", error);
+                Alert.alert("Error", "Could not delete education.");
+            } finally {
+                setLoading(false);
+            }
         }
     };
 
@@ -176,17 +283,23 @@ const AddEducation = ({ navigation, route }) => {
                 <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                     <View style={styles.content}>
 
-                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10 }}>
+                        <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 10}}>
                             <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-                                <MaterialCommunityIcons name="arrow-left" size={28} color="#150B3D" />
+                                <MaterialCommunityIcons name="arrow-left" size={28} color="#150B3D"/>
                             </TouchableOpacity>
-                            <CustomText style={[styles.title, { marginBottom: 0, flex: 1, textAlign: 'center', marginRight: 44 }]}>
+                            <CustomText style={[styles.title, {
+                                marginBottom: 0,
+                                flex: 1,
+                                textAlign: 'center',
+                                marginRight: 44
+                            }]}>
                                 {isEdit ? 'Change Education' : 'Add Education'}
                             </CustomText>
                         </View>
 
-                        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scrollContent, { paddingTop: 20 }]}>
-                             {isManualLevel ? (
+                        <ScrollView showsVerticalScrollIndicator={false}
+                                    contentContainerStyle={[styles.scrollContent, {paddingTop: 20}]}>
+                            {isManualLevel ? (
                                 <View style={{marginBottom: 15}}>
                                     <View style={styles.inputGroup}>
                                         <CustomText style={styles.label}>Level of education</CustomText>
@@ -213,14 +326,14 @@ const AddEducation = ({ navigation, route }) => {
                                     <CustomSelector
                                         label="Level of education"
                                         placeholder="Select Level"
-                                        data={levelList}
-                                        selectedValue={levelList.find(i => i.name === formData.level)}
+                                        data={LEVEL_LIST}
+                                        selectedValue={LEVEL_LIST.find(i => i.name === formData.level)}
                                         onSelect={handleLevelSelect}
                                     />
                                 </View>
                             )}
 
-                             {isManualInstitution ? (
+                            {isManualInstitution ? (
                                 <View style={{marginBottom: 15}}>
                                     <View style={styles.inputGroup}>
                                         <CustomText style={styles.label}>Institution name</CustomText>
@@ -247,8 +360,8 @@ const AddEducation = ({ navigation, route }) => {
                                     <CustomSelector
                                         label="Institution name"
                                         placeholder="Select Institution"
-                                        data={institutionList}
-                                        selectedValue={institutionList.find(i => i.name === formData.institution)}
+                                        data={INSTITUTION_LIST}
+                                        selectedValue={INSTITUTION_LIST.find(i => i.name === formData.institution)}
                                         onSelect={handleInstitutionSelect}
                                     />
                                 </View>
@@ -266,7 +379,7 @@ const AddEducation = ({ navigation, route }) => {
                             </View>
 
                             <View style={styles.dateRow}>
-                                <View style={{ flex: 1, marginRight: 10 }}>
+                                <View style={{flex: 1, marginRight: 10}}>
                                     <MonthYearInput
                                         label="Start date"
                                         value={formData.startDate}
@@ -275,7 +388,7 @@ const AddEducation = ({ navigation, route }) => {
                                     />
                                 </View>
 
-                                <View style={{ flex: 1, marginLeft: 10 }}>
+                                <View style={{flex: 1, marginLeft: 10}}>
                                     {isCurrentPosition ? (
                                         <View>
                                             <CustomText style={styles.label}>End date</CustomText>
@@ -306,7 +419,7 @@ const AddEducation = ({ navigation, route }) => {
                             >
                                 <View style={[styles.checkbox, isCurrentPosition && styles.checkboxChecked]}>
                                     {isCurrentPosition && (
-                                        <MaterialCommunityIcons name="check" size={14} color="#FFF" />
+                                        <MaterialCommunityIcons name="check" size={14} color="#FFF"/>
                                     )}
                                 </View>
                                 <CustomText style={styles.checkboxLabel}>This is my position now</CustomText>
@@ -329,14 +442,18 @@ const AddEducation = ({ navigation, route }) => {
 
                         </ScrollView>
 
-                        <View style={[styles.buttonContainer, { marginBottom: 0 }]}>
+                        <View style={[styles.buttonContainer, {marginBottom: 0}]}>
                             {isEdit && (
-                                <TouchableOpacity style={styles.removeButton}>
+                                <TouchableOpacity style={styles.removeButton} onPress={handleDelete} disabled={loading}>
                                     <CustomText style={styles.removeButtonText}>REMOVE</CustomText>
                                 </TouchableOpacity>
                             )}
-                            <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-                                <CustomText style={styles.saveButtonText}>SAVE</CustomText>
+                            <TouchableOpacity style={styles.saveButton} onPress={handleSave} disabled={loading}>
+                                {loading ? (
+                                    <ActivityIndicator color="#FFF"/>
+                                ) : (
+                                    <CustomText style={styles.saveButtonText}>SAVE</CustomText>
+                                )}
                             </TouchableOpacity>
                         </View>
                     </View>

@@ -5,8 +5,7 @@ const DialogContext = createContext();
 
 export const DialogProvider = ({ children }) => {
     const [visible, setVisible] = useState(false);
-    
-    // State cấu hình mặc định
+
     const [config, setConfig] = useState({
         title: '',
         content: '',
@@ -19,7 +18,6 @@ export const DialogProvider = ({ children }) => {
     });
 
     /**
-     * Hàm gọi Dialog đa năng
      * @param {Object} options 
      * options = { title, content, type, onConfirm, onCancel, showCancel, confirmText, cancelText }
      */
@@ -27,15 +25,15 @@ export const DialogProvider = ({ children }) => {
         setConfig({
             title: options.title || 'Thông báo',
             content: options.content || '',
-            type: options.type || 'success', 
-            
+            type: options.type || 'success',
+
             confirmText: options.confirmText || (options.showCancel ? 'XÁC NHẬN' : 'ĐÓNG'),
             cancelText: options.cancelText || 'HỦY',
-            
+
             onConfirm: options.onConfirm || null,
             onCancel: options.onCancel || null,
-            
-            showCancel: options.showCancel || false, 
+
+            showCancel: options.showCancel || false,
         });
         setVisible(true);
     };
