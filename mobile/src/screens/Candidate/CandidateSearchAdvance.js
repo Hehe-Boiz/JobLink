@@ -287,7 +287,6 @@ const CandidateSearchAdvance = ({navigation}) => {
                         <View style={styles.separator}/>
                     </View>
 
-                    {/* Salary Slider */}
                     <View style={styles.sectionWrapper}>
                         <CustomText style={styles.sectionTitle}>Salary (Million VND)</CustomText>
                         <RangeSlider
@@ -295,7 +294,7 @@ const CandidateSearchAdvance = ({navigation}) => {
                             max={50}
                             initialLow={salary.min}
                             initialHigh={salary.max}
-                            resetTrigger={resetSliderTrigger} // Truyền prop này để reset UI
+                            resetTrigger={resetSliderTrigger}
                             onValuesChange={(min, max) => setSalary({min, max})}
                         />
                         <View style={{height: 5}}/>

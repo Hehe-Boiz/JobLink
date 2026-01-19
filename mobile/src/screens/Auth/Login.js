@@ -16,7 +16,7 @@ import { useEffect } from 'react';
 //     statusCodes,
 //     isErrorWithCode
 // } from '@react-native-google-signin/google-signin';
-import { CLIENT_ID, CLIENT_SECRET } from '@env';
+// import { CLIENT_ID, CLIENT_SECRET } from '@env';
 
 const Login = ({route}) => {
     const navigation = useNavigation();
@@ -136,7 +136,7 @@ const Login = ({route}) => {
     //         setLoading(false);
     //     }
     // };
-    //
+
     const validate = () => {
         if (!user.username || !user.password) {
             setErr(true);
@@ -148,8 +148,6 @@ const Login = ({route}) => {
     const login = async () => {
         if (validate()) {
             try {
-                console.log(CLIENT_ID);
-                console.log(CLIENT_SECRET);
                 setLoading(true);
                 console.log(user);
                 let res = await Apis.post(endpoints['login'], {
@@ -209,7 +207,7 @@ const Login = ({route}) => {
                     }
                 }, 100);
             } catch (ex) {
-                console.error(ex);
+                console.error(ex.response.data);
                 let msg = "Tên đăng nhập hoặc mật khẩu không đúng!";
                 if (ex.message === "Network Error") msg = "Lỗi kết nối server!";
                 Alert.alert("Đăng nhập thất bại", msg);

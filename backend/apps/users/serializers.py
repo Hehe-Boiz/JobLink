@@ -13,7 +13,6 @@ class UserSerializer(MediaURLSerializer):
 
     class Meta:
         model = User
-        # bạn có thể bỏ bớt field nếu muốn ngắn hơn
         fields = [
             # "id",
             "username",
@@ -199,7 +198,6 @@ class BaseRegisterSerializer(serializers.Serializer):
 
 
 class CandidateRegisterSerializer(BaseRegisterSerializer):
-    @transaction.atomic
     def create(self, validated_data):
 
         password = validated_data.pop("password")
@@ -227,7 +225,6 @@ class EmployerRegisterSerializer(BaseRegisterSerializer):
     tax_code = serializers.CharField(required=False, allow_blank=True)
     website = serializers.URLField(required=False, allow_blank=True)
 
-    @transaction.atomic
     def create(self, validated_data):
         password = validated_data.pop("password")
         email = validated_data.pop("email")

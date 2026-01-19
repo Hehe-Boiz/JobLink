@@ -48,8 +48,8 @@ const CustomText = ({style, children, ...props}) => {
                 {fontFamily: finalFontFamily},
                 style,
                 {
-                    fontWeight: undefined, // Remove fontWeight to avoid conflicts
-                    fontStyle: undefined,  // Remove fontStyle since it's in font name
+                    fontWeight: undefined,
+                    fontStyle: undefined,
                 }
             ]}
             {...props}
@@ -62,7 +62,7 @@ const CustomText = ({style, children, ...props}) => {
 const styles = StyleSheet.create({
     default: {
         fontFamily: 'DMSans-Regular',
-        includeFontPadding: false, // Better text rendering on Android
+        includeFontPadding: false,
     },
 });
 

@@ -140,7 +140,6 @@ const MonthYearPickerModal = ({
                                 />
                             </View>
 
-                            {/* Buttons */}
                             <View style={styles.buttonContainer}>
                                 <TouchableOpacity
                                     style={styles.saveButton}

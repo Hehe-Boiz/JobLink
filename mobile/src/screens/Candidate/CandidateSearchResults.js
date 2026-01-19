@@ -119,7 +119,7 @@ const CandidateSearchResults = ({navigation, route}) => {
                     posted: formatTimeElapsed(job.created_date),
                     logo: job.employer_logo || 'https://via.placeholder.com/60',
                     tags: [
-                        job.category?.name, // Thêm tên category vào tag
+                        job.category?.name,
                         job.employment_type?.replace('_', ' '),
                         ...(job.tags || []).map(t => t.name || t)
                     ].filter(Boolean),
@@ -150,7 +150,6 @@ const CandidateSearchResults = ({navigation, route}) => {
         setTimeout(() => fetchJobs(), 0);
     };
 
-    // Logic Bookmark (Giữ nguyên)
     const handleSaveJob = async (job) => {
         setResults(prevResults =>
             prevResults.map(j =>

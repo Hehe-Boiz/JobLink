@@ -4,7 +4,7 @@ import CustomText from './CustomText';
 
 const ITEM_HEIGHT = 50;
 const VISIBLE_ITEMS = 3;
-const PADDING_VERTICAL = (VISIBLE_ITEMS * ITEM_HEIGHT - ITEM_HEIGHT) / 2;
+const PADDING_VERTICAL = 50;
 
 const WheelColumn = ({data, selectedIndex, onValueChange}) => {
     const flatListRef = useRef(null);

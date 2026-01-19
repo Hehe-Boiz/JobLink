@@ -14,4 +14,4 @@ class JobFilter(django_filters.FilterSet):
     class Meta:
         model = Job
         fields = ['category', 'location', 'employment_type',
-                  'experience_level']  # cấu hình cho DjangoFilterBackend dành cho tìm kiếm chính xác
+                  'experience_level']

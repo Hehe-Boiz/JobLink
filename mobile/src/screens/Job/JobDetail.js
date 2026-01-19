@@ -92,7 +92,7 @@ const JobDetail = ({ navigation, route }) => {
             title: data.title,
             company: data.company_name || data.company || "Unknown Company",
             location: data.location?.name || data.location || "Việt Nam",
-            postedTime: formatTimeElapsed(data.updated_date || new Date()), // Format thời gian
+            postedTime: formatTimeElapsed(data.updated_date || new Date()),
 
             desc: stripHtmlTags(data.description) || "Đang tải chi tiết...",
             requirements: stripHtmlTags(data.requirements) || "Đang tải yêu cầu...",
@@ -109,7 +109,7 @@ const JobDetail = ({ navigation, route }) => {
 
             companyData: {
                 about: stripHtmlTags(data.company?.description) || "Đang tải thông tin...",
-                website: data.company?.website || null, // Lấy link website
+                website: data.company?.website || null,
                 address: data.company?.address || "Việt Nam",
                 gallery: [
                     "https://images.unsplash.com/photo-1497366216548-37526070297c?w=800",

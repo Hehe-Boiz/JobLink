@@ -15,7 +15,6 @@ from .filters import JobFilter
 from django.db.models import Count, Q
 
 
-
 class JobViewCandidate(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsCandidate]
     queryset = Job.objects.filter(deadline__gte=timezone.now())
@@ -65,9 +64,15 @@ class JobViewCandidate(viewsets.ReadOnlyModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        serializer = CandidateJobDetailSerializer(jobs, many=True)
+        first_category_id = jobs[0].category_id
+        is_same_category = all(job.category_id == first_category_id for job in jobs)
 
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        serializer = CandidateJobDetailSerializer(jobs, many=True, context={'request': request})
+
+        return Response({
+            "same_category": is_same_category,
+            "data": serializer.data
+        }, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['get'], url_path='stats')
     def stats(self, request):
@@ -88,6 +93,7 @@ class EmployerJobViewSet(viewsets.ViewSet, generics.ListCreateAPIView, generics.
     serializer_class = EmployerJobSerializer
     permission_classes = [IsEmployerApproved]
     pagination_class = StandardResultsSetPagination
+
     def get_queryset(self):
         user = self.request.user
         query = self.queryset
@@ -97,7 +103,8 @@ class EmployerJobViewSet(viewsets.ViewSet, generics.ListCreateAPIView, generics.
         if not user.is_authenticated:
             return Job.objects.none()
 
-        return query.filter(posted_by=user.employer_profile).select_related("category", "location").order_by('-created_date')
+        return query.filter(posted_by=user.employer_profile).select_related("category", "location").order_by(
+            '-created_date')
 
     def destroy(self, request, *args, **kwargs):
         job = self.get_object()
@@ -114,6 +121,7 @@ class EmployerJobViewSet(viewsets.ViewSet, generics.ListCreateAPIView, generics.
             posted_by=ep,
             company_name=ep.company_name,
         )
+
 
 class BookmarkJobViewSet(viewsets.ModelViewSet):
     serializer_class = CandidateBookmarkJobSerializer
@@ -154,6 +162,8 @@ class BookmarkJobViewSet(viewsets.ModelViewSet):
             {"detail": f"{count} công việc đã lưu."},
             status=status.HTTP_200_OK
         )
+
+
 class JobCategoryViewSet(viewsets.ViewSet, generics.ListAPIView):
     serializer_class = JobCategorySerializer
     queryset = JobCategory.objects.all()
@@ -164,6 +174,7 @@ class LocationViewSet(viewsets.ViewSet, generics.ListAPIView):
     serializer_class = LocationSerializer
     queryset = Location.objects.all()
     permission_classes = [AllowAny]
+
 
 class TagViewSet(viewsets.ViewSet, generics.ListAPIView):
     serializer_class = TagSerializer
