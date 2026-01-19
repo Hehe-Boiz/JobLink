@@ -69,7 +69,6 @@ const DayMonthYearPickerModal = ({
 
     const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
 
-    // Khi đổi month/year -> cập nhật days + clamp day
     useEffect(() => {
         const y = YEARS[selectedYearIndex];
         const newDays = buildDays(selectedMonthIndex, y);
@@ -77,7 +76,6 @@ const DayMonthYearPickerModal = ({
         setSelectedDayIndex((prev) => Math.min(prev, newDays.length - 1));
     }, [selectedMonthIndex, selectedYearIndex]);
 
-    // Khi mở modal -> reset theo initialValue
     useEffect(() => {
         if (visible) {
             const initMonth = getInitialMonthIndex();

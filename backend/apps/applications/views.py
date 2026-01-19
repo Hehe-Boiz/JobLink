@@ -57,11 +57,11 @@ class CandidateApplicationViewSet(viewsets.ModelViewSet):
             return Application.objects.none()
         return Application.objects.filter(candidate=user.candidate_profile).select_related(
             'job',
-            'job__category',  # Lấy luôn Category
-            'job__location',  # Lấy luôn Location
+            'job__category',
+            'job__location',
             'job__posted_by'
         ).prefetch_related(
-            'job__tags'  # Lấy luôn Tags (ManyToMany)
+            'job__tags'
         )
 
     def perform_create(self, serializer):

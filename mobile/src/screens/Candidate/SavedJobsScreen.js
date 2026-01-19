@@ -65,6 +65,7 @@ const SavedJobsScreen = ({navigation}) => {
             Alert.alert("Thông báo", "Vui lòng chọn ít nhất 2 công việc để so sánh.");
             return;
         }
+        console.log("selectedCompareList:", selectedCompareList);
         navigation.navigate("JobComparison", {selectedJobs: selectedCompareList});
     };
 

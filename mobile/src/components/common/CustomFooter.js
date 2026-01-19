@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, TouchableOpacity, StyleSheet } from 'react-native';
-import CustomText from './CustomText'; //
+import CustomText from './CustomText';
 import styles from '../../styles/Job/JobDetailStyles';
 
 const CustomFooter = ({

@@ -11,12 +11,12 @@ import { MyUserContext } from '../../utils/contexts/MyContext';
 import { useEmployer } from '../../hooks/useEmployer';
 import { useDialog } from '../../hooks/useDialog';
 import { useEffect } from 'react';
-// import {
-//     GoogleSignin,
-//     statusCodes,
-//     isErrorWithCode
-// } from '@react-native-google-signin/google-signin';
-// import { CLIENT_ID, CLIENT_SECRET } from '@env';
+import {
+    GoogleSignin,
+    statusCodes,
+    isErrorWithCode
+} from '@react-native-google-signin/google-signin';
+import { CLIENT_ID, CLIENT_SECRET } from '@env';//Ttttt
 
 const Login = ({route}) => {
     const navigation = useNavigation();
@@ -43,100 +43,100 @@ const Login = ({route}) => {
     const [showPass, setShowPass] = useState({});
     const [rememberMe, setRememberMe] = useState(false);
     const [err, setErr] = useState(false);
-    // useEffect(() => {
-    //     GoogleSignin.configure({
-    //         webClientId: '665244573266-77l5gm6jcvsimql5jntqc6g102geoh09.apps.googleusercontent.com',
-    //         offlineAccess: true,
-    //         forceCodeForRefreshToken: true,
-    //     });
-    // }, []);
-    // const loginWithBackend = async (googleToken) => {
-    //     setLoading(true);
-    //     try {
-    //         let res = await Apis.post(endpoints['login_google'], {
-    //             token: googleToken
-    //         });
-    //
-    //         console.log("Backend Response:", res.data);
-    //
-    //         const accessToken = res.data.access_token;
-    //         await AsyncStorage.setItem('token', accessToken);
-    //
-    //         let userRes = await authApis(accessToken).get(endpoints['current_user']);
-    //
-    //         dispatch({ "type": "login", "payload": userRes.data });
-    //
-    //         if (userRes.data.role === 'EMPLOYER') {
-    //             let res_emp = await loadEmployerProfile(accessToken);
-    //             if (res_emp && res_emp.is_verified === false) {
-    //                 showDialog({
-    //                     type: 'error',
-    //                     title: 'Chưa được duyệt',
-    //                     content: 'Tài khoản Nhà tuyển dụng của bạn chưa được Admin phê duyệt. Vui lòng liên hệ quản trị viên để được kích hoạt.',
-    //                     confirmText: 'ĐÃ HIỂU',
-    //                 });
-    //                 try {
-    //                     await Apis.post(endpoints['logout'], {
-    //                         'token': res.data.access_token,
-    //                         'client_id': CLIENT_ID,
-    //                         'client_secret': CLIENT_SECRET,
-    //                     });
-    //                 }
-    //                 catch (ex) {
-    //                     showDialog({
-    //                         type: 'error',
-    //                         title: 'Lỗi',
-    //                         content: 'Có lỗi xảy ra. Vui lòng thử lại sau.',
-    //                         confirmText: 'ĐÃ HIỂU',
-    //                     });
-    //                 }
-    //                 return;
-    //             }
-    //             navigation.navigate('EmployerMain');
-    //         } else {
-    //             console.log('oke')
-    //             navigation.navigate('CandidateMain');
-    //         }
-    //
-    //     } catch (error) {
-    //         console.error(error);
-    //         Alert.alert("Lỗi Server", "Xác thực thất bại.");
-    //     } finally {
-    //         setLoading(false);
-    //     }
-    // };
-    // const signInWithGoogle = async () => {
-    //     try {
-    //         setLoading(true);
-    //         await GoogleSignin.hasPlayServices();
-    //         const userInfo = await GoogleSignin.signIn();
-    //         const token = userInfo.data?.idToken || userInfo.idToken;
-    //
-    //         console.log("Google ID Token:", token);
-    //
-    //         if (token) {
-    //             loginWithBackend(token);
-    //         } else {
-    //             Alert.alert("Lỗi", "Không lấy được Token từ Google");
-    //         }
-    //
-    //     } catch (error) {
-    //         console.log("Google Signin Error:", error);
-    //         if (isErrorWithCode(error, statusCodes.SIGN_IN_CANCELLED)) {
-    //             console.log("Người dùng hủy đăng nhập");
-    //         } else if (isErrorWithCode(error, statusCodes.IN_PROGRESS)) {
-    //             console.log("Đang đăng nhập rồi");
-    //         } else if (isErrorWithCode(error, statusCodes.PLAY_SERVICES_NOT_AVAILABLE)) {
-    //             Alert.alert("Lỗi", "Máy không có Google Play Services");
-    //         } else {
-    //             Alert.alert("Lỗi Đăng nhập", error.message);
-    //         }
-    //     }
-    //     finally {
-    //         setLoading(false);
-    //     }
-    // };
-
+    useEffect(() => {
+        GoogleSignin.configure({
+            webClientId: '665244573266-77l5gm6jcvsimql5jntqc6g102geoh09.apps.googleusercontent.com',
+            offlineAccess: true,
+            forceCodeForRefreshToken: true,
+        });
+    }, []);
+    const loginWithBackend = async (googleToken) => {
+        setLoading(true);
+        try {
+            let res = await Apis.post(endpoints['login_google'], {
+                token: googleToken
+            });
+    
+            console.log("Backend Response:", res.data);
+    
+            const accessToken = res.data.access_token;
+            await AsyncStorage.setItem('token', accessToken);
+    
+            let userRes = await authApis(accessToken).get(endpoints['current_user']);
+    
+            dispatch({ "type": "login", "payload": userRes.data });
+    
+            if (userRes.data.role === 'EMPLOYER') {
+                let res_emp = await loadEmployerProfile(accessToken);
+                if (res_emp && res_emp.is_verified === false) {
+                    showDialog({
+                        type: 'error',
+                        title: 'Chưa được duyệt',
+                        content: 'Tài khoản Nhà tuyển dụng của bạn chưa được Admin phê duyệt. Vui lòng liên hệ quản trị viên để được kích hoạt.',
+                        confirmText: 'ĐÃ HIỂU',
+                    });
+                    try {
+                        await Apis.post(endpoints['logout'], {
+                            'token': res.data.access_token,
+                            'client_id': CLIENT_ID,
+                            'client_secret': CLIENT_SECRET,
+                        });
+                    }
+                    catch (ex) {
+                        showDialog({
+                            type: 'error',
+                            title: 'Lỗi',
+                            content: 'Có lỗi xảy ra. Vui lòng thử lại sau.',
+                            confirmText: 'ĐÃ HIỂU',
+                        });
+                    }
+                    return;
+                }
+                navigation.navigate('EmployerMain');
+            } else {
+                console.log('oke')
+                navigation.navigate('CandidateMain');
+            }
+    
+        } catch (error) {
+            console.error(error);
+            Alert.alert("Lỗi Server", "Xác thực thất bại.");
+        } finally {
+            setLoading(false);
+        }
+    };
+    const signInWithGoogle = async () => {
+        try {
+            setLoading(true);
+            await GoogleSignin.hasPlayServices();
+            const userInfo = await GoogleSignin.signIn();
+            const token = userInfo.data?.idToken || userInfo.idToken;
+    
+            console.log("Google ID Token:", token);
+    
+            if (token) {
+                loginWithBackend(token);
+            } else {
+                Alert.alert("Lỗi", "Không lấy được Token từ Google");
+            }
+    
+        } catch (error) {
+            console.log("Google Signin Error:", error);
+            if (isErrorWithCode(error, statusCodes.SIGN_IN_CANCELLED)) {
+                console.log("Người dùng hủy đăng nhập");
+            } else if (isErrorWithCode(error, statusCodes.IN_PROGRESS)) {
+                console.log("Đang đăng nhập rồi");
+            } else if (isErrorWithCode(error, statusCodes.PLAY_SERVICES_NOT_AVAILABLE)) {
+                Alert.alert("Lỗi", "Máy không có Google Play Services");
+            } else {
+                Alert.alert("Lỗi Đăng nhập", error.message);
+            }
+        }
+        finally {
+            setLoading(false);
+        }
+    };
+    
     const validate = () => {
         if (!user.username || !user.password) {
             setErr(true);
@@ -152,8 +152,8 @@ const Login = ({route}) => {
                 console.log(user);
                 let res = await Apis.post(endpoints['login'], {
                     ...user,
-                    'client_id': "bHU15mweIhuCEJHOp70BBXILFmZh7OZ7eraR0lJn",
-                    'client_secret': "WGdIP9ATQdgSLnp0YyxuFE85N0zQS4r2phaPUgWeib3XLcZZvInBDyAibSqvpGWoCfrn8gulNM1RLtCFdYsUXtwbSIXhVxaQ1eYjzVnd0ByYPiowrHVLEjAWTXSPOwFY",
+                    'client_id': CLIENT_ID,
+                    'client_secret': CLIENT_SECRET,
                     'grant_type': 'password'
                 });
 
@@ -178,8 +178,8 @@ const Login = ({route}) => {
                             try {
                                 await Apis.post(endpoints['logout'], {
                                     'token': res.data.access_token,
-                                    'client_id': "bHU15mweIhuCEJHOp70BBXILFmZh7OZ7eraR0lJn",
-                                    'client_secret': "WGdIP9ATQdgSLnp0YyxuFE85N0zQS4r2phaPUgWeib3XLcZZvInBDyAibSqvpGWoCfrn8gulNM1RLtCFdYsUXtwbSIXhVxaQ1eYjzVnd0ByYPiowrHVLEjAWTXSPOwFY",
+                                    'client_id': CLIENT_ID,
+                                    'client_secret': CLIENT_SECRET,
                                 });
                             }
                             catch (ex) {
@@ -302,7 +302,7 @@ const Login = ({route}) => {
 
                 <Button
                     mode="contained"
-                    // onPress={signInWithGoogle}
+                    onPress={signInWithGoogle}
                     disabled={loading}
                     style={styles.googleBtn}
                     labelStyle={styles.googleBtnLabel}

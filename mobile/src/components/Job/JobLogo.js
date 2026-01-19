@@ -5,16 +5,14 @@ import styles from '../../styles/Job/JobDetailStyles'
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 const JobLogo = ({item, style}) => {
-    // State giả lập cho nút Follow
     const [isFollowed, setIsFollowed] = useState(false);
 
     const handleFollow = () => {
         setIsFollowed(!isFollowed);
-        // Gọi API follow tại đây nếu cần
     };
 
     const handleVisitWebsite = () => {
-        // Mở link Google nếu không có link thật (item.website)
+       
         const url = item.website || 'https://www.google.com';
         Linking.openURL(url).catch(err =>
             Alert.alert("Lỗi", "Không thể mở trang web này")

@@ -172,7 +172,6 @@ class EmployerProfileSerializer(MediaURLSerializer):
 
 
 class AdminEmployerSerializer(EmployerProfileSerializer):
-    # thêm thông tin user đầy đủ để admin xem nhanh
     user_detail = UserSerializer(source="user", read_only=True)
     verified_by_detail = UserSerializer(source="verified_by", read_only=True)
 

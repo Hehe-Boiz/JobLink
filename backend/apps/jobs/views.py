@@ -16,7 +16,7 @@ from django.db.models import Count, Q
 
 
 class JobViewCandidate(viewsets.ReadOnlyModelViewSet):
-    permission_classes = [IsCandidate]
+    permission_classes = [AllowAny]
     queryset = Job.objects.filter(deadline__gte=timezone.now())
     pagination_class = StandardResultsSetPagination
 

@@ -1,11 +1,12 @@
 import axios from "axios";
 
-const BASE_URL = 'http://10.17.49.74:8000/';
+const BASE_URL = 'https://42c308f8bc04.ngrok-free.app';
 
 export const endpoints = {
     'register_candidate': '/register/candidate/',
     'register_employer': '/register/employer/',
     'login': '/o/token/',
+    'login_google': '/auth/google/login/',
     'logout': '/o/revoke_token/',
     'current_user': '/users/current-user/',
     'current_employer': '/employers/me/',

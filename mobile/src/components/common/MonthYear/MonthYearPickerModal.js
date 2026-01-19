@@ -43,7 +43,7 @@ const MonthYearPickerModal = ({
     const [selectedMonthIndex, setSelectedMonthIndex] = useState(getInitialMonthIndex());
     const [selectedYearIndex, setSelectedYearIndex] = useState(getInitialYearIndex());
 
-    const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+    const translateY = useRef(new Animted.Value(SCREEN_HEIGHT)).current;
 
     useEffect(() => {
         if (visible) {

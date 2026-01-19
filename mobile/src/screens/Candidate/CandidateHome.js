@@ -55,7 +55,7 @@ const CandidateHome = () => {
         try {
             const token = await AsyncStorage.getItem('token');
             let res = await authApis(token).get(endpoints['jobs']);
-            // console.log(res.data);
+            console.log(res.data);
             const apiJobs = res.data.results;
             const formattedJobs = apiJobs.map(job => {
                 const minSalary = job.salary_min ? (job.salary_min / 1000000).toFixed(0) + 'M' : '';
