@@ -82,11 +82,10 @@ const ApplyJob = ({navigation, route}) => {
 
     const handleApply = async () => {
         if (!cvFile) {
-            console.log("2. [Check] Chưa có CV -> Hiển thị Alert");
             Alert.alert("Thiếu thông tin", "Vui lòng tải lên CV của bạn!");
             return;
         }
-        setIsSuccess(true);
+        setIsSubmitting(true);
         try {
             const formData = new FormData();
             formData.append('job', jobId);

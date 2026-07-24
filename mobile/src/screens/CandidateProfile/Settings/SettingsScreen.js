@@ -15,6 +15,9 @@ import {MaterialCommunityIcons} from "@expo/vector-icons";
 import CustomText from "../../../components/common/CustomText";
 import CustomHeader from "../../../components/common/CustomHeader";
 import {MyUserContext} from "../../../utils/contexts/MyContext";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import Apis, {endpoints} from "../../../utils/Apis";
+import {CLIENT_ID, CLIENT_SECRET} from "@env";
 
 const {height: SCREEN_HEIGHT} = Dimensions.get("window");
 
@@ -52,7 +55,7 @@ const SettingItemCard = ({
 };
 
 const SettingsScreen = ({navigation}) => {
-    const [user, dispatch] = useContext(MyUserContext);
+    const [, dispatch] = useContext(MyUserContext);
     const [noti, setNoti] = useState(true);
     const [darkMode, setDarkMode] = useState(false);
     const [logoutVisible, setLogoutVisible] = useState(false);
@@ -100,17 +103,32 @@ const SettingsScreen = ({navigation}) => {
         })
     ).current;
 
-    const onSave = () => {
+    const onSave = async () => {
         // TODO: API save settings
     };
 
-    const onConfirmLogout = () => {
+    const onConfirmLogout = async () => {
         closeLogoutSheet();
-        dispatch({type: "logout"});
-        navigation.reset({
-            index: 0,
-            routes: [{name: "Login"}],
-        });
+        try{
+            const token = AsyncStorage.getItem("access_token");
+            if (token) {
+                await Apis.post(endpoints.logout, {
+                    token: token,
+                    client_id: CLIENT_ID,
+                    client_secret: CLIENT_SECRET,
+                });
+            }
+        } catch (error) {
+            console.error( "Candidate logout error:", error.response?.data || error.message);
+        } finally{
+            await AsyncStorage.removeItem("access_token");
+            dispatch({type: "logout"});
+            navigation.reset({
+                index: 0,
+                routes: [{name: "Login"}],
+            });
+        }
+        
     };
 
     return (

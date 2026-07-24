@@ -16,7 +16,7 @@ import {
     statusCodes,
     isErrorWithCode
 } from '@react-native-google-signin/google-signin';
-import { CLIENT_ID, CLIENT_SECRET } from '@env';//Ttttt
+import { CLIENT_ID, CLIENT_SECRET } from '@env';
 
 const Login = ({route}) => {
     const navigation = useNavigation();
@@ -57,8 +57,6 @@ const Login = ({route}) => {
                 token: googleToken
             });
     
-            console.log("Backend Response:", res.data);
-    
             const accessToken = res.data.access_token;
             await AsyncStorage.setItem('token', accessToken);
     
@@ -89,12 +87,14 @@ const Login = ({route}) => {
                             content: 'Có lỗi xảy ra. Vui lòng thử lại sau.',
                             confirmText: 'ĐÃ HIỂU',
                         });
+                    } finally{
+                        await AsyncStorage.removeItem('token');
+                        dispatch({ type: "logout" });
                     }
                     return;
                 }
                 navigation.navigate('EmployerMain');
             } else {
-                console.log('oke')
                 navigation.navigate('CandidateMain');
             }
     
@@ -112,10 +112,8 @@ const Login = ({route}) => {
             const userInfo = await GoogleSignin.signIn();
             const token = userInfo.data?.idToken || userInfo.idToken;
     
-            console.log("Google ID Token:", token);
-    
             if (token) {
-                loginWithBackend(token);
+                await loginWithBackend(token);
             } else {
                 Alert.alert("Lỗi", "Không lấy được Token từ Google");
             }
@@ -149,7 +147,6 @@ const Login = ({route}) => {
         if (validate()) {
             try {
                 setLoading(true);
-                console.log(user);
                 let res = await Apis.post(endpoints['login'], {
                     ...user,
                     'client_id': CLIENT_ID,
@@ -158,15 +155,12 @@ const Login = ({route}) => {
                 });
 
                 setTimeout(async () => {
-                    console.log(res.data.access_token)
                     let userRes = await authApis(res.data.access_token).get(endpoints['current_user']);
-                    console.log(userRes.data);
                     dispatch({
                         "type": "login",
                         "payload": userRes.data
                     });
                     if (userRes.data.role === 'EMPLOYER') {
-                        console.log("Đang tải hồ sơ công ty...");
                         let res_emp = await loadEmployerProfile(res.data.access_token);
                         if (res_emp && res_emp.is_verified === false) {
                             showDialog({
@@ -189,6 +183,9 @@ const Login = ({route}) => {
                                     content: 'Có lỗi xảy ra. Vui lòng thử lại sau.',
                                     confirmText: 'ĐÃ HIỂU',
                                 });
+                            } finally{
+                                await AsyncStorage.removeItem('token');
+                                dispatch({ type: "logout" });
                             }
                             return;
                         }
@@ -198,7 +195,6 @@ const Login = ({route}) => {
                             navigation.navigate(next);
                         } else {
                             const role = userRes.data.role;
-                            console.log(role);
                             navigation.navigate('EmployerMain');
                         }
                     } else {
