@@ -140,7 +140,7 @@ const SavedJobsScreen = ({navigation}) => {
             }
             console.log("Số lượng job đã lưu:", dataList.length);
 
-            const formattedData = res.data.map(item => {
+            const formattedData = dataList.map(item => {
                 const job = item.job;
 
                 const minSalary = job.salary_min ? (job.salary_min / 1000000).toFixed(0) + 'M' : '';
