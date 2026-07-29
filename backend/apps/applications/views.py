@@ -5,8 +5,7 @@ from ..core.paginators import StandardResultsSetPagination
 from ..users.models import CandidateProfile
 from ..users.serializers import CandidateProfileSerializer
 from .models import Application
-from .serializers import EmployerApplicationSerializer, CandidateApplicationListSerializer, \
-    CandidateApplicationWriteSerializer, CandidateApplicationDetailSerializer
+from .serializers import EmployerApplicationSerializer, CandidateApplicationListSerializer, CandidateApplicationDetailSerializer, CandidateApplicationCreateSerializer, CandidateApplicationUpdateSerializer, EmployerCandidateProfileSerializer
 from ..users.permissions import IsEmployerApproved, IsCandidate
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
@@ -45,56 +44,73 @@ class EmployerApplicationViewSet(viewsets.ViewSet, generics.ListAPIView, generic
     @action(methods=['get'], url_path='candidate-profile', detail=True)
     def get_candidate_profile(self, request, pk):
         application = self.get_object()
-        return Response(CandidateProfileSerializer(application.candidate).data, status=status.HTTP_200_OK)
-
+        return Response(EmployerCandidateProfileSerializer(application.candidate).data, status=status.HTTP_200_OK)
 
 class CandidateApplicationViewSet(viewsets.ModelViewSet):
     permission_classes = [IsCandidate]
+    http_method_names = [
+        "get",
+        "post",
+        "patch",
+        "delete",
+        "head",
+        "options",
+    ]
 
     def get_queryset(self):
         user = self.request.user
+
         if not user.is_authenticated:
             return Application.objects.none()
-        return Application.objects.filter(candidate=user.candidate_profile).select_related(
-            'job',
-            'job__category',
-            'job__location',
-            'job__posted_by'
-        ).prefetch_related(
-            'job__tags'
+
+        return (
+            Application.objects
+            .filter(candidate=user.candidate_profile)
+            .select_related(
+                "job",
+                "job__category",
+                "job__location",
+                "job__posted_by",
+            )
+            .prefetch_related("job__tags")
         )
 
     def perform_create(self, serializer):
-        serializer.save(candidate=self.request.user.candidate_profile)
-
-    def create(self, request, *args, **kwargs):
-        try:
-            return super().create(request, *args, **kwargs)
-        except Exception as e:
-            if "uniq_candidate_job_application" in str(e):
-                return Response(
-                    {"detail": "Bạn đã ứng tuyển công việc này rồi."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            raise e
+        serializer.save(
+            candidate=self.request.user.candidate_profile
+        )
 
     def perform_update(self, serializer):
-        instance = serializer.instance
+        application = serializer.instance
 
-        if instance.status != 'SUBMITTED':
-            raise PermissionDenied("Hồ sơ đã được Nhà tuyển dụng xử lý, bạn không thể chỉnh sửa nữa.")
+        if application.status != "SUBMITTED":
+            raise PermissionDenied(
+                "Hồ sơ đã được nhà tuyển dụng xử lý, "
+                "bạn không thể chỉnh sửa nữa."
+            )
 
         serializer.save()
 
     def perform_destroy(self, instance):
-        if instance.status != 'SUBMITTED':
-            raise PermissionDenied("Bạn không thể hủy ứng tuyển khi hồ sơ đang được xử lý hoặc đã có kết quả.")
+        if instance.status != "SUBMITTED":
+            raise PermissionDenied(
+                "Bạn không thể hủy ứng tuyển khi hồ sơ "
+                "đang được xử lý hoặc đã có kết quả."
+            )
 
         instance.delete()
 
     def get_serializer_class(self):
         if self.action == "list":
             return CandidateApplicationListSerializer
+
         if self.action == "retrieve":
             return CandidateApplicationDetailSerializer
-        return CandidateApplicationWriteSerializer
+
+        if self.action == "create":
+            return CandidateApplicationCreateSerializer
+
+        if self.action in {"update", "partial_update"}:
+            return CandidateApplicationUpdateSerializer
+
+        return CandidateApplicationDetailSerializer
