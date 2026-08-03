@@ -49,12 +49,15 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+
     'apps.users',
     'apps.core',
     'apps.jobs',
     'apps.applications',
     'apps.payments',
     'apps.reports',
+    'apps.matching',
+
     'rest_framework',
     'drf_yasg',
     'oauth2_provider',
