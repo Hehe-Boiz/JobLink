@@ -22,6 +22,10 @@ export const endpoints = {
     'jobs': '/jobs/',
     'bookmarks': '/bookmarks/',
     'candidate_applications': '/candidate/applications/',
+    'candidate_application_match': (applicationId) => `/candidate/applications/${applicationId}/analysis/`,
+    'candidate_application_match_history': (applicationId) => `/candidate/applications/${applicationId}/analyses/`,
+    'candidate_application_match_detail': (applicationId, analysisId) =>
+        `/candidate/applications/${applicationId}/analyses/${analysisId}/`,
     'candidate_profile': '/candidates/me/',
     'update_user': '/users/current-user/',
     'update_candidate_profile': '/candidates/me/',

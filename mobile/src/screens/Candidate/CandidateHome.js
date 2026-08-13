@@ -175,11 +175,11 @@ const CandidateHome = () => {
 
     return (
         <SafeAreaView style={styles.container} edges={['top']}>
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
                 <View style={styles.header}>
                     <View>
                         <CustomText style={styles.greeting}>Hello</CustomText>
-                        <CustomText style={styles.userName}>{user.full_name}.</CustomText>
+                        <CustomText style={styles.userName}>{displayName}.</CustomText>
                     </View>
                     {user && user.avatar ? (
                         <Image

@@ -122,12 +122,14 @@ export default StyleSheet.create({
         borderRadius: 16,
         justifyContent: 'center',
         alignItems: 'center',
+        flexDirection: 'row',
         marginBottom: 15,
     },
     secondaryBtnText: {
         color: '#130160',
         fontWeight: 'bold',
         fontSize: 16,
+        marginLeft: 8,
     },
     primaryBtn: {
         backgroundColor: '#130160',

@@ -7,6 +7,9 @@ export default StyleSheet.create({
         flex: 1,
         backgroundColor: '#F5F5F5',
     },
+    scrollContent: {
+        paddingBottom: 100,
+    },
 
     header: {
         flexDirection: 'row',
@@ -36,7 +39,7 @@ export default StyleSheet.create({
     banner: {
         flexDirection: 'row',
         backgroundColor: '#130160',
-        marginHorizontal: 10,
+        marginHorizontal: 20,
         marginTop: 20,
         marginBottom: 10,
         borderRadius: 15,
@@ -85,7 +88,7 @@ export default StyleSheet.create({
     },
 
     section: {
-        paddingHorizontal: 10,
+        paddingHorizontal: 20,
         marginTop: 25,
     },
     sectionTitle: {
@@ -273,9 +276,9 @@ export default StyleSheet.create({
         elevation: 8,
     },
     jobLeftSearch:{
-        flexDirection:"column",
-        gap: 10,
-        marginLeft:-10
+        flexDirection:"row",
+        alignItems: 'center',
+        flex: 1,
     },
     logoContainerSearch: {
         width: 50,
@@ -285,6 +288,6 @@ export default StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         overflow: 'hidden',
-        marginLeft: 10
+        marginLeft: 0
     },
 });

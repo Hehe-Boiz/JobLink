@@ -37,6 +37,7 @@ import JobApplicants from '../screens/Employer/JobApplicants';
 import PaymentResult from '../screens/Service/PaymentResult';
 import { MyUserContext } from '../utils/contexts/MyContext';
 import JobComparison from "../screens/Candidate/JobCompare";
+import ApplicationMatchAnalysis from "../screens/Candidate/ApplicationMatchAnalysis";
 
 
 const Stack = createStackNavigator();
@@ -92,6 +93,7 @@ export default function AppNavigator() {
                     <Stack.Screen name="AddSkill" component={AddSkill}/>
                     <Stack.Screen name="AddLanguage" component={AddLanguage}/>
                     <Stack.Screen name="JobComparison" component={JobComparison}/>
+                    <Stack.Screen name="ApplicationMatchAnalysis" component={ApplicationMatchAnalysis}/>
 
                 </Stack.Navigator>
             </NavigationContainer>
