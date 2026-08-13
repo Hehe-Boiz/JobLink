@@ -102,6 +102,8 @@ class SkillOccurrence:
     start: int
     end: int
 
+    is_negated: bool = False
+
 
 @dataclass(frozen=True, slots=True)
 class CandidateSkill:

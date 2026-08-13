@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from apps.matching.domain import ApplicationScoreResult
 
-from .document_parser import CVDocumentLoader
+from .document_parser import CVDocumentLoader, ParsedDocument
 from .job_extractor import JobRequirementExtractor
 from .matcher import SkillMatcher
 from .scorer import DeterministicScorer
@@ -27,6 +27,10 @@ class ApplicationMatchingPipeline:
 
     def run(self, cv_field, job_snapshot: dict) -> ApplicationScoreResult:
         parsed_cv = self._document_loader.load(cv_field)
+
+        return self.run_parsed(parsed_cv=parsed_cv, job_snapshot=job_snapshot)
+
+    def run_parsed(self, parsed_cv: ParsedDocument, job_snapshot: dict) -> ApplicationScoreResult:
         segments = build_text_segments(parsed_cv.text)
         candidate_skills = self._skill_extractor.extract(segments)
         requirements = self._job_extractor.extract(job_snapshot)

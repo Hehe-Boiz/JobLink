@@ -482,6 +482,7 @@ def build_text_segments(text: str, max_chunk_chars: int = MAX_CHUNK_CHARS) -> li
                 text=chunk_text,
                 normalized_text=normalized_text,
                 section=current_section,
+                source="CV",
             )
 
             segments.append(segment)
