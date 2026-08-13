@@ -11,9 +11,15 @@ export default StyleSheet.create({
     headerNav: {
         flexDirection: "row",
         justifyContent: "space-between",
+        alignItems: 'center',
         marginBottom: 20,
         paddingHorizontal: 15,
         paddingTop: 10,
+    },
+    headerTitle: {
+        color: '#130160',
+        fontSize: 18,
+        fontWeight: '700',
     },
     contentLogoContainer: {
         marginTop: 50,

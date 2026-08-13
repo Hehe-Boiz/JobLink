@@ -67,6 +67,21 @@ INSTALLED_APPS = [
     'corsheaders'
 ]
 
+CKEY_API_KEY = os.environ.get(
+    "CKEY_API_KEY",
+    "",
+)
+
+CKEY_BASE_URL = os.environ.get(
+    "CKEY_BASE_URL",
+    "https://api.xah.io/v1",
+)
+
+APPLICATION_MATCH_EXPLAINER_MODEL = os.environ.get(
+    "APPLICATION_MATCH_EXPLAINER_MODEL",
+    "",
+)
+
 REST_FRAMEWORK = {
     "DEFAULT_FILTER_BACKENDS": ["django_filters.rest_framework.DjangoFilterBackend"],
     'DEFAULT_AUTHENTICATION_CLASSES': (

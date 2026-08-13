@@ -109,7 +109,7 @@ const JobCard = ({
                         <CustomText style={styles.jobTitle} numberOfLines={1}>
                             {item.title}
                         </CustomText>
-                        <CustomText style={styles.companyInfo}>
+                        <CustomText style={styles.companyInfo} numberOfLines={1}>
                             {item.company} • {item.location}
                         </CustomText>
                     </View>

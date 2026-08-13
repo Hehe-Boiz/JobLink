@@ -34,10 +34,15 @@ const ApplyJob = ({navigation, route}) => {
     const [cvFile, setCvFile] = useState(null);
     const [coverLetter, setCoverLetter] = useState('');
     const [isSuccess, setIsSuccess] = useState(false);
+    const [applicationId, setApplicationId] = useState(null);
     const pickDocument = async () => {
         try {
             const result = await DocumentPicker.getDocumentAsync({
-                type: ['application/pdf', 'application/msword'],
+                type: [
+                    'application/pdf',
+                    'application/msword',
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                ],
                 copyToCacheDirectory: true,
             });
             if (result.canceled === false && result.assets && result.assets.length > 0) {
@@ -61,9 +66,14 @@ const ApplyJob = ({navigation, route}) => {
                     api.get(endpoints['candidate_applications'])
                 ]);
                 setJobData(jobRes.data);
-                const hasApplied = historyRes.data.some(app => app.job.id === parseInt(jobId));
+                const applications = Array.isArray(historyRes.data)
+                    ? historyRes.data
+                    : historyRes.data.results || [];
+                const existingApplication = applications.find(app => app.job.id === parseInt(jobId));
+                const hasApplied = !!existingApplication;
                 if (hasApplied) {
                     console.log(`[Check] Job ${jobId} đã tồn tại trong danh sách ứng tuyển -> Success`);
+                    setApplicationId(existingApplication.id);
                     setIsSuccess(true); // Chuyển thẳng sang màn hình thành công
                 } else {
                     console.log(`[Check] Job ${jobId} chưa ứng tuyển -> Hiển thị Form`);
@@ -105,6 +115,7 @@ const ApplyJob = ({navigation, route}) => {
                 },
             });
             console.log("Ứng tuyển thành công:", res.data);
+            setApplicationId(res.data.id);
             setIsSuccess(true);
         } catch (error) {
             console.error("Lỗi ứng tuyển:", error);
@@ -166,8 +177,15 @@ const ApplyJob = ({navigation, route}) => {
                         Congratulations, your application has been sent
                     </CustomText>
 
-                    <TouchableOpacity style={styles.secondaryBtn} onPress={() => navigation.goBack()}>
-                        <CustomText style={styles.secondaryBtnText}>FIND A SIMILAR JOB</CustomText>
+                    <TouchableOpacity
+                        style={styles.secondaryBtn}
+                        onPress={() => navigation.navigate('ApplicationMatchAnalysis', {
+                            applicationId,
+                            jobTitle: formattedJob.title,
+                        })}
+                    >
+                        <MaterialCommunityIcons name="chart-donut-variant" size={20} color="#130160"/>
+                        <CustomText style={styles.secondaryBtnText}>VIEW CV MATCH</CustomText>
                     </TouchableOpacity>
 
                     <TouchableOpacity

@@ -58,6 +58,7 @@ def make_job_segment(text: str, index: int, source: str) -> TextSegment:
         text=text,
         normalized_text=normalized_text,
         section=DocumentSection.UNKNOWN,
+        source=source,
     )
 
 
@@ -98,11 +99,12 @@ class JobRequirementExtractor:
             for occurrence in occurrences:
                 requirement = JobRequirement(
                     requirement_id=f"{segment.stable_key}:{occurrence.canonical_skill}",
-                    canonical_skill=occurrence.canonical_skill,
-                    matched_alias=occurrence.matched_alias,
+                    original_text=segment.text,
+                    normalized_text=segment.normalized_text,
                     priority=priority,
-                    evidence_text=segment.text,
+                    canonical_skill=occurrence.canonical_skill,
                     source="REQUIREMENTS",
+                    source_chunk_key=segment.stable_key,
                 )
 
                 self._merge_requirement(extracted, requirement)
@@ -118,11 +120,12 @@ class JobRequirementExtractor:
             for occurrence in occurrences:
                 requirement = JobRequirement(
                     requirement_id=f"{segment.stable_key}:{occurrence.canonical_skill}",
-                    canonical_skill=occurrence.canonical_skill,
-                    matched_alias=occurrence.matched_alias,
+                    original_text=segment.text,
+                    normalized_text=segment.normalized_text,
                     priority=RequirementPriority.PREFERRED,
-                    evidence_text=segment.text,
+                    canonical_skill=occurrence.canonical_skill,
                     source="TAG",
+                    source_chunk_key=segment.stable_key
                 )
 
                 self._merge_requirement(extracted, requirement)

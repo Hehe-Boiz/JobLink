@@ -30,18 +30,6 @@ NEGATION_MARKERS = (
     "chua tung su dung",
 )
 
-
-WEAK_CLAIM_MARKERS = (
-    "currently learning",
-    "learning",
-    "basic knowledge",
-    "basic understanding",
-    "familiar with",
-    "dang hoc",
-    "dang tim hieu",
-    "kien thuc co ban",
-)
-
 @dataclass(frozen=True)
 class CompiledSkillPattern:
     canonical_skill: str
@@ -141,15 +129,6 @@ class SkillExtractor:
 
         return False
 
-    def _is_weak_claim(self, text: str, match_start: int) -> bool:
-        context = self._left_context(text, match_start)
-
-        for marker in WEAK_CLAIM_MARKERS:
-            if marker in context:
-                return True
-
-        return False
-
     @staticmethod
     def _to_candidate_skill(occurrence: SkillOccurrence,) -> CandidateSkill:
         strength = (
@@ -162,9 +141,6 @@ class SkillExtractor:
         if occurrence.is_negated:
             strength = Decimal("0.00")
 
-        elif occurrence.is_weak_claim:
-            strength = min(strength, Decimal("0.25"),)
-
         return CandidateSkill(
             canonical_skill=occurrence.canonical_skill,
             matched_alias=occurrence.matched_alias,
@@ -173,7 +149,6 @@ class SkillExtractor:
             evidence_strength=strength,
             chunk_key=occurrence.segment.stable_key,
             is_negated=occurrence.is_negated,
-            is_weak_claim=occurrence.is_weak_claim,
         )
 
     # kiếm tất cả các nơi skill xuất hiện 
@@ -191,7 +166,6 @@ class SkillExtractor:
                         start=match.start(), # index bắt đầu phát hiện
                         end=match.end(), # index kết thúc
                         is_negated=self._is_negated(segment.text,match.start()),
-                        is_weak_claim=self._is_weak_claim(segment.text, match.start()),
                     )
                 )
 
