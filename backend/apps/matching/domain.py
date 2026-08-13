@@ -228,6 +228,10 @@ class RequirementDecision:
     verified_by_llm: bool = False
     judge_confidence: Decimal | None = None
 
+    selected_chunk_key: str | None = None
+    selected_evidence_text: str | None = None
+    selected_evidence_section: DocumentSection | None = None
+
 
 # Policy and scoring results
 @dataclass(frozen=True, slots=True)
