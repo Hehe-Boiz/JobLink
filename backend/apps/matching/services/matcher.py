@@ -1,131 +1,122 @@
-from dataclasses import dataclass
-from decimal import Decimal, ROUND_HALF_UP # Đây là quy tắc làm tròn
+from decimal import Decimal
 
-from .skill_extractor import SkillOccurrence
+from apps.matching.domain import CandidateSkill, JobRequirement, MatchLevel, MatchType, DecisionSource, RequirementDecision
+from .skill_catalog import RELATED_SKILLS
 
 
-class MatchingInputError(Exception):
-    pass
+EXACT_CREDIT = Decimal("1.00")
+ALIAS_CREDIT = Decimal("1.00")
+MISSING_CREDIT = Decimal("0.00")
 
-# frozen=True làm object gần như bất biến — immutable sau khi được tạo.
-@dataclass(frozen=True)
-class MatchResult:
-    final_score: Decimal
-    matched_skills: list[str]
-    partial_skills: list[str]
-    missing_skills: list[str]
-    evidence: list[dict]
-    breakdown: dict
-    explanation: str
 
-class ExactAliasMatcher:
-    def match(self, cv_skills: dict[str, SkillOccurrence], job_skills: dict[str, SkillOccurrence]) -> MatchResult:
-        if not job_skills:
-            raise MatchingInputError(
-                "Không trích xuất được kỹ năng nào "
-                "từ yêu cầu công việc."
+class SkillMatcher:
+    def match(self, candidate_skills: dict[str, CandidateSkill], requirements: list[JobRequirement]) -> list[RequirementDecision]:
+        decisions: list[RequirementDecision] = []
+        for requirement in requirements:
+            requirement_skill = requirement.canonical_skill
+            if requirement_skill is None:
+                decisions.append(
+                    self._build_decision(
+                        requirement=requirement,
+                        level=MatchLevel.MISSING,
+                        match_type=MatchType.NONE,
+                        credit=MISSING_CREDIT,
+                        reason="Requirement has no canonical skill.",
+                    )
+                )
+                continue
+
+            candidate_skill = candidate_skills.get(requirement_skill)
+            if candidate_skill is not None and not candidate_skill.is_negated:
+                if candidate_skill.matched_alias.casefold() == requirement_skill.casefold():
+                    match_type = MatchType.EXACT
+                    credit = EXACT_CREDIT
+                else:
+                    match_type = MatchType.ALIAS
+                    credit = ALIAS_CREDIT
+
+                decisions.append(
+                    self._build_decision(
+                        requirement=requirement,
+                        level=MatchLevel.MATCHED,
+                        match_type=match_type,
+                        credit=credit,
+                        candidate_skill=candidate_skill,
+                        reason="Direct canonical skill match.",
+                    )
+                )
+                continue
+
+            related_match = self._find_best_related(requirement_skill=requirement_skill, candidate_skills=candidate_skills,)
+            if related_match is not None:
+                related_skill, credit = related_match
+
+                decisions.append(
+                    self._build_decision(
+                        requirement=requirement,
+                        level=MatchLevel.PARTIAL,
+                        match_type=MatchType.RELATED,
+                        credit=credit,
+                        candidate_skill=related_skill,
+                        reason="Related skill match.",
+                    )
+                )
+                continue
+
+            # Missing
+            decisions.append(
+                self._build_decision(
+                    requirement=requirement,
+                    level=MatchLevel.MISSING,
+                    match_type=MatchType.NONE,
+                    credit=MISSING_CREDIT,
+                    reason="No direct or related skill found.",
+                )
             )
 
-        cv_skill_names = set(cv_skills)
-        job_skill_names = set(job_skills)
-
-        matched = sorted(
-            cv_skill_names.intersection(
-                job_skill_names
-            )
-        )
-
-        missing = sorted(
-            job_skill_names.difference(
-                cv_skill_names
-            )
-        )
-
-        partial: list[str] = []
-
-        matched_count = Decimal(
-            len(matched)
-        )
-
-        total_count = Decimal(
-            len(job_skill_names)
-        )
-
-        final_score = (matched_count* Decimal("100")/ total_count).quantize(
-            Decimal("0.01"), # làm tròn ở số thập phân thứ 2
-            rounding=ROUND_HALF_UP,
-        )
-
-        evidence = []
-
-        for skill in matched:
-            item = {
-                "skill": skill,
-                "match_type": "EXACT_OR_ALIAS",
-                "matched_by": (
-                    cv_skills[skill].matched_alias
-                ),
-                "cv_evidence": (
-                    cv_skills[skill].evidence
-                ),
-                "job_evidence": (
-                    job_skills[skill].evidence
-                ),
-            }
-
-            evidence.append(item)
-
-        breakdown = {
-            "required_skills": {
-                "matched_count": len(matched),
-                "missing_count": len(missing),
-                "total_count": len(job_skill_names),
-                "score": float(final_score),
-                "weight": 1.0,
-            },
-            "policy": (
-                "required-skill-ratio-v1"
-            ),
-        }
-
-        explanation = (
-            self._build_explanation(
-                matched=matched,
-                missing=missing,
-                total=len(job_skill_names),
-                score=final_score,
-            )
-        )
-
-        return MatchResult(
-            final_score=final_score,
-            matched_skills=matched,
-            partial_skills=partial,
-            missing_skills=missing,
-            evidence=evidence,
-            breakdown=breakdown,
-            explanation=explanation,
-        )
+        return decisions
 
     @staticmethod
-    def _build_explanation(matched: list[str], missing: list[str], total: int, score: Decimal) -> str:
-        matched_text = (
-            ", ".join(matched)
-            if matched
-            else "Không có"
+    def _find_best_related(requirement_skill: str, candidate_skills: dict[str, CandidateSkill]) -> tuple[CandidateSkill, Decimal] | None:
+        related_skills = RELATED_SKILLS.get(requirement_skill, {})
+        best_skill: CandidateSkill | None = None
+        best_credit: Decimal | None = None
+
+        for skill_name, credit in related_skills.items():
+            candidate_skill = candidate_skills.get(skill_name)
+
+            if candidate_skill is None or candidate_skill.is_negated:
+                continue
+
+            if best_credit is None or credit > best_credit:
+                best_skill = candidate_skill
+                best_credit = credit
+
+        if best_skill is None or best_credit is None:
+            return None
+
+        return best_skill, best_credit
+
+    @staticmethod
+    def _build_decision(*, requirement: JobRequirement, level: MatchLevel, match_type: MatchType, credit: Decimal, reason: str, candidate_skill: CandidateSkill | None = None) -> RequirementDecision:
+        if match_type == MatchType.RELATED:
+            decision_source = DecisionSource.RELATED_RULE
+        else:
+            decision_source = DecisionSource.STATIC_MATCHER
+
+        evidence_strength = (
+            candidate_skill.evidence_strength
+            if candidate_skill is not None
+            else Decimal("0.00")
         )
 
-        missing_text = (
-            ", ".join(missing)
-            if missing
-            else "Không có"
-        )
-
-        return (
-            f"CV thể hiện {len(matched)}/{total} "
-            f"kỹ năng được nhận diện trong yêu cầu, "
-            f"tương ứng {score}/100. "
-            f"Kỹ năng đã khớp: {matched_text}. "
-            f"Kỹ năng chưa tìm thấy bằng chứng "
-            f"trong CV: {missing_text}."
+        return RequirementDecision(
+            requirement=requirement,
+            level=level,
+            match_type=match_type,
+            credit=credit,
+            candidate_skill=candidate_skill,
+            evidence_strength=evidence_strength,
+            decision_source=decision_source,
+            reason=reason,
         )

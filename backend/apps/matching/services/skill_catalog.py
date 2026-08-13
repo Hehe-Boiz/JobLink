@@ -1,3 +1,6 @@
+from decimal import Decimal
+
+
 SKILL_ALIASES: dict[str, tuple[str, ...]] = {
     # canonical name
     "python": (
@@ -139,4 +142,25 @@ SKILL_ALIASES: dict[str, tuple[str, ...]] = {
         "retrieval augmented generation",
         "rag",
     ),
+}
+
+RELATED_SKILLS = {
+    "spring boot": {
+        "spring": Decimal("0.50"),
+    },
+    "spring": {
+        "spring boot": Decimal("0.90"),
+    },
+    "django rest framework": {
+        "django": Decimal("0.60"),
+    },
+    "react native": {
+        "react": Decimal("0.45"),
+    },
+    "postgresql": {
+        "sql": Decimal("0.35"),
+    },
+    "kubernetes": {
+        "docker": Decimal("0.30"),
+    },
 }
