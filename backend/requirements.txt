@@ -46,3 +46,5 @@ urllib3==2.5.0
 wheel==0.47.0
 sentence-transformers
 rank-bm25
+psycopg[binary]
+pgvector
