@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import ast
+
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
 from .domain import JobKnowledgeChunk, JobKnowledgeDocument, JobKnowledgeSection
-
 
 DEFAULT_EMBEDDING_MODEL = "intfloat/multilingual-e5-small"
 
 TARGET_CHUNK_TOKENS = 220
-MAX_CHUNK_TOKENS = 320
+MAX_CHUNK_TOKENS = 480
 FORCED_SPLIT_OVERLAP_TOKENS = 40
 
 
@@ -20,20 +21,11 @@ class JobKnowledgeChunker:
         global_chunk_index = 0
 
         for section, content in document.sections.items():
-            section_contents = self._chunk_section(title=document.title, section=section, content=content,)
+            section_contents = self._chunk_section(document=document, section=section, content=content)
 
             for section_chunk_index, chunk_content in enumerate(section_contents):
-                chunk_id = self._build_chunk_id(
-                    document=document,
-                    section=section,
-                    section_chunk_index=section_chunk_index,
-                )
-
-                embedding_text = self._build_embedding_text(
-                    title=document.title,
-                    section=section,
-                    content=chunk_content,
-                )
+                chunk_id = self._build_chunk_id(document=document, section=section, section_chunk_index=section_chunk_index)
+                embedding_text = self._build_embedding_text(document=document, section=section, content=chunk_content)
 
                 chunks.append(
                     JobKnowledgeChunk(
@@ -61,7 +53,12 @@ class JobKnowledgeChunker:
 
         return chunks
 
-    def _chunk_section(self, title: str, section: JobKnowledgeSection, content: str) -> list[str]:
+    def _chunk_section(
+        self,
+        document: JobKnowledgeDocument,
+        section: JobKnowledgeSection,
+        content: str,
+    ) -> list[str]:
         blocks = self._split_blocks(content)
 
         if not blocks:
@@ -77,19 +74,21 @@ class JobKnowledgeChunker:
                 continue
 
             block_token_count = self._embedding_token_count(
-                title=title,
+                document=document,
                 section=section,
                 content=block_text,
             )
 
             if block_token_count > MAX_CHUNK_TOKENS:
                 if current_blocks:
-                    chunks.append(self._join_blocks(current_blocks))
+                    chunks.append(
+                        self._join_blocks(current_blocks)
+                    )
                     current_blocks = []
 
                 chunks.extend(
                     self._split_long_block(
-                        title=title,
+                        document=document,
                         section=section,
                         block=block_text,
                     )
@@ -97,38 +96,49 @@ class JobKnowledgeChunker:
 
                 continue
 
-            # Chunk hiện tại đang rỗng.
             if not current_blocks:
                 current_blocks.append(block_text)
                 continue
 
-            current_content = self._join_blocks(current_blocks)
-            candidate_content = self._join_blocks([*current_blocks, block_text])
+            current_content = self._join_blocks(
+                current_blocks
+            )
+            candidate_content = self._join_blocks(
+                [*current_blocks, block_text]
+            )
+
             current_tokens = self._embedding_token_count(
-                title=title,
+                document=document,
                 section=section,
                 content=current_content,
             )
 
             candidate_tokens = self._embedding_token_count(
-                title=title,
+                document=document,
                 section=section,
                 content=candidate_content,
             )
 
-            if self._should_add_block(current_tokens=current_tokens, candidate_tokens=candidate_tokens):
+            if self._should_add_block(
+                current_tokens=current_tokens,
+                candidate_tokens=candidate_tokens,
+            ):
                 current_blocks.append(block_text)
             else:
                 chunks.append(current_content)
                 current_blocks = [block_text]
 
         if current_blocks:
-            chunks.append(self._join_blocks(current_blocks))
+            chunks.append(
+                self._join_blocks(current_blocks)
+            )
 
         return chunks
 
     @staticmethod
-    def _split_blocks(content: str) -> list[str]:
+    def _split_blocks(
+        content: str,
+    ) -> list[str]:
         return [
             line.strip()
             for line in content.splitlines()
@@ -136,38 +146,96 @@ class JobKnowledgeChunker:
         ]
 
     @staticmethod
-    def _should_add_block(current_tokens: int, candidate_tokens: int) -> bool:
+    def _should_add_block(
+        current_tokens: int,
+        candidate_tokens: int,
+    ) -> bool:
         if candidate_tokens > MAX_CHUNK_TOKENS:
             return False
 
         if candidate_tokens <= TARGET_CHUNK_TOKENS:
             return True
 
-        current_distance = abs(TARGET_CHUNK_TOKENS - current_tokens)
-        candidate_distance = abs(candidate_tokens - TARGET_CHUNK_TOKENS)
+        current_distance = abs(
+            TARGET_CHUNK_TOKENS - current_tokens
+        )
+        candidate_distance = abs(
+            candidate_tokens - TARGET_CHUNK_TOKENS
+        )
 
         return candidate_distance < current_distance
 
-    def _split_long_block(self, title: str, section: JobKnowledgeSection, block: str) -> list[str]:
-        prefix = self._build_embedding_prefix(title=title, section=section,)
-        prefix_tokens = len(self.tokenizer.encode(prefix, add_special_tokens=True))
-        content_budget = MAX_CHUNK_TOKENS - prefix_tokens
+    def _split_long_block(
+        self,
+        document: JobKnowledgeDocument,
+        section: JobKnowledgeSection,
+        block: str,
+    ) -> list[str]:
+        prefix = self._build_embedding_prefix(
+            document=document,
+            section=section,
+        )
+
+        prefix_tokens = len(
+            self.tokenizer.encode(
+                prefix,
+                add_special_tokens=True,
+            )
+        )
+
+        content_budget = (
+            MAX_CHUNK_TOKENS - prefix_tokens
+        )
 
         if content_budget <= FORCED_SPLIT_OVERLAP_TOKENS:
             raise ValueError(
-                "Embedding prefix is too long for the configured "
-                "chunk token budget"
+                "Embedding prefix is too long for the "
+                "configured chunk token budget"
             )
 
-        token_ids = self.tokenizer.encode(block, add_special_tokens=False)
-        step = content_budget - FORCED_SPLIT_OVERLAP_TOKENS
+        token_ids = self.tokenizer.encode(
+            block,
+            add_special_tokens=False,
+        )
+
         pieces: list[str] = []
         start = 0
 
         while start < len(token_ids):
-            end = min(start + content_budget, len(token_ids))
-            piece_ids = token_ids[start:end]
-            piece = self.tokenizer.decode(piece_ids, skip_special_tokens=True).strip()
+            end = min(
+                start + content_budget,
+                len(token_ids),
+            )
+
+            piece = ""
+
+            while end > start:
+                piece_ids = token_ids[start:end]
+
+                piece = self.tokenizer.decode(
+                    piece_ids,
+                    skip_special_tokens=True,
+                ).strip()
+
+                final_text = prefix + piece
+
+                final_token_count = len(
+                    self.tokenizer.encode(
+                        final_text,
+                        add_special_tokens=True,
+                    )
+                )
+
+                if final_token_count <= MAX_CHUNK_TOKENS:
+                    break
+
+                end -= 1
+
+            if end <= start:
+                raise ValueError(
+                    "Unable to fit block content within "
+                    "the configured chunk token budget"
+                )
 
             if piece:
                 pieces.append(piece)
@@ -175,36 +243,143 @@ class JobKnowledgeChunker:
             if end >= len(token_ids):
                 break
 
-            start += step
+            start = max(
+                end - FORCED_SPLIT_OVERLAP_TOKENS,
+                start + 1,
+            )
 
         return pieces
 
-    def _embedding_token_count(self, title: str, section: JobKnowledgeSection, content: str) -> int:
+    def _embedding_token_count(
+        self,
+        document: JobKnowledgeDocument,
+        section: JobKnowledgeSection,
+        content: str,
+    ) -> int:
         embedding_text = self._build_embedding_text(
-            title=title,
+            document=document,
             section=section,
             content=content,
         )
 
-        return len(self.tokenizer.encode(embedding_text, add_special_tokens=True))
-
-    @staticmethod
-    def _join_blocks(blocks: list[str]) -> str:
-        return "\n".join(blocks).strip()
-
-    @staticmethod
-    def _build_embedding_prefix(title: str, section: JobKnowledgeSection) -> str:
-        return (
-            "passage: "
-            f"Job title: {title}\n"
-            f"Section: {section.value}\n\n"
+        return len(
+            self.tokenizer.encode(
+                embedding_text,
+                add_special_tokens=True,
+            )
         )
 
-    def _build_embedding_text(self, title: str, section: JobKnowledgeSection, content: str) -> str:
-        return self._build_embedding_prefix(title=title, section=section) + content.strip()
+    @staticmethod
+    def _join_blocks(
+        blocks: list[str],
+    ) -> str:
+        return "\n".join(blocks).strip()
+
+    def _build_embedding_prefix(
+        self,
+        document: JobKnowledgeDocument,
+        section: JobKnowledgeSection,
+    ) -> str:
+        parts: list[str] = [
+            f"Job title: {document.title}",
+        ]
+
+        if document.location_key:
+            parts.append(
+                f"Location: {document.location_key}"
+            )
+
+        if document.category_key:
+            parts.append(
+                f"Category: {document.category_key}"
+            )
+
+        technical_skills = self._format_metadata_list(
+            document.metadata.get("technical_skills")
+        )
+
+        if technical_skills:
+            parts.append(
+                f"Technical skills: {technical_skills}"
+            )
+
+        if document.experience_level:
+            parts.append(
+                "Experience level: "
+                f"{document.experience_level}"
+            )
+
+        if document.employment_type:
+            parts.append(
+                "Employment type: "
+                f"{document.employment_type}"
+            )
+
+        parts.append(
+            f"Section: {section.value}"
+        )
+
+        return (
+            "passage: "
+            + "\n".join(parts)
+            + "\n\n"
+        )
+
+    def _build_embedding_text(
+        self,
+        document: JobKnowledgeDocument,
+        section: JobKnowledgeSection,
+        content: str,
+    ) -> str:
+        return (
+            self._build_embedding_prefix(
+                document=document,
+                section=section,
+            )
+            + content.strip()
+        )
 
     @staticmethod
-    def _build_chunk_id(document: JobKnowledgeDocument, section: JobKnowledgeSection, section_chunk_index: int) -> str:
+    def _format_metadata_list(
+        value: object,
+    ) -> str:
+        if value is None:
+            return ""
+
+        if isinstance(value, str):
+            text = value.strip()
+
+            if not text:
+                return ""
+
+            try:
+                parsed = ast.literal_eval(text)
+            except (ValueError, SyntaxError):
+                parsed = text
+
+            if isinstance(parsed, (list, tuple, set)):
+                values = parsed
+            else:
+                values = [parsed]
+
+        elif isinstance(value, (list, tuple, set)):
+            values = value
+
+        else:
+            values = [value]
+
+        return "; ".join(
+            str(item).strip()
+            for item in values
+            if str(item).strip()
+        )
+
+    @staticmethod
+    def _build_chunk_id(
+        document: JobKnowledgeDocument,
+        section: JobKnowledgeSection,
+        section_chunk_index: int,
+    ) -> str:
         return (
             f"{document.source}:"
             f"{document.source_job_id}:"
