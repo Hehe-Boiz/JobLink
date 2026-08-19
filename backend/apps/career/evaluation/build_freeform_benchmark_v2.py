@@ -22,12 +22,7 @@ from .vietjobs import VietJobsSource
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
 
-DEFAULT_OUTPUT_DIR = (
-    BACKEND_ROOT
-    / "data"
-    / "career_eval"
-    / "benchmark_freeform_v2"
-)
+DEFAULT_OUTPUT_DIR = BACKEND_ROOT / "data" / "career_eval" / "benchmark_freeform_v2"
 
 BENCHMARK_VERSION = "freeform-v2-strict"
 
@@ -58,20 +53,6 @@ FAMILIES = (
     FAMILY_CATEGORY_LOCATION_SKILL,
 )
 
-
-# ---------------------------------------------------------------------------
-# Conservative surface aliases
-# ---------------------------------------------------------------------------
-#
-# Only high-confidence equivalences belong here.
-#
-# Do NOT use broad/narrow category paraphrases such as:
-#   "HR" for a category that also contains legal/consulting,
-#   "healthcare" for a category that also contains biotech,
-#   "manufacturing" for a category that also contains mechanics/labor.
-#
-# Such substitutions change the information need and make qrels wrong.
-# ---------------------------------------------------------------------------
 
 CATEGORY_ALIASES: dict[str, tuple[str, ...]] = {
     "công_nghệ_thông_tin_kỹ_thuật_số": (
@@ -106,22 +87,9 @@ LOCATION_ALIASES: dict[str, tuple[str, ...]] = {
         "Hà Nội",
         "HN",
     ),
-    "đà nẵng": (
-        "Đà Nẵng",
-    ),
+    "đà nẵng": ("Đà Nẵng",),
 }
 
-
-# ---------------------------------------------------------------------------
-# DEV / TEST surface templates
-# ---------------------------------------------------------------------------
-#
-# The pools are intentionally disjoint.
-#
-# IMPORTANT:
-# These templates test surface robustness, NOT arbitrary human language.
-# The benchmark card explicitly prevents overclaiming.
-# ---------------------------------------------------------------------------
 
 DEV_TEMPLATES: dict[str, tuple[tuple[str, str], ...]] = {
     FAMILY_CATEGORY_LOCATION: (
@@ -274,10 +242,6 @@ TEST_TEMPLATES: dict[str, tuple[tuple[str, str], ...]] = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Data objects
-# ---------------------------------------------------------------------------
-
 @dataclass(frozen=True, slots=True)
 class IntentCandidate:
     family: str
@@ -287,17 +251,11 @@ class IntentCandidate:
 
     @property
     def intent_key(self) -> str:
-        return (
-            self.family
-            + "::"
-            + "||".join(self.labels)
-        )
+        return self.family + "::" + "||".join(self.labels)
 
     @property
     def num_relevant(self) -> int:
-        return len(
-            self.relevant_cluster_ids
-        )
+        return len(self.relevant_cluster_ids)
 
 
 @dataclass(frozen=True, slots=True)
@@ -313,10 +271,6 @@ class RenderedQuery:
     relevant_cluster_ids: tuple[str, ...]
     hard_negative_groups: dict[str, tuple[str, ...]]
 
-
-# ---------------------------------------------------------------------------
-# Normalization / parsing
-# ---------------------------------------------------------------------------
 
 def _parse_list_value(
     value: Any,
@@ -340,9 +294,7 @@ def _parse_list_value(
             return []
 
         try:
-            parsed = ast.literal_eval(
-                text
-            )
+            parsed = ast.literal_eval(text)
         except (
             ValueError,
             SyntaxError,
@@ -353,42 +305,27 @@ def _parse_list_value(
             parsed,
             (list, tuple, set),
         ):
-            raw_items = list(
-                parsed
-            )
+            raw_items = list(parsed)
         else:
-            raw_items = [
-                parsed
-            ]
+            raw_items = [parsed]
 
     else:
-        raw_items = [
-            value
-        ]
+        raw_items = [value]
 
     result: list[str] = []
 
     for item in raw_items:
-        normalized = normalize_key(
-            str(item)
-        )
+        normalized = normalize_key(str(item))
 
         if not normalized:
             continue
 
-        # Long entries are usually sentence-like extraction noise.
         if len(normalized) > 100:
             continue
 
-        result.append(
-            normalized
-        )
+        result.append(normalized)
 
-    return list(
-        dict.fromkeys(
-            result
-        )
-    )
+    return list(dict.fromkeys(result))
 
 
 def _parse_locations(
@@ -399,23 +336,13 @@ def _parse_locations(
 
     result: list[str] = []
 
-    for part in value.split(
-        ","
-    ):
-        normalized = normalize_key(
-            part
-        )
+    for part in value.split(","):
+        normalized = normalize_key(part)
 
         if normalized:
-            result.append(
-                normalized
-            )
+            result.append(normalized)
 
-    return list(
-        dict.fromkeys(
-            result
-        )
-    )
+    return list(dict.fromkeys(result))
 
 
 def _humanize_category(
@@ -430,7 +357,7 @@ def _humanize_category(
 def _remove_diacritics(
     value: str,
 ) -> str:
-    # NFD does not decompose Vietnamese đ/Đ, so map it explicitly.
+
     value = value.replace(
         "đ",
         "d",
@@ -439,21 +366,12 @@ def _remove_diacritics(
         "D",
     )
 
-    decomposed = (
-        unicodedata.normalize(
-            "NFD",
-            value,
-        )
+    decomposed = unicodedata.normalize(
+        "NFD",
+        value,
     )
 
-    return "".join(
-        char
-        for char in decomposed
-        if unicodedata.category(
-            char
-        )
-        != "Mn"
-    )
+    return "".join(char for char in decomposed if unicodedata.category(char) != "Mn")
 
 
 def _normalize_for_duplicate_fingerprint(
@@ -465,9 +383,7 @@ def _normalize_for_duplicate_fingerprint(
     return re.sub(
         r"\s+",
         " ",
-        normalize_job_text(
-            value
-        ).casefold(),
+        normalize_job_text(value).casefold(),
     ).strip()
 
 
@@ -482,33 +398,13 @@ def _duplicate_fingerprint(
     skills: list[str],
 ) -> str:
     payload = {
-        "title": (
-            _normalize_for_duplicate_fingerprint(
-                title
-            )
-        ),
-        "description": (
-            _normalize_for_duplicate_fingerprint(
-                description
-            )
-        ),
-        "requirements": (
-            _normalize_for_duplicate_fingerprint(
-                requirements
-            )
-        ),
-        "benefits": (
-            _normalize_for_duplicate_fingerprint(
-                benefits
-            )
-        ),
+        "title": (_normalize_for_duplicate_fingerprint(title)),
+        "description": (_normalize_for_duplicate_fingerprint(description)),
+        "requirements": (_normalize_for_duplicate_fingerprint(requirements)),
+        "benefits": (_normalize_for_duplicate_fingerprint(benefits)),
         "category": category or "",
-        "locations": sorted(
-            locations
-        ),
-        "skills": sorted(
-            skills
-        ),
+        "locations": sorted(locations),
+        "skills": sorted(skills),
     }
 
     serialized = json.dumps(
@@ -518,20 +414,13 @@ def _duplicate_fingerprint(
         separators=(",", ":"),
     )
 
-    return hashlib.sha256(
-        serialized.encode(
-            "utf-8"
-        )
-    ).hexdigest()
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
 def _cluster_id_from_fingerprint(
     fingerprint: str,
 ) -> str:
-    return (
-        "VJC-"
-        + fingerprint[:20]
-    )
+    return "VJC-" + fingerprint[:20]
 
 
 def _sha256_file(
@@ -539,18 +428,12 @@ def _sha256_file(
 ) -> str:
     digest = hashlib.sha256()
 
-    with path.open(
-        "rb"
-    ) as file:
+    with path.open("rb") as file:
         for block in iter(
-            lambda: file.read(
-                1024 * 1024
-            ),
+            lambda: file.read(1024 * 1024),
             b"",
         ):
-            digest.update(
-                block
-            )
+            digest.update(block)
 
     return digest.hexdigest()
 
@@ -570,39 +453,28 @@ def _relevance_bin(
     return "11-20"
 
 
-# ---------------------------------------------------------------------------
-# Query surfaces
-# ---------------------------------------------------------------------------
-
 def _category_surface(
     category_key: str,
     *,
     style: str,
     rng: random.Random,
 ) -> str:
-    canonical = (
-        _humanize_category(
-            category_key
-        )
-    )
+    canonical = _humanize_category(category_key)
 
-    aliases = (
-        CATEGORY_ALIASES.get(
-            category_key,
-            (),
-        )
+    aliases = CATEGORY_ALIASES.get(
+        category_key,
+        (),
     )
 
     if (
-        style in {
+        style
+        in {
             "alias",
             "mixed",
         }
         and aliases
     ):
-        return rng.choice(
-            aliases
-        )
+        return rng.choice(aliases)
 
     return canonical
 
@@ -613,23 +485,20 @@ def _location_surface(
     style: str,
     rng: random.Random,
 ) -> str:
-    aliases = (
-        LOCATION_ALIASES.get(
-            location_key,
-            (),
-        )
+    aliases = LOCATION_ALIASES.get(
+        location_key,
+        (),
     )
 
     if (
-        style in {
+        style
+        in {
             "alias",
             "mixed",
         }
         and aliases
     ):
-        return rng.choice(
-            aliases
-        )
+        return rng.choice(aliases)
 
     return location_key
 
@@ -637,8 +506,7 @@ def _location_surface(
 def _skill_surface(
     skill: str,
 ) -> str:
-    # Exact canonical skill wording is intentional in the strict track.
-    # A separate semantic/human-judged track is required for skill aliases.
+
     return skill
 
 
@@ -661,10 +529,7 @@ def _surface_style_for_index(
             "canonical",
         )
 
-    return styles[
-        index
-        % len(styles)
-    ]
+    return styles[index % len(styles)]
 
 
 def _render_query_text(
@@ -678,64 +543,41 @@ def _render_query_text(
     str,
     str,
 ]:
-    template_pool = (
-        DEV_TEMPLATES
-        if split == "dev"
-        else TEST_TEMPLATES
-    )[candidate.family]
+    template_pool = (DEV_TEMPLATES if split == "dev" else TEST_TEMPLATES)[candidate.family]
 
     (
         template_id,
         template,
-    ) = template_pool[
-        ordinal
-        % len(
-            template_pool
-        )
-    ]
+    ) = template_pool[ordinal % len(template_pool)]
 
-    style = (
-        _surface_style_for_index(
-            split,
-            ordinal,
-        )
+    style = _surface_style_for_index(
+        split,
+        ordinal,
     )
 
     category = None
     location = None
     skill = None
 
-    if (
-        candidate.family
-        == FAMILY_CATEGORY_LOCATION
-    ):
+    if candidate.family == FAMILY_CATEGORY_LOCATION:
         (
             category,
             location,
         ) = candidate.labels
 
-    elif (
-        candidate.family
-        == FAMILY_CATEGORY_SKILL
-    ):
+    elif candidate.family == FAMILY_CATEGORY_SKILL:
         (
             category,
             skill,
         ) = candidate.labels
 
-    elif (
-        candidate.family
-        == FAMILY_LOCATION_SKILL
-    ):
+    elif candidate.family == FAMILY_LOCATION_SKILL:
         (
             location,
             skill,
         ) = candidate.labels
 
-    elif (
-        candidate.family
-        == FAMILY_CATEGORY_LOCATION_SKILL
-    ):
+    elif candidate.family == FAMILY_CATEGORY_LOCATION_SKILL:
         (
             category,
             location,
@@ -743,10 +585,7 @@ def _render_query_text(
         ) = candidate.labels
 
     else:
-        raise ValueError(
-            "Unknown family: "
-            f"{candidate.family}"
-        )
+        raise ValueError(f"Unknown family: {candidate.family}")
 
     values = {
         "category": (
@@ -767,34 +606,17 @@ def _render_query_text(
             if location
             else ""
         ),
-        "skill": (
-            _skill_surface(
-                skill
-            )
-            if skill
-            else ""
-        ),
+        "skill": (_skill_surface(skill) if skill else ""),
     }
 
     query = re.sub(
         r"\s+",
         " ",
-        template.format(
-            **values
-        ),
+        template.format(**values),
     ).strip()
 
-    # A real no-diacritics user usually drops accents in the WHOLE query,
-    # not just the structured field values.
-    if (
-        style
-        == "no_diacritics"
-    ):
-        query = (
-            _remove_diacritics(
-                query
-            )
-        )
+    if style == "no_diacritics":
+        query = _remove_diacritics(query)
 
     return (
         query,
@@ -803,57 +625,27 @@ def _render_query_text(
     )
 
 
-# ---------------------------------------------------------------------------
-# Builder
-# ---------------------------------------------------------------------------
-
 class VietJobsFreeFormBenchmarkBuilderV2:
     def __init__(
         self,
-        source: VietJobsSource
-        | None = None,
+        source: VietJobsSource | None = None,
     ) -> None:
-        self.source = (
-            source
-            or VietJobsSource()
-        )
+        self.source = source or VietJobsSource()
 
     def build(
         self,
         *,
-        output_dir: Path = (
-            DEFAULT_OUTPUT_DIR
-        ),
-        total_queries: int = (
-            DEFAULT_TOTAL_QUERIES
-        ),
-        dev_ratio: float = (
-            DEFAULT_DEV_RATIO
-        ),
-        min_relevant: int = (
-            DEFAULT_MIN_RELEVANT_CLUSTERS
-        ),
-        max_relevant: int = (
-            DEFAULT_MAX_RELEVANT_CLUSTERS
-        ),
-        min_hard_total: int = (
-            DEFAULT_MIN_HARD_NEGATIVES_TOTAL
-        ),
-        min_hard_per_group: int = (
-            DEFAULT_MIN_HARD_NEGATIVES_PER_GROUP
-        ),
-        random_seed: int = (
-            DEFAULT_RANDOM_SEED
-        ),
-        max_category_reuse: int = (
-            DEFAULT_MAX_CATEGORY_REUSE
-        ),
-        max_location_reuse: int = (
-            DEFAULT_MAX_LOCATION_REUSE
-        ),
-        max_skill_reuse: int = (
-            DEFAULT_MAX_SKILL_REUSE
-        ),
+        output_dir: Path = (DEFAULT_OUTPUT_DIR),
+        total_queries: int = (DEFAULT_TOTAL_QUERIES),
+        dev_ratio: float = (DEFAULT_DEV_RATIO),
+        min_relevant: int = (DEFAULT_MIN_RELEVANT_CLUSTERS),
+        max_relevant: int = (DEFAULT_MAX_RELEVANT_CLUSTERS),
+        min_hard_total: int = (DEFAULT_MIN_HARD_NEGATIVES_TOTAL),
+        min_hard_per_group: int = (DEFAULT_MIN_HARD_NEGATIVES_PER_GROUP),
+        random_seed: int = (DEFAULT_RANDOM_SEED),
+        max_category_reuse: int = (DEFAULT_MAX_CATEGORY_REUSE),
+        max_location_reuse: int = (DEFAULT_MAX_LOCATION_REUSE),
+        max_skill_reuse: int = (DEFAULT_MAX_SKILL_REUSE),
         allow_smaller: bool = False,
     ) -> dict:
         self._validate_args(
@@ -862,104 +654,51 @@ class VietJobsFreeFormBenchmarkBuilderV2:
             min_relevant=min_relevant,
             max_relevant=max_relevant,
             min_hard_total=min_hard_total,
-            min_hard_per_group=(
-                min_hard_per_group
-            ),
-            max_category_reuse=(
-                max_category_reuse
-            ),
-            max_location_reuse=(
-                max_location_reuse
-            ),
-            max_skill_reuse=(
-                max_skill_reuse
-            ),
+            min_hard_per_group=(min_hard_per_group),
+            max_category_reuse=(max_category_reuse),
+            max_location_reuse=(max_location_reuse),
+            max_skill_reuse=(max_skill_reuse),
         )
 
-        rng = random.Random(
-            random_seed
-        )
+        rng = random.Random(random_seed)
 
-        dataset_csv = (
-            self.source._find_dataset_csv()
-        )
+        dataset_csv = self.source._find_dataset_csv()
 
         dataset_fingerprint = {
-            "path_name": (
-                dataset_csv.name
-            ),
-            "size_bytes": (
-                dataset_csv.stat().st_size
-            ),
-            "sha256": (
-                _sha256_file(
-                    dataset_csv
-                )
-            ),
+            "path_name": (dataset_csv.name),
+            "size_bytes": (dataset_csv.stat().st_size),
+            "sha256": (_sha256_file(dataset_csv)),
         }
 
-        print(
-            "Building duplicate clusters "
-            "and field indexes..."
+        print("Building duplicate clusters and field indexes...")
+
+        indexes = self._build_indexes()
+
+        print("Building candidates...")
+
+        candidates_by_family = self._build_candidates(
+            indexes=indexes,
+            min_relevant=min_relevant,
+            max_relevant=max_relevant,
+            min_hard_total=(min_hard_total),
+            min_hard_per_group=(min_hard_per_group),
         )
 
-        indexes = (
-            self._build_indexes()
-        )
-
-        print(
-            "Building candidates..."
-        )
-
-        candidates_by_family = (
-            self._build_candidates(
-                indexes=indexes,
-                min_relevant=min_relevant,
-                max_relevant=max_relevant,
-                min_hard_total=(
-                    min_hard_total
-                ),
-                min_hard_per_group=(
-                    min_hard_per_group
-                ),
-            )
-        )
-
-        availability = {
-            family: len(
-                items
-            )
-            for family, items
-            in candidates_by_family.items()
-        }
+        availability = {family: len(items) for family, items in candidates_by_family.items()}
 
         print(
             "Candidate availability:",
             availability,
         )
 
-        selected = (
-            self._balanced_select_round_robin(
-                candidates_by_family=(
-                    candidates_by_family
-                ),
-                total_queries=(
-                    total_queries
-                ),
-                rng=rng,
-                max_category_reuse=(
-                    max_category_reuse
-                ),
-                max_location_reuse=(
-                    max_location_reuse
-                ),
-                max_skill_reuse=(
-                    max_skill_reuse
-                ),
-                allow_smaller=(
-                    allow_smaller
-                ),
-            )
+        selected = self._balanced_select_round_robin(
+            candidates_by_family=(candidates_by_family),
+            total_queries=(total_queries),
+            rng=rng,
+            max_category_reuse=(max_category_reuse),
+            max_location_reuse=(max_location_reuse),
+            max_skill_reuse=(max_skill_reuse),
+            allow_smaller=(allow_smaller),
         )
 
         (
@@ -971,41 +710,25 @@ class VietJobsFreeFormBenchmarkBuilderV2:
             rng=rng,
         )
 
-        dev_queries = (
-            self._render_split(
-                dev_candidates,
-                split="dev",
-                rng=rng,
-            )
+        dev_queries = self._render_split(
+            dev_candidates,
+            split="dev",
+            rng=rng,
         )
 
-        test_queries = (
-            self._render_split(
-                test_candidates,
-                split="test",
-                rng=rng,
-            )
+        test_queries = self._render_split(
+            test_candidates,
+            split="test",
+            rng=rng,
         )
 
         self._validate_rendered_benchmark(
-            dev_queries=(
-                dev_queries
-            ),
-            test_queries=(
-                test_queries
-            ),
-            min_relevant=(
-                min_relevant
-            ),
-            max_relevant=(
-                max_relevant
-            ),
-            min_hard_total=(
-                min_hard_total
-            ),
-            min_hard_per_group=(
-                min_hard_per_group
-            ),
+            dev_queries=(dev_queries),
+            test_queries=(test_queries),
+            min_relevant=(min_relevant),
+            max_relevant=(max_relevant),
+            min_hard_total=(min_hard_total),
+            min_hard_per_group=(min_hard_per_group),
         )
 
         output_dir.mkdir(
@@ -1013,15 +736,9 @@ class VietJobsFreeFormBenchmarkBuilderV2:
             exist_ok=True,
         )
 
-        dev_dir = (
-            output_dir
-            / "dev"
-        )
+        dev_dir = output_dir / "dev"
 
-        test_dir = (
-            output_dir
-            / "test"
-        )
+        test_dir = output_dir / "test"
 
         dev_dir.mkdir(
             parents=True,
@@ -1033,38 +750,26 @@ class VietJobsFreeFormBenchmarkBuilderV2:
             exist_ok=True,
         )
 
-        dev_paths = (
-            self._write_split(
-                split_dir=dev_dir,
-                queries=dev_queries,
-            )
+        dev_paths = self._write_split(
+            split_dir=dev_dir,
+            queries=dev_queries,
         )
 
-        test_paths = (
-            self._write_split(
-                split_dir=test_dir,
-                queries=test_queries,
-            )
+        test_paths = self._write_split(
+            split_dir=test_dir,
+            queries=test_queries,
         )
 
-        cluster_map_path = (
-            output_dir
-            / "doc_to_cluster.json"
-        )
+        cluster_map_path = output_dir / "doc_to_cluster.json"
 
-        cluster_members_path = (
-            output_dir
-            / "cluster_members.json"
-        )
+        cluster_members_path = output_dir / "cluster_members.json"
 
         with cluster_map_path.open(
             "w",
             encoding="utf-8",
         ) as file:
             json.dump(
-                indexes[
-                    "doc_to_cluster"
-                ],
+                indexes["doc_to_cluster"],
                 file,
                 ensure_ascii=False,
                 indent=2,
@@ -1075,100 +780,45 @@ class VietJobsFreeFormBenchmarkBuilderV2:
             encoding="utf-8",
         ) as file:
             json.dump(
-                {
-                    cluster_id: sorted(
-                        members
-                    )
-                    for cluster_id, members
-                    in indexes[
-                        "cluster_members"
-                    ].items()
-                },
+                {cluster_id: sorted(members) for cluster_id, members in indexes["cluster_members"].items()},
                 file,
                 ensure_ascii=False,
                 indent=2,
             )
 
-        benchmark_card_path = (
-            output_dir
-            / "BENCHMARK_CARD.md"
-        )
+        benchmark_card_path = output_dir / "BENCHMARK_CARD.md"
 
-        judging_protocol_path = (
-            output_dir
-            / "HUMAN_JUDGMENT_PROTOCOL.md"
-        )
+        judging_protocol_path = output_dir / "HUMAN_JUDGMENT_PROTOCOL.md"
 
-        self._write_benchmark_card(
-            benchmark_card_path
-        )
+        self._write_benchmark_card(benchmark_card_path)
 
-        self._write_human_judgment_protocol(
-            judging_protocol_path
-        )
+        self._write_human_judgment_protocol(judging_protocol_path)
 
-        generator_path = Path(
-            __file__
-        )
+        generator_path = Path(__file__)
 
         generator_fingerprint = {
-            "path_name": (
-                generator_path.name
-            ),
-            "sha256": (
-                _sha256_file(
-                    generator_path
-                )
-                if generator_path.exists()
-                else None
-            ),
+            "path_name": (generator_path.name),
+            "sha256": (_sha256_file(generator_path) if generator_path.exists() else None),
         }
 
-        manifest = (
-            self._build_manifest(
-                dev_queries=dev_queries,
-                test_queries=test_queries,
-                random_seed=(
-                    random_seed
-                ),
-                min_relevant=(
-                    min_relevant
-                ),
-                max_relevant=(
-                    max_relevant
-                ),
-                min_hard_total=(
-                    min_hard_total
-                ),
-                min_hard_per_group=(
-                    min_hard_per_group
-                ),
-                max_category_reuse=(
-                    max_category_reuse
-                ),
-                max_location_reuse=(
-                    max_location_reuse
-                ),
-                max_skill_reuse=(
-                    max_skill_reuse
-                ),
-                availability=(
-                    availability
-                ),
-                indexes=indexes,
-                dataset_fingerprint=(
-                    dataset_fingerprint
-                ),
-                generator_fingerprint=(
-                    generator_fingerprint
-                ),
-            )
+        manifest = self._build_manifest(
+            dev_queries=dev_queries,
+            test_queries=test_queries,
+            random_seed=(random_seed),
+            min_relevant=(min_relevant),
+            max_relevant=(max_relevant),
+            min_hard_total=(min_hard_total),
+            min_hard_per_group=(min_hard_per_group),
+            max_category_reuse=(max_category_reuse),
+            max_location_reuse=(max_location_reuse),
+            max_skill_reuse=(max_skill_reuse),
+            availability=(availability),
+            indexes=indexes,
+            dataset_fingerprint=(dataset_fingerprint),
+            generator_fingerprint=(generator_fingerprint),
         )
 
-        manifest_path = (
-            output_dir
-            / "manifest.json"
-        )
+        manifest_path = output_dir / "manifest.json"
 
         with manifest_path.open(
             "w",
@@ -1182,9 +832,7 @@ class VietJobsFreeFormBenchmarkBuilderV2:
             )
 
         test_lock = {
-            "benchmark_version": (
-                BENCHMARK_VERSION
-            ),
+            "benchmark_version": (BENCHMARK_VERSION),
             "policy": (
                 "Freeze TEST before tuning. "
                 "Do not inspect hidden TEST "
@@ -1193,55 +841,16 @@ class VietJobsFreeFormBenchmarkBuilderV2:
                 "weights, thresholds, aliases, "
                 "or templates."
             ),
-            "dataset_sha256": (
-                dataset_fingerprint[
-                    "sha256"
-                ]
-            ),
-            "generator_sha256": (
-                generator_fingerprint[
-                    "sha256"
-                ]
-            ),
-            "queries_sha256": (
-                _sha256_file(
-                    test_paths[
-                        "queries"
-                    ]
-                )
-            ),
-            "qrels_clusters_sha256": (
-                _sha256_file(
-                    test_paths[
-                        "qrels_clusters"
-                    ]
-                )
-            ),
-            "audit_sha256": (
-                _sha256_file(
-                    test_paths[
-                        "audit"
-                    ]
-                )
-            ),
-            "hard_negatives_sha256": (
-                _sha256_file(
-                    test_paths[
-                        "hard_negatives"
-                    ]
-                )
-            ),
-            "doc_to_cluster_sha256": (
-                _sha256_file(
-                    cluster_map_path
-                )
-            ),
+            "dataset_sha256": (dataset_fingerprint["sha256"]),
+            "generator_sha256": (generator_fingerprint["sha256"]),
+            "queries_sha256": (_sha256_file(test_paths["queries"])),
+            "qrels_clusters_sha256": (_sha256_file(test_paths["qrels_clusters"])),
+            "audit_sha256": (_sha256_file(test_paths["audit"])),
+            "hard_negatives_sha256": (_sha256_file(test_paths["hard_negatives"])),
+            "doc_to_cluster_sha256": (_sha256_file(cluster_map_path)),
         }
 
-        test_lock_path = (
-            output_dir
-            / "test_lock.json"
-        )
+        test_lock_path = output_dir / "test_lock.json"
 
         with test_lock_path.open(
             "w",
@@ -1255,32 +864,14 @@ class VietJobsFreeFormBenchmarkBuilderV2:
             )
 
         print()
-        print(
-            "Free-form benchmark v2 built."
-        )
-        print(
-            f"Output: {output_dir}"
-        )
-        print(
-            f"DEV:  {len(dev_queries)}"
-        )
-        print(
-            f"TEST: {len(test_queries)}"
-        )
-        print(
-            "Official strict evaluation "
-            "unit: duplicate cluster."
-        )
-        print(
-            "Public query files expose "
-            "ONLY query_id + query."
-        )
+        print("Free-form benchmark v2 built.")
+        print(f"Output: {output_dir}")
+        print(f"DEV:  {len(dev_queries)}")
+        print(f"TEST: {len(test_queries)}")
+        print("Official strict evaluation unit: duplicate cluster.")
+        print("Public query files expose ONLY query_id + query.")
 
         return manifest
-
-    # ------------------------------------------------------------------
-    # Corpus indexing and duplicate equivalence classes
-    # ------------------------------------------------------------------
 
     def _build_indexes(
         self,
@@ -1336,86 +927,39 @@ class VietJobsFreeFormBenchmarkBuilderV2:
 
         doc_count = 0
 
-        for record in (
-            self.source.iter_records()
-        ):
-            doc_id = (
-                f"{record.source}:"
-                f"{record.source_job_id}"
+        for record in self.source.iter_records():
+            doc_id = f"{record.source}:{record.source_job_id}"
+
+            category = normalize_key(record.category_key)
+
+            locations = _parse_locations(record.location_key)
+
+            skills = _parse_list_value(record.metadata.get("technical_skills"))
+
+            fingerprint = _duplicate_fingerprint(
+                title=record.title,
+                description=(record.description),
+                requirements=(record.requirements),
+                benefits=(record.benefits),
+                category=category,
+                locations=locations,
+                skills=skills,
             )
 
-            category = normalize_key(
-                record.category_key
-            )
+            cluster_id = _cluster_id_from_fingerprint(fingerprint)
 
-            locations = (
-                _parse_locations(
-                    record.location_key
-                )
-            )
+            doc_to_cluster[doc_id] = cluster_id
 
-            skills = (
-                _parse_list_value(
-                    record.metadata.get(
-                        "technical_skills"
-                    )
-                )
-            )
-
-            fingerprint = (
-                _duplicate_fingerprint(
-                    title=record.title,
-                    description=(
-                        record.description
-                    ),
-                    requirements=(
-                        record.requirements
-                    ),
-                    benefits=(
-                        record.benefits
-                    ),
-                    category=category,
-                    locations=locations,
-                    skills=skills,
-                )
-            )
-
-            cluster_id = (
-                _cluster_id_from_fingerprint(
-                    fingerprint
-                )
-            )
-
-            doc_to_cluster[
-                doc_id
-            ] = cluster_id
-
-            cluster_members[
-                cluster_id
-            ].add(
-                doc_id
-            )
+            cluster_members[cluster_id].add(doc_id)
 
             if category:
-                category_clusters[
-                    category
-                ].add(
-                    cluster_id
-                )
+                category_clusters[category].add(cluster_id)
 
             for location in locations:
-                location_clusters[
-                    location
-                ].add(
-                    cluster_id
-                )
+                location_clusters[location].add(cluster_id)
 
             for skill in skills:
-                skill_clusters[
-                    skill
-                ].add(
-                    cluster_id
-                )
+                skill_clusters[skill].add(cluster_id)
 
             if category:
                 for location in locations:
@@ -1424,9 +968,7 @@ class VietJobsFreeFormBenchmarkBuilderV2:
                             category,
                             location,
                         )
-                    ].add(
-                        cluster_id
-                    )
+                    ].add(cluster_id)
 
                 for skill in skills:
                     category_skill[
@@ -1434,9 +976,7 @@ class VietJobsFreeFormBenchmarkBuilderV2:
                             category,
                             skill,
                         )
-                    ].add(
-                        cluster_id
-                    )
+                    ].add(cluster_id)
 
                 for location in locations:
                     for skill in skills:
@@ -1446,9 +986,7 @@ class VietJobsFreeFormBenchmarkBuilderV2:
                                 location,
                                 skill,
                             )
-                        ].add(
-                            cluster_id
-                        )
+                        ].add(cluster_id)
 
             for location in locations:
                 for skill in skills:
@@ -1457,78 +995,33 @@ class VietJobsFreeFormBenchmarkBuilderV2:
                             location,
                             skill,
                         )
-                    ].add(
-                        cluster_id
-                    )
+                    ].add(cluster_id)
 
             doc_count += 1
 
-        duplicate_cluster_sizes = [
-            len(
-                members
-            )
-            for members in (
-                cluster_members.values()
-            )
-            if len(
-                members
-            ) > 1
-        ]
+        duplicate_cluster_sizes = [len(members) for members in (cluster_members.values()) if len(members) > 1]
 
         return {
-            "doc_count": (
-                doc_count
-            ),
-            "cluster_count": len(
-                cluster_members
-            ),
-            "duplicate_cluster_count": len(
-                duplicate_cluster_sizes
-            ),
-            "duplicate_doc_count": sum(
-                size
-                for size in (
-                    duplicate_cluster_sizes
-                )
-            ),
+            "doc_count": (doc_count),
+            "cluster_count": len(cluster_members),
+            "duplicate_cluster_count": len(duplicate_cluster_sizes),
+            "duplicate_doc_count": sum(size for size in (duplicate_cluster_sizes)),
             "max_duplicate_cluster_size": (
                 max(
                     duplicate_cluster_sizes,
                     default=1,
                 )
             ),
-            "doc_to_cluster": (
-                doc_to_cluster
-            ),
-            "cluster_members": (
-                cluster_members
-            ),
-            "category_clusters": (
-                category_clusters
-            ),
-            "location_clusters": (
-                location_clusters
-            ),
-            "skill_clusters": (
-                skill_clusters
-            ),
-            FAMILY_CATEGORY_LOCATION: (
-                category_location
-            ),
-            FAMILY_CATEGORY_SKILL: (
-                category_skill
-            ),
-            FAMILY_LOCATION_SKILL: (
-                location_skill
-            ),
-            FAMILY_CATEGORY_LOCATION_SKILL: (
-                category_location_skill
-            ),
+            "doc_to_cluster": (doc_to_cluster),
+            "cluster_members": (cluster_members),
+            "category_clusters": (category_clusters),
+            "location_clusters": (location_clusters),
+            "skill_clusters": (skill_clusters),
+            FAMILY_CATEGORY_LOCATION: (category_location),
+            FAMILY_CATEGORY_SKILL: (category_skill),
+            FAMILY_LOCATION_SKILL: (location_skill),
+            FAMILY_CATEGORY_LOCATION_SKILL: (category_location_skill),
         }
-
-    # ------------------------------------------------------------------
-    # Candidate construction
-    # ------------------------------------------------------------------
 
     def _build_candidates(
         self,
@@ -1542,84 +1035,37 @@ class VietJobsFreeFormBenchmarkBuilderV2:
         str,
         list[IntentCandidate],
     ]:
-        result = {
-            family: []
-            for family in FAMILIES
-        }
+        result = {family: [] for family in FAMILIES}
 
         for family in FAMILIES:
             for (
                 labels,
                 positives,
-            ) in indexes[
-                family
-            ].items():
-                if not (
-                    min_relevant
-                    <= len(
-                        positives
-                    )
-                    <= max_relevant
-                ):
+            ) in indexes[family].items():
+                if not (min_relevant <= len(positives) <= max_relevant):
                     continue
 
-                hard_groups = (
-                    self._hard_negative_groups(
-                        family=family,
-                        labels=labels,
-                        positives=positives,
-                        indexes=indexes,
-                    )
+                hard_groups = self._hard_negative_groups(
+                    family=family,
+                    labels=labels,
+                    positives=positives,
+                    indexes=indexes,
                 )
 
-                if any(
-                    len(
-                        group
-                    )
-                    < min_hard_per_group
-                    for group
-                    in hard_groups.values()
-                ):
+                if any(len(group) < min_hard_per_group for group in hard_groups.values()):
                     continue
 
-                hard_union = {
-                    cluster_id
-                    for group
-                    in hard_groups.values()
-                    for cluster_id
-                    in group
-                }
+                hard_union = {cluster_id for group in hard_groups.values() for cluster_id in group}
 
-                if (
-                    len(
-                        hard_union
-                    )
-                    < min_hard_total
-                ):
+                if len(hard_union) < min_hard_total:
                     continue
 
-                result[
-                    family
-                ].append(
+                result[family].append(
                     IntentCandidate(
                         family=family,
-                        labels=tuple(
-                            labels
-                        ),
-                        relevant_cluster_ids=tuple(
-                            sorted(
-                                positives
-                            )
-                        ),
-                        hard_negative_groups={
-                            name: tuple(
-                                sorted(
-                                    group
-                                )
-                            )
-                            for name, group
-                            in hard_groups.items()
-                        },
+                        labels=tuple(labels),
+                        relevant_cluster_ids=tuple(sorted(positives)),
+                        hard_negative_groups={name: tuple(sorted(group)) for name, group in hard_groups.items()},
                     )
                 )
 
@@ -1636,46 +1082,19 @@ class VietJobsFreeFormBenchmarkBuilderV2:
         str,
         set[str],
     ]:
-        category_clusters = (
-            indexes[
-                "category_clusters"
-            ]
-        )
+        category_clusters = indexes["category_clusters"]
 
-        location_clusters = (
-            indexes[
-                "location_clusters"
-            ]
-        )
+        location_clusters = indexes["location_clusters"]
 
-        skill_clusters = (
-            indexes[
-                "skill_clusters"
-            ]
-        )
+        skill_clusters = indexes["skill_clusters"]
 
-        category_location = (
-            indexes[
-                FAMILY_CATEGORY_LOCATION
-            ]
-        )
+        category_location = indexes[FAMILY_CATEGORY_LOCATION]
 
-        category_skill = (
-            indexes[
-                FAMILY_CATEGORY_SKILL
-            ]
-        )
+        category_skill = indexes[FAMILY_CATEGORY_SKILL]
 
-        location_skill = (
-            indexes[
-                FAMILY_LOCATION_SKILL
-            ]
-        )
+        location_skill = indexes[FAMILY_LOCATION_SKILL]
 
-        if (
-            family
-            == FAMILY_CATEGORY_LOCATION
-        ):
+        if family == FAMILY_CATEGORY_LOCATION:
             (
                 category,
                 location,
@@ -1698,10 +1117,7 @@ class VietJobsFreeFormBenchmarkBuilderV2:
                 ),
             }
 
-        if (
-            family
-            == FAMILY_CATEGORY_SKILL
-        ):
+        if family == FAMILY_CATEGORY_SKILL:
             (
                 category,
                 skill,
@@ -1724,10 +1140,7 @@ class VietJobsFreeFormBenchmarkBuilderV2:
                 ),
             }
 
-        if (
-            family
-            == FAMILY_LOCATION_SKILL
-        ):
+        if family == FAMILY_LOCATION_SKILL:
             (
                 location,
                 skill,
@@ -1750,10 +1163,7 @@ class VietJobsFreeFormBenchmarkBuilderV2:
                 ),
             }
 
-        if (
-            family
-            == FAMILY_CATEGORY_LOCATION_SKILL
-        ):
+        if family == FAMILY_CATEGORY_LOCATION_SKILL:
             (
                 category,
                 location,
@@ -1793,13 +1203,7 @@ class VietJobsFreeFormBenchmarkBuilderV2:
                 ),
             }
 
-        raise ValueError(
-            f"Unknown family: {family}"
-        )
-
-    # ------------------------------------------------------------------
-    # Balanced selection
-    # ------------------------------------------------------------------
+        raise ValueError(f"Unknown family: {family}")
 
     def _balanced_select_round_robin(
         self,
@@ -1814,208 +1218,91 @@ class VietJobsFreeFormBenchmarkBuilderV2:
         max_location_reuse: int,
         max_skill_reuse: int,
         allow_smaller: bool,
-    ) -> list[
-        IntentCandidate
-    ]:
-        base = (
-            total_queries
-            // len(
-                FAMILIES
-            )
-        )
+    ) -> list[IntentCandidate]:
+        base = total_queries // len(FAMILIES)
 
-        remainder = (
-            total_queries
-            % len(
-                FAMILIES
-            )
-        )
+        remainder = total_queries % len(FAMILIES)
 
-        targets = {
-            family: (
-                base
-                + (
-                    1
-                    if index
-                    < remainder
-                    else 0
-                )
-            )
-            for index, family
-            in enumerate(
-                FAMILIES
-            )
-        }
+        targets = {family: (base + (1 if index < remainder else 0)) for index, family in enumerate(FAMILIES)}
 
         ordered_by_family = {
             family: (
                 self._balanced_candidate_order(
-                    candidates_by_family[
-                        family
-                    ],
+                    candidates_by_family[family],
                     rng=rng,
                 )
             )
             for family in FAMILIES
         }
 
-        cursors = {
-            family: 0
-            for family in FAMILIES
-        }
+        cursors = {family: 0 for family in FAMILIES}
 
-        selected_counts = {
-            family: 0
-            for family in FAMILIES
-        }
+        selected_counts = {family: 0 for family in FAMILIES}
 
         category_reuse = Counter()
         location_reuse = Counter()
         skill_reuse = Counter()
 
-        selected: list[
-            IntentCandidate
-        ] = []
+        selected: list[IntentCandidate] = []
 
         while True:
             progressed = False
 
             for family in FAMILIES:
-                if (
-                    selected_counts[
-                        family
-                    ]
-                    >= targets[
-                        family
-                    ]
-                ):
+                if selected_counts[family] >= targets[family]:
                     continue
 
-                items = (
-                    ordered_by_family[
-                        family
-                    ]
-                )
+                items = ordered_by_family[family]
 
-                while (
-                    cursors[
-                        family
-                    ]
-                    < len(
-                        items
-                    )
-                ):
-                    candidate = items[
-                        cursors[
-                            family
-                        ]
-                    ]
+                while cursors[family] < len(items):
+                    candidate = items[cursors[family]]
 
-                    cursors[
-                        family
-                    ] += 1
+                    cursors[family] += 1
 
                     (
                         category,
                         location,
                         skill,
-                    ) = (
-                        self._candidate_components(
-                            candidate
-                        )
-                    )
+                    ) = self._candidate_components(candidate)
 
-                    if (
-                        category
-                        and category_reuse[
-                            category
-                        ]
-                        >= max_category_reuse
-                    ):
+                    if category and category_reuse[category] >= max_category_reuse:
                         continue
 
-                    if (
-                        location
-                        and location_reuse[
-                            location
-                        ]
-                        >= max_location_reuse
-                    ):
+                    if location and location_reuse[location] >= max_location_reuse:
                         continue
 
-                    if (
-                        skill
-                        and skill_reuse[
-                            skill
-                        ]
-                        >= max_skill_reuse
-                    ):
+                    if skill and skill_reuse[skill] >= max_skill_reuse:
                         continue
 
-                    selected.append(
-                        candidate
-                    )
+                    selected.append(candidate)
 
-                    selected_counts[
-                        family
-                    ] += 1
+                    selected_counts[family] += 1
 
                     if category:
-                        category_reuse[
-                            category
-                        ] += 1
+                        category_reuse[category] += 1
 
                     if location:
-                        location_reuse[
-                            location
-                        ] += 1
+                        location_reuse[location] += 1
 
                     if skill:
-                        skill_reuse[
-                            skill
-                        ] += 1
+                        skill_reuse[skill] += 1
 
                     progressed = True
                     break
 
-            if all(
-                selected_counts[
-                    family
-                ]
-                >= targets[
-                    family
-                ]
-                for family in FAMILIES
-            ):
+            if all(selected_counts[family] >= targets[family] for family in FAMILIES):
                 break
 
             if not progressed:
                 break
 
         deficits = {
-            family: (
-                targets[
-                    family
-                ]
-                - selected_counts[
-                    family
-                ]
-            )
+            family: (targets[family] - selected_counts[family])
             for family in FAMILIES
-            if (
-                selected_counts[
-                    family
-                ]
-                < targets[
-                    family
-                ]
-            )
+            if (selected_counts[family] < targets[family])
         }
 
-        if (
-            deficits
-            and not allow_smaller
-        ):
+        if deficits and not allow_smaller:
             raise RuntimeError(
                 "Could not satisfy balanced "
                 "benchmark targets under reuse "
@@ -2029,34 +1316,20 @@ class VietJobsFreeFormBenchmarkBuilderV2:
 
     @staticmethod
     def _balanced_candidate_order(
-        candidates: list[
-            IntentCandidate
-        ],
+        candidates: list[IntentCandidate],
         *,
         rng: random.Random,
-    ) -> list[
-        IntentCandidate
-    ]:
+    ) -> list[IntentCandidate]:
         bins: dict[
             str,
             list[IntentCandidate],
         ] = defaultdict(list)
 
         for candidate in candidates:
-            bins[
-                _relevance_bin(
-                    candidate.num_relevant
-                )
-            ].append(
-                candidate
-            )
+            bins[_relevance_bin(candidate.num_relevant)].append(candidate)
 
-        for values in (
-            bins.values()
-        ):
-            rng.shuffle(
-                values
-            )
+        for values in bins.values():
+            rng.shuffle(values)
 
         order = (
             "2",
@@ -2065,24 +1338,16 @@ class VietJobsFreeFormBenchmarkBuilderV2:
             "11-20",
         )
 
-        output: list[
-            IntentCandidate
-        ] = []
+        output: list[IntentCandidate] = []
 
         while True:
             added = False
 
             for key in order:
-                if not bins[
-                    key
-                ]:
+                if not bins[key]:
                     continue
 
-                output.append(
-                    bins[
-                        key
-                    ].pop()
-                )
+                output.append(bins[key].pop())
 
                 added = True
 
@@ -2099,13 +1364,8 @@ class VietJobsFreeFormBenchmarkBuilderV2:
         str | None,
         str | None,
     ]:
-        if (
-            candidate.family
-            == FAMILY_CATEGORY_LOCATION
-        ):
-            category, location = (
-                candidate.labels
-            )
+        if candidate.family == FAMILY_CATEGORY_LOCATION:
+            category, location = candidate.labels
 
             return (
                 category,
@@ -2113,13 +1373,8 @@ class VietJobsFreeFormBenchmarkBuilderV2:
                 None,
             )
 
-        if (
-            candidate.family
-            == FAMILY_CATEGORY_SKILL
-        ):
-            category, skill = (
-                candidate.labels
-            )
+        if candidate.family == FAMILY_CATEGORY_SKILL:
+            category, skill = candidate.labels
 
             return (
                 category,
@@ -2127,13 +1382,8 @@ class VietJobsFreeFormBenchmarkBuilderV2:
                 skill,
             )
 
-        if (
-            candidate.family
-            == FAMILY_LOCATION_SKILL
-        ):
-            location, skill = (
-                candidate.labels
-            )
+        if candidate.family == FAMILY_LOCATION_SKILL:
+            location, skill = candidate.labels
 
             return (
                 None,
@@ -2141,10 +1391,7 @@ class VietJobsFreeFormBenchmarkBuilderV2:
                 skill,
             )
 
-        if (
-            candidate.family
-            == FAMILY_CATEGORY_LOCATION_SKILL
-        ):
+        if candidate.family == FAMILY_CATEGORY_LOCATION_SKILL:
             (
                 category,
                 location,
@@ -2157,21 +1404,12 @@ class VietJobsFreeFormBenchmarkBuilderV2:
                 skill,
             )
 
-        raise ValueError(
-            "Unknown family: "
-            f"{candidate.family}"
-        )
-
-    # ------------------------------------------------------------------
-    # Split
-    # ------------------------------------------------------------------
+        raise ValueError(f"Unknown family: {candidate.family}")
 
     def _stratified_split(
         self,
         *,
-        selected: list[
-            IntentCandidate
-        ],
+        selected: list[IntentCandidate],
         dev_ratio: float,
         rng: random.Random,
     ) -> tuple[
@@ -2187,58 +1425,31 @@ class VietJobsFreeFormBenchmarkBuilderV2:
             strata[
                 (
                     candidate.family,
-                    _relevance_bin(
-                        candidate.num_relevant
-                    ),
+                    _relevance_bin(candidate.num_relevant),
                 )
-            ].append(
-                candidate
-            )
+            ].append(candidate)
 
-        dev: list[
-            IntentCandidate
-        ] = []
+        dev: list[IntentCandidate] = []
 
-        test: list[
-            IntentCandidate
-        ] = []
+        test: list[IntentCandidate] = []
 
         for (
             _stratum,
             items,
-        ) in sorted(
-            strata.items()
-        ):
-            items = list(
-                items
-            )
+        ) in sorted(strata.items()):
+            items = list(items)
 
-            rng.shuffle(
-                items
-            )
+            rng.shuffle(items)
 
             if len(items) == 1:
-                # Allocate singleton strata to the currently smaller split.
-                if (
-                    len(dev)
-                    <= len(test)
-                ):
-                    dev.extend(
-                        items
-                    )
+                if len(dev) <= len(test):
+                    dev.extend(items)
                 else:
-                    test.extend(
-                        items
-                    )
+                    test.extend(items)
 
                 continue
 
-            dev_count = int(
-                round(
-                    len(items)
-                    * dev_ratio
-                )
-            )
+            dev_count = int(round(len(items) * dev_ratio))
 
             dev_count = min(
                 max(
@@ -2248,64 +1459,35 @@ class VietJobsFreeFormBenchmarkBuilderV2:
                 len(items) - 1,
             )
 
-            dev.extend(
-                items[
-                    :dev_count
-                ]
-            )
+            dev.extend(items[:dev_count])
 
-            test.extend(
-                items[
-                    dev_count:
-                ]
-            )
+            test.extend(items[dev_count:])
 
-        rng.shuffle(
-            dev
-        )
+        rng.shuffle(dev)
 
-        rng.shuffle(
-            test
-        )
+        rng.shuffle(test)
 
         return (
             dev,
             test,
         )
 
-    # ------------------------------------------------------------------
-    # Rendering
-    # ------------------------------------------------------------------
-
     def _render_split(
         self,
-        candidates: list[
-            IntentCandidate
-        ],
+        candidates: list[IntentCandidate],
         *,
         split: str,
         rng: random.Random,
-    ) -> list[
-        RenderedQuery
-    ]:
-        by_family_counter = (
-            Counter()
-        )
+    ) -> list[RenderedQuery]:
+        by_family_counter = Counter()
 
-        output: list[
-            RenderedQuery
-        ] = []
+        output: list[RenderedQuery] = []
 
-        # Sequential IDs are deliberately independent from canonical labels.
         for global_index, candidate in enumerate(
             candidates,
             start=1,
         ):
-            ordinal = (
-                by_family_counter[
-                    candidate.family
-                ]
-            )
+            ordinal = by_family_counter[candidate.family]
 
             (
                 query,
@@ -2318,86 +1500,43 @@ class VietJobsFreeFormBenchmarkBuilderV2:
                 rng=rng,
             )
 
-            prefix = (
-                "D"
-                if split == "dev"
-                else "T"
-            )
+            prefix = "D" if split == "dev" else "T"
 
-            query_id = (
-                f"FFB2-{prefix}-"
-                f"{global_index:04d}"
-            )
+            query_id = f"FFB2-{prefix}-{global_index:04d}"
 
             output.append(
                 RenderedQuery(
                     query_id=query_id,
                     split=split,
-                    family=(
-                        candidate.family
-                    ),
+                    family=(candidate.family),
                     query=query,
-                    template_id=(
-                        template_id
-                    ),
-                    surface_style=(
-                        style
-                    ),
-                    intent_key=(
-                        candidate.intent_key
-                    ),
-                    labels=(
-                        candidate.labels
-                    ),
-                    relevant_cluster_ids=(
-                        candidate.relevant_cluster_ids
-                    ),
-                    hard_negative_groups=(
-                        candidate.hard_negative_groups
-                    ),
+                    template_id=(template_id),
+                    surface_style=(style),
+                    intent_key=(candidate.intent_key),
+                    labels=(candidate.labels),
+                    relevant_cluster_ids=(candidate.relevant_cluster_ids),
+                    hard_negative_groups=(candidate.hard_negative_groups),
                 )
             )
 
-            by_family_counter[
-                candidate.family
-            ] += 1
+            by_family_counter[candidate.family] += 1
 
         return output
-
-    # ------------------------------------------------------------------
-    # Files
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _write_split(
         *,
         split_dir: Path,
-        queries: list[
-            RenderedQuery
-        ],
+        queries: list[RenderedQuery],
     ) -> dict[str, Path]:
-        queries_path = (
-            split_dir
-            / "queries.jsonl"
-        )
+        queries_path = split_dir / "queries.jsonl"
 
-        qrels_clusters_path = (
-            split_dir
-            / "qrels.clusters.jsonl"
-        )
+        qrels_clusters_path = split_dir / "qrels.clusters.jsonl"
 
-        audit_path = (
-            split_dir
-            / "intents.audit.jsonl"
-        )
+        audit_path = split_dir / "intents.audit.jsonl"
 
-        hard_negatives_path = (
-            split_dir
-            / "hard_negatives.audit.jsonl"
-        )
+        hard_negatives_path = split_dir / "hard_negatives.audit.jsonl"
 
-        # PUBLIC QUERY FILE:
-        # no family, no filters, no labels.
         with queries_path.open(
             "w",
             encoding="utf-8",
@@ -2406,36 +1545,25 @@ class VietJobsFreeFormBenchmarkBuilderV2:
                 file.write(
                     json.dumps(
                         {
-                            "query_id": (
-                                item.query_id
-                            ),
-                            "query": (
-                                item.query
-                            ),
+                            "query_id": (item.query_id),
+                            "query": (item.query),
                         },
                         ensure_ascii=False,
                     )
                     + "\n"
                 )
 
-        # OFFICIAL strict qrels are CLUSTER-level.
         with qrels_clusters_path.open(
             "w",
             encoding="utf-8",
         ) as file:
             for item in queries:
-                for cluster_id in (
-                    item.relevant_cluster_ids
-                ):
+                for cluster_id in item.relevant_cluster_ids:
                     file.write(
                         json.dumps(
                             {
-                                "query_id": (
-                                    item.query_id
-                                ),
-                                "cluster_id": (
-                                    cluster_id
-                                ),
+                                "query_id": (item.query_id),
+                                "cluster_id": (cluster_id),
                                 "relevance": 1,
                             },
                             ensure_ascii=False,
@@ -2443,57 +1571,26 @@ class VietJobsFreeFormBenchmarkBuilderV2:
                         + "\n"
                     )
 
-        # HIDDEN/AUDIT ONLY:
         with audit_path.open(
             "w",
             encoding="utf-8",
         ) as file:
             for item in queries:
-                hard_union = {
-                    cluster_id
-                    for values in (
-                        item.hard_negative_groups.values()
-                    )
-                    for cluster_id in values
-                }
+                hard_union = {cluster_id for values in (item.hard_negative_groups.values()) for cluster_id in values}
 
                 file.write(
                     json.dumps(
                         {
-                            "query_id": (
-                                item.query_id
-                            ),
-                            "split": (
-                                item.split
-                            ),
-                            "family": (
-                                item.family
-                            ),
-                            "intent_key": (
-                                item.intent_key
-                            ),
-                            "canonical_labels": list(
-                                item.labels
-                            ),
-                            "template_id": (
-                                item.template_id
-                            ),
-                            "surface_style": (
-                                item.surface_style
-                            ),
-                            "num_relevant_clusters": len(
-                                item.relevant_cluster_ids
-                            ),
-                            "relevance_bin": (
-                                _relevance_bin(
-                                    len(
-                                        item.relevant_cluster_ids
-                                    )
-                                )
-                            ),
-                            "num_hard_negative_clusters": len(
-                                hard_union
-                            ),
+                            "query_id": (item.query_id),
+                            "split": (item.split),
+                            "family": (item.family),
+                            "intent_key": (item.intent_key),
+                            "canonical_labels": list(item.labels),
+                            "template_id": (item.template_id),
+                            "surface_style": (item.surface_style),
+                            "num_relevant_clusters": len(item.relevant_cluster_ids),
+                            "relevance_bin": (_relevance_bin(len(item.relevant_cluster_ids))),
+                            "num_hard_negative_clusters": len(hard_union),
                         },
                         ensure_ascii=False,
                     )
@@ -2507,25 +1604,16 @@ class VietJobsFreeFormBenchmarkBuilderV2:
             for item in queries:
                 groups = {
                     name: {
-                        "count": len(
-                            cluster_ids
-                        ),
-                        "sample_cluster_ids": list(
-                            cluster_ids[
-                                :DEFAULT_HARD_NEGATIVE_SAMPLE_SIZE
-                            ]
-                        ),
+                        "count": len(cluster_ids),
+                        "sample_cluster_ids": list(cluster_ids[:DEFAULT_HARD_NEGATIVE_SAMPLE_SIZE]),
                     }
-                    for name, cluster_ids
-                    in item.hard_negative_groups.items()
+                    for name, cluster_ids in item.hard_negative_groups.items()
                 }
 
                 file.write(
                     json.dumps(
                         {
-                            "query_id": (
-                                item.query_id
-                            ),
+                            "query_id": (item.query_id),
                             "groups": groups,
                         },
                         ensure_ascii=False,
@@ -2534,71 +1622,34 @@ class VietJobsFreeFormBenchmarkBuilderV2:
                 )
 
         return {
-            "queries": (
-                queries_path
-            ),
-            "qrels_clusters": (
-                qrels_clusters_path
-            ),
-            "audit": (
-                audit_path
-            ),
-            "hard_negatives": (
-                hard_negatives_path
-            ),
+            "queries": (queries_path),
+            "qrels_clusters": (qrels_clusters_path),
+            "audit": (audit_path),
+            "hard_negatives": (hard_negatives_path),
         }
-
-    # ------------------------------------------------------------------
-    # Validation
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _validate_rendered_benchmark(
         *,
-        dev_queries: list[
-            RenderedQuery
-        ],
-        test_queries: list[
-            RenderedQuery
-        ],
+        dev_queries: list[RenderedQuery],
+        test_queries: list[RenderedQuery],
         min_relevant: int,
         max_relevant: int,
         min_hard_total: int,
         min_hard_per_group: int,
     ) -> None:
         if not dev_queries:
-            raise RuntimeError(
-                "DEV split is empty."
-            )
+            raise RuntimeError("DEV split is empty.")
 
         if not test_queries:
-            raise RuntimeError(
-                "TEST split is empty."
-            )
+            raise RuntimeError("TEST split is empty.")
 
-        all_queries = (
-            dev_queries
-            + test_queries
-        )
+        all_queries = dev_queries + test_queries
 
-        query_ids = [
-            item.query_id
-            for item in all_queries
-        ]
+        query_ids = [item.query_id for item in all_queries]
 
-        if (
-            len(
-                query_ids
-            )
-            != len(
-                set(
-                    query_ids
-                )
-            )
-        ):
-            raise RuntimeError(
-                "Duplicate query IDs."
-            )
+        if len(query_ids) != len(set(query_ids)):
+            raise RuntimeError("Duplicate query IDs.")
 
         normalized_query_texts = [
             re.sub(
@@ -2609,57 +1660,22 @@ class VietJobsFreeFormBenchmarkBuilderV2:
             for item in all_queries
         ]
 
-        if (
-            len(
-                normalized_query_texts
-            )
-            != len(
-                set(
-                    normalized_query_texts
-                )
-            )
-        ):
-            raise RuntimeError(
-                "Duplicate query texts."
-            )
+        if len(normalized_query_texts) != len(set(normalized_query_texts)):
+            raise RuntimeError("Duplicate query texts.")
 
-        dev_intents = {
-            item.intent_key
-            for item in dev_queries
-        }
+        dev_intents = {item.intent_key for item in dev_queries}
 
-        test_intents = {
-            item.intent_key
-            for item in test_queries
-        }
+        test_intents = {item.intent_key for item in test_queries}
 
-        if (
-            dev_intents
-            & test_intents
-        ):
-            raise RuntimeError(
-                "Full-intent leakage "
-                "across DEV/TEST."
-            )
+        if dev_intents & test_intents:
+            raise RuntimeError("Full-intent leakage across DEV/TEST.")
 
-        dev_template_ids = {
-            item.template_id
-            for item in dev_queries
-        }
+        dev_template_ids = {item.template_id for item in dev_queries}
 
-        test_template_ids = {
-            item.template_id
-            for item in test_queries
-        }
+        test_template_ids = {item.template_id for item in test_queries}
 
-        if (
-            dev_template_ids
-            & test_template_ids
-        ):
-            raise RuntimeError(
-                "Template leakage "
-                "across DEV/TEST."
-            )
+        if dev_template_ids & test_template_ids:
+            raise RuntimeError("Template leakage across DEV/TEST.")
 
         for split_name, items in (
             (
@@ -2671,93 +1687,36 @@ class VietJobsFreeFormBenchmarkBuilderV2:
                 test_queries,
             ),
         ):
-            family_counts = Counter(
-                item.family
-                for item in items
-            )
+            family_counts = Counter(item.family for item in items)
 
-            missing_families = [
-                family
-                for family in FAMILIES
-                if family_counts[
-                    family
-                ]
-                == 0
-            ]
+            missing_families = [family for family in FAMILIES if family_counts[family] == 0]
 
             if missing_families:
-                raise RuntimeError(
-                    f"{split_name} is missing "
-                    "families: "
-                    f"{missing_families}"
-                )
+                raise RuntimeError(f"{split_name} is missing families: {missing_families}")
 
         for item in all_queries:
-            relevant_count = len(
-                item.relevant_cluster_ids
-            )
+            relevant_count = len(item.relevant_cluster_ids)
 
-            if not (
-                min_relevant
-                <= relevant_count
-                <= max_relevant
-            ):
-                raise RuntimeError(
-                    "Invalid relevant-cluster "
-                    f"count for {item.query_id}: "
-                    f"{relevant_count}"
-                )
+            if not (min_relevant <= relevant_count <= max_relevant):
+                raise RuntimeError(f"Invalid relevant-cluster count for {item.query_id}: {relevant_count}")
 
-            hard_union = {
-                cluster_id
-                for values in (
-                    item.hard_negative_groups.values()
-                )
-                for cluster_id in values
-            }
+            hard_union = {cluster_id for values in (item.hard_negative_groups.values()) for cluster_id in values}
 
-            if (
-                len(
-                    hard_union
-                )
-                < min_hard_total
-            ):
-                raise RuntimeError(
-                    "Insufficient total hard "
-                    f"negatives for {item.query_id}"
-                )
+            if len(hard_union) < min_hard_total:
+                raise RuntimeError(f"Insufficient total hard negatives for {item.query_id}")
 
             for (
                 group_name,
                 values,
-            ) in (
-                item.hard_negative_groups.items()
-            ):
-                if (
-                    len(
-                        values
-                    )
-                    < min_hard_per_group
-                ):
-                    raise RuntimeError(
-                        "Insufficient hard-negative "
-                        f"group {group_name} for "
-                        f"{item.query_id}"
-                    )
-
-    # ------------------------------------------------------------------
-    # Manifest
-    # ------------------------------------------------------------------
+            ) in item.hard_negative_groups.items():
+                if len(values) < min_hard_per_group:
+                    raise RuntimeError(f"Insufficient hard-negative group {group_name} for {item.query_id}")
 
     @staticmethod
     def _build_manifest(
         *,
-        dev_queries: list[
-            RenderedQuery
-        ],
-        test_queries: list[
-            RenderedQuery
-        ],
+        dev_queries: list[RenderedQuery],
+        test_queries: list[RenderedQuery],
         random_seed: int,
         min_relevant: int,
         max_relevant: int,
@@ -2778,252 +1737,103 @@ class VietJobsFreeFormBenchmarkBuilderV2:
         generator_fingerprint: dict,
     ) -> dict:
         def summarize(
-            items: Iterable[
-                RenderedQuery
-            ],
+            items: Iterable[RenderedQuery],
         ) -> dict:
-            items = list(
-                items
-            )
+            items = list(items)
 
-            family_counts = Counter(
-                item.family
-                for item in items
-            )
+            family_counts = Counter(item.family for item in items)
 
             category_counts = Counter()
             location_counts = Counter()
             skill_counts = Counter()
 
-            relevance_bins = Counter(
-                _relevance_bin(
-                    len(
-                        item.relevant_cluster_ids
-                    )
-                )
-                for item in items
-            )
+            relevance_bins = Counter(_relevance_bin(len(item.relevant_cluster_ids)) for item in items)
 
-            styles = Counter(
-                item.surface_style
-                for item in items
-            )
+            styles = Counter(item.surface_style for item in items)
 
             for item in items:
                 (
                     category,
                     location,
                     skill,
-                ) = (
-                    VietJobsFreeFormBenchmarkBuilderV2
-                    ._candidate_components(
-                        IntentCandidate(
-                            family=item.family,
-                            labels=item.labels,
-                            relevant_cluster_ids=(
-                                item.relevant_cluster_ids
-                            ),
-                            hard_negative_groups=(
-                                item.hard_negative_groups
-                            ),
-                        )
+                ) = VietJobsFreeFormBenchmarkBuilderV2._candidate_components(
+                    IntentCandidate(
+                        family=item.family,
+                        labels=item.labels,
+                        relevant_cluster_ids=(item.relevant_cluster_ids),
+                        hard_negative_groups=(item.hard_negative_groups),
                     )
                 )
 
                 if category:
-                    category_counts[
-                        category
-                    ] += 1
+                    category_counts[category] += 1
 
                 if location:
-                    location_counts[
-                        location
-                    ] += 1
+                    location_counts[location] += 1
 
                 if skill:
-                    skill_counts[
-                        skill
-                    ] += 1
+                    skill_counts[skill] += 1
 
-            relevant_counts = [
-                len(
-                    item.relevant_cluster_ids
-                )
-                for item in items
-            ]
+            relevant_counts = [len(item.relevant_cluster_ids) for item in items]
 
             return {
-                "num_queries": (
-                    len(
-                        items
-                    )
-                ),
-                "family_counts": dict(
-                    family_counts
-                ),
-                "relevance_bins": dict(
-                    relevance_bins
-                ),
-                "surface_style_counts": dict(
-                    styles
-                ),
-                "unique_categories": len(
-                    category_counts
-                ),
-                "unique_locations": len(
-                    location_counts
-                ),
-                "unique_skills": len(
-                    skill_counts
-                ),
-                "top_categories": (
-                    category_counts.most_common(
-                        10
-                    )
-                ),
-                "top_locations": (
-                    location_counts.most_common(
-                        10
-                    )
-                ),
-                "top_skills": (
-                    skill_counts.most_common(
-                        10
-                    )
-                ),
+                "num_queries": (len(items)),
+                "family_counts": dict(family_counts),
+                "relevance_bins": dict(relevance_bins),
+                "surface_style_counts": dict(styles),
+                "unique_categories": len(category_counts),
+                "unique_locations": len(location_counts),
+                "unique_skills": len(skill_counts),
+                "top_categories": (category_counts.most_common(10)),
+                "top_locations": (location_counts.most_common(10)),
+                "top_skills": (skill_counts.most_common(10)),
                 "relevant_clusters_per_query": {
-                    "min": min(
-                        relevant_counts
-                    ),
-                    "mean": (
-                        sum(
-                            relevant_counts
-                        )
-                        / len(
-                            relevant_counts
-                        )
-                    ),
-                    "max": max(
-                        relevant_counts
-                    ),
+                    "min": min(relevant_counts),
+                    "mean": (sum(relevant_counts) / len(relevant_counts)),
+                    "max": max(relevant_counts),
                 },
             }
 
         return {
-            "benchmark_version": (
-                BENCHMARK_VERSION
-            ),
-            "dataset": (
-                "dinhieufam/VietJobs"
-            ),
-            "dataset_fingerprint": (
-                dataset_fingerprint
-            ),
-            "generator_fingerprint": (
-                generator_fingerprint
-            ),
-            "retrieval_unit": (
-                "exact-duplicate equivalence cluster"
-            ),
-            "ground_truth_construct": (
-                "strict canonical metadata "
-                "constraint satisfaction"
-            ),
-            "ground_truth_is_human_judged": (
-                False
-            ),
-            "random_seed": (
-                random_seed
-            ),
-            "actual_total_queries": (
-                len(
-                    dev_queries
-                )
-                + len(
-                    test_queries
-                )
-            ),
-            "candidate_availability": (
-                availability
-            ),
+            "benchmark_version": (BENCHMARK_VERSION),
+            "dataset": ("dinhieufam/VietJobs"),
+            "dataset_fingerprint": (dataset_fingerprint),
+            "generator_fingerprint": (generator_fingerprint),
+            "retrieval_unit": ("exact-duplicate equivalence cluster"),
+            "ground_truth_construct": ("strict canonical metadata constraint satisfaction"),
+            "ground_truth_is_human_judged": (False),
+            "random_seed": (random_seed),
+            "actual_total_queries": (len(dev_queries) + len(test_queries)),
+            "candidate_availability": (availability),
             "corpus": {
-                "document_count": (
-                    indexes[
-                        "doc_count"
-                    ]
-                ),
-                "cluster_count": (
-                    indexes[
-                        "cluster_count"
-                    ]
-                ),
-                "duplicate_cluster_count": (
-                    indexes[
-                        "duplicate_cluster_count"
-                    ]
-                ),
-                "duplicate_doc_count": (
-                    indexes[
-                        "duplicate_doc_count"
-                    ]
-                ),
-                "max_duplicate_cluster_size": (
-                    indexes[
-                        "max_duplicate_cluster_size"
-                    ]
-                ),
+                "document_count": (indexes["doc_count"]),
+                "cluster_count": (indexes["cluster_count"]),
+                "duplicate_cluster_count": (indexes["duplicate_cluster_count"]),
+                "duplicate_doc_count": (indexes["duplicate_doc_count"]),
+                "max_duplicate_cluster_size": (indexes["max_duplicate_cluster_size"]),
             },
             "constraints": {
-                "min_relevant_clusters": (
-                    min_relevant
-                ),
-                "max_relevant_clusters": (
-                    max_relevant
-                ),
-                "min_hard_negatives_total": (
-                    min_hard_total
-                ),
-                "min_hard_negatives_per_group": (
-                    min_hard_per_group
-                ),
-                "max_category_reuse": (
-                    max_category_reuse
-                ),
-                "max_location_reuse": (
-                    max_location_reuse
-                ),
-                "max_skill_reuse": (
-                    max_skill_reuse
-                ),
+                "min_relevant_clusters": (min_relevant),
+                "max_relevant_clusters": (max_relevant),
+                "min_hard_negatives_total": (min_hard_total),
+                "min_hard_negatives_per_group": (min_hard_per_group),
+                "max_category_reuse": (max_category_reuse),
+                "max_location_reuse": (max_location_reuse),
+                "max_skill_reuse": (max_skill_reuse),
             },
             "split_policy": {
                 "full_intent_disjoint": True,
                 "template_disjoint": True,
-                "stratified_by_family_and_relevance_bin": (
-                    True
-                ),
-                "component_labels_may_overlap": (
-                    True
-                ),
-                "public_query_file_contains_family": (
-                    False
-                ),
-                "public_query_id_encodes_intent": (
-                    False
-                ),
+                "stratified_by_family_and_relevance_bin": (True),
+                "component_labels_may_overlap": (True),
+                "public_query_file_contains_family": (False),
+                "public_query_id_encodes_intent": (False),
                 "dev_for_tuning": True,
                 "test_frozen": True,
             },
             "limitations": [
-                (
-                    "Strict metadata qrels can "
-                    "mark semantically equivalent "
-                    "unlabelled jobs as non-relevant."
-                ),
-                (
-                    "Source taxonomy errors are "
-                    "inherited by automatic qrels."
-                ),
+                ("Strict metadata qrels can mark semantically equivalent unlabelled jobs as non-relevant."),
+                ("Source taxonomy errors are inherited by automatic qrels."),
                 (
                     "Skill wording is mostly "
                     "canonical, so this strict track "
@@ -3043,17 +1853,9 @@ class VietJobsFreeFormBenchmarkBuilderV2:
                     "production relevance quality."
                 ),
             ],
-            "dev": summarize(
-                dev_queries
-            ),
-            "test": summarize(
-                test_queries
-            ),
+            "dev": summarize(dev_queries),
+            "test": summarize(test_queries),
         }
-
-    # ------------------------------------------------------------------
-    # Documentation
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _write_benchmark_card(
@@ -3284,10 +2086,6 @@ Never merge them into a single headline number.
             encoding="utf-8",
         )
 
-    # ------------------------------------------------------------------
-    # Validation args
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _validate_args(
         *,
@@ -3301,54 +2099,20 @@ Never merge them into a single headline number.
         max_location_reuse: int,
         max_skill_reuse: int,
     ) -> None:
-        if (
-            total_queries
-            < len(
-                FAMILIES
-            )
-            * 2
-        ):
-            raise ValueError(
-                "total_queries too small."
-            )
+        if total_queries < len(FAMILIES) * 2:
+            raise ValueError("total_queries too small.")
 
-        if not (
-            0.0
-            < dev_ratio
-            < 1.0
-        ):
-            raise ValueError(
-                "dev_ratio must be "
-                "between 0 and 1."
-            )
+        if not (0.0 < dev_ratio < 1.0):
+            raise ValueError("dev_ratio must be between 0 and 1.")
 
-        if (
-            min_relevant
-            <= 0
-        ):
-            raise ValueError(
-                "min_relevant must be > 0."
-            )
+        if min_relevant <= 0:
+            raise ValueError("min_relevant must be > 0.")
 
-        if (
-            max_relevant
-            < min_relevant
-        ):
-            raise ValueError(
-                "max_relevant must be "
-                ">= min_relevant."
-            )
+        if max_relevant < min_relevant:
+            raise ValueError("max_relevant must be >= min_relevant.")
 
-        if (
-            min_hard_total
-            < 0
-            or min_hard_per_group
-            < 0
-        ):
-            raise ValueError(
-                "hard-negative minimums "
-                "must be >= 0."
-            )
+        if min_hard_total < 0 or min_hard_per_group < 0:
+            raise ValueError("hard-negative minimums must be >= 0.")
 
         if any(
             value <= 0
@@ -3358,24 +2122,12 @@ Never merge them into a single headline number.
                 max_skill_reuse,
             )
         ):
-            raise ValueError(
-                "reuse limits must be > 0."
-            )
+            raise ValueError("reuse limits must be > 0.")
 
 
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
-
-def parse_args() -> (
-    argparse.Namespace
-):
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description=(
-            "Build JobLink VietJobs "
-            "Free-Form Benchmark v2 "
-            "(strict cluster-level track)"
-        )
+        description=("Build JobLink VietJobs Free-Form Benchmark v2 (strict cluster-level track)")
     )
 
     parser.add_argument(
@@ -3399,57 +2151,43 @@ def parse_args() -> (
     parser.add_argument(
         "--min-relevant",
         type=int,
-        default=(
-            DEFAULT_MIN_RELEVANT_CLUSTERS
-        ),
+        default=(DEFAULT_MIN_RELEVANT_CLUSTERS),
     )
 
     parser.add_argument(
         "--max-relevant",
         type=int,
-        default=(
-            DEFAULT_MAX_RELEVANT_CLUSTERS
-        ),
+        default=(DEFAULT_MAX_RELEVANT_CLUSTERS),
     )
 
     parser.add_argument(
         "--min-hard-total",
         type=int,
-        default=(
-            DEFAULT_MIN_HARD_NEGATIVES_TOTAL
-        ),
+        default=(DEFAULT_MIN_HARD_NEGATIVES_TOTAL),
     )
 
     parser.add_argument(
         "--min-hard-per-group",
         type=int,
-        default=(
-            DEFAULT_MIN_HARD_NEGATIVES_PER_GROUP
-        ),
+        default=(DEFAULT_MIN_HARD_NEGATIVES_PER_GROUP),
     )
 
     parser.add_argument(
         "--max-category-reuse",
         type=int,
-        default=(
-            DEFAULT_MAX_CATEGORY_REUSE
-        ),
+        default=(DEFAULT_MAX_CATEGORY_REUSE),
     )
 
     parser.add_argument(
         "--max-location-reuse",
         type=int,
-        default=(
-            DEFAULT_MAX_LOCATION_REUSE
-        ),
+        default=(DEFAULT_MAX_LOCATION_REUSE),
     )
 
     parser.add_argument(
         "--max-skill-reuse",
         type=int,
-        default=(
-            DEFAULT_MAX_SKILL_REUSE
-        ),
+        default=(DEFAULT_MAX_SKILL_REUSE),
     )
 
     parser.add_argument(
@@ -3469,47 +2207,21 @@ def parse_args() -> (
 def main() -> None:
     args = parse_args()
 
-    builder = (
-        VietJobsFreeFormBenchmarkBuilderV2()
-    )
+    builder = VietJobsFreeFormBenchmarkBuilderV2()
 
     builder.build(
-        output_dir=(
-            args.output_dir
-        ),
-        total_queries=(
-            args.total_queries
-        ),
-        dev_ratio=(
-            args.dev_ratio
-        ),
-        min_relevant=(
-            args.min_relevant
-        ),
-        max_relevant=(
-            args.max_relevant
-        ),
-        min_hard_total=(
-            args.min_hard_total
-        ),
-        min_hard_per_group=(
-            args.min_hard_per_group
-        ),
-        random_seed=(
-            args.seed
-        ),
-        max_category_reuse=(
-            args.max_category_reuse
-        ),
-        max_location_reuse=(
-            args.max_location_reuse
-        ),
-        max_skill_reuse=(
-            args.max_skill_reuse
-        ),
-        allow_smaller=(
-            args.allow_smaller
-        ),
+        output_dir=(args.output_dir),
+        total_queries=(args.total_queries),
+        dev_ratio=(args.dev_ratio),
+        min_relevant=(args.min_relevant),
+        max_relevant=(args.max_relevant),
+        min_hard_total=(args.min_hard_total),
+        min_hard_per_group=(args.min_hard_per_group),
+        random_seed=(args.seed),
+        max_category_reuse=(args.max_category_reuse),
+        max_location_reuse=(args.max_location_reuse),
+        max_skill_reuse=(args.max_skill_reuse),
+        allow_smaller=(args.allow_smaller),
     )
 
 
