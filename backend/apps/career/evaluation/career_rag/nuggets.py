@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import hashlib
-import math
 import re
 from functools import partial
-from collections import defaultdict
 
 from .concurrency import (
     DEFAULT_MAX_IN_FLIGHT,
@@ -18,6 +16,8 @@ from .semantics import topic_description
 
 NUGGET_PROMPT_VERSION = "career-rag-silver-nuggets-v2"
 DEFAULT_VITAL_PREVALENCE = 0.35
+DEFAULT_NUGGET_BATCH_SIZE = 8
+DEFAULT_SUPPORT_JOB_BATCH_SIZE = 8
 
 
 def _normalize(text: str) -> str:
@@ -156,11 +156,176 @@ def _verify_support(
             ),
             user=f"Candidate nugget: {nugget_text}\n\n" + "\n\n---\n\n".join(blocks),
         )
-        raw = data.get("support", {})
+        if not isinstance(data, dict) or set(data) != {"support"}:
+            raise ValueError("Nugget verifier returned invalid top-level JSON")
+
+        raw = data["support"]
+        if not isinstance(raw, dict) or set(raw) != set(mapping):
+            raise ValueError(
+                "Nugget verifier returned an incomplete or unexpected support mapping"
+            )
+
         for jid, job in mapping.items():
-            if bool(raw.get(jid, False)):
+            value = raw[jid]
+            if type(value) is not bool:
+                raise ValueError(
+                    f"Nugget verifier support value for {jid} must be a JSON boolean"
+                )
+            if value:
                 supported.append(job.job_key)
     return supported
+
+
+def _validate_support_matrix(
+    data: object,
+    *,
+    nugget_ids: tuple[str, ...],
+    job_ids: tuple[str, ...],
+) -> dict[str, dict[str, bool]]:
+    if not isinstance(data, dict) or set(data) != {"support"}:
+        raise ValueError("Nugget matrix verifier returned invalid top-level JSON")
+
+    raw_support = data["support"]
+    if not isinstance(raw_support, dict) or set(raw_support) != set(nugget_ids):
+        raise ValueError(
+            "Nugget matrix verifier returned an incomplete or unexpected nugget mapping"
+        )
+
+    matrix: dict[str, dict[str, bool]] = {}
+    for nugget_id in nugget_ids:
+        raw_row = raw_support[nugget_id]
+        if not isinstance(raw_row, dict) or set(raw_row) != set(job_ids):
+            raise ValueError(
+                f"Nugget matrix verifier returned an incomplete or unexpected row for {nugget_id}"
+            )
+
+        row: dict[str, bool] = {}
+        for job_id in job_ids:
+            value = raw_row[job_id]
+            if type(value) is not bool:
+                raise ValueError(
+                    f"Nugget matrix verifier support value for {nugget_id}/{job_id} "
+                    "must be a JSON boolean"
+                )
+            row[job_id] = value
+        matrix[nugget_id] = row
+
+    return matrix
+
+
+def _verify_support_matrix_batch(
+    client: JudgeClient,
+    candidates: list[dict],
+    jobs: list[CorpusJob],
+    *,
+    evidence_chars: int,
+) -> list[list[str]]:
+    nugget_ids = tuple(f"N{index}" for index in range(1, len(candidates) + 1))
+    job_ids = tuple(f"J{index}" for index in range(1, len(jobs) + 1))
+    candidate_blocks = [
+        f"{nugget_id}\nCandidate nugget: {item['text']}"
+        for nugget_id, item in zip(nugget_ids, candidates, strict=True)
+    ]
+    job_blocks = [
+        f"{job_id}\n{job.raw_evidence[:evidence_chars]}"
+        for job_id, job in zip(job_ids, jobs, strict=True)
+    ]
+
+    data = client.json_call(
+        system=(
+            "Verify whether each candidate career nugget is explicitly or clearly "
+            "semantically supported by each supplied raw JD. Be conservative. "
+            "Return JSON only as a complete support matrix: "
+            '{"support":{"N1":{"J1":true,"J2":false}}}. '
+            "Use exactly the supplied N IDs and exactly the supplied J IDs in every row. "
+            "Every cell must be a JSON boolean; do not omit or add rows or cells."
+        ),
+        user=(
+            "Candidate nuggets and their local IDs:\n\n"
+            + "\n\n---\n\n".join(candidate_blocks)
+            + "\n\nJobs and their local IDs:\n\n"
+            + "\n\n---\n\n".join(job_blocks)
+        ),
+    )
+    matrix = _validate_support_matrix(
+        data,
+        nugget_ids=nugget_ids,
+        job_ids=job_ids,
+    )
+
+    jobs_by_id = dict(zip(job_ids, jobs, strict=True))
+    return [
+        [
+            jobs_by_id[job_id].job_key
+            for job_id in job_ids
+            if matrix[nugget_id][job_id]
+        ]
+        for nugget_id in nugget_ids
+    ]
+
+
+def _verify_support_matrix(
+    client: JudgeClient,
+    candidates: list[dict],
+    jobs: list[CorpusJob],
+    *,
+    nugget_batch_size: int = DEFAULT_NUGGET_BATCH_SIZE,
+    job_batch_size: int = DEFAULT_SUPPORT_JOB_BATCH_SIZE,
+    evidence_chars: int = 5000,
+    max_in_flight: int = DEFAULT_MAX_IN_FLIGHT,
+    refill_size: int = DEFAULT_REFILL_SIZE,
+) -> list[list[str]]:
+    if nugget_batch_size <= 0:
+        raise ValueError("nugget_batch_size must be positive")
+    if job_batch_size <= 0:
+        raise ValueError("job_batch_size must be positive")
+
+    verified: list[set[str]] = [set() for _ in candidates]
+    if not candidates or not jobs:
+        return [sorted(keys) for keys in verified]
+
+    candidate_batches = [
+        (start, candidates[start : start + nugget_batch_size])
+        for start in range(0, len(candidates), nugget_batch_size)
+    ]
+    job_batches = [
+        jobs[start : start + job_batch_size]
+        for start in range(0, len(jobs), job_batch_size)
+    ]
+    specifications = [
+        (candidate_start, candidate_batch, job_batch)
+        for candidate_start, candidate_batch in candidate_batches
+        for job_batch in job_batches
+    ]
+    results = run_refill_window(
+        [
+            partial(
+                _verify_support_matrix_batch,
+                client,
+                candidate_batch,
+                job_batch,
+                evidence_chars=evidence_chars,
+            )
+            for _, candidate_batch, job_batch in specifications
+        ],
+        config=RefillWindowConfig(
+            max_in_flight=max_in_flight,
+            refill_size=refill_size,
+        ),
+        label="nugget-support-matrix",
+    )
+
+    for (candidate_start, candidate_batch, _), batch_results in zip(
+        specifications,
+        results,
+        strict=True,
+    ):
+        if len(batch_results) != len(candidate_batch):
+            raise RuntimeError("Nugget matrix verifier returned an unexpected result shape")
+        for offset, support_keys in enumerate(batch_results):
+            verified[candidate_start + offset].update(support_keys)
+
+    return [sorted(keys) for keys in verified]
 
 
 def build_nuggets_for_topic(
@@ -171,6 +336,8 @@ def build_nuggets_for_topic(
     *,
     min_support_jobs: int = 2,
     vital_prevalence: float = DEFAULT_VITAL_PREVALENCE,
+    nugget_batch_size: int = DEFAULT_NUGGET_BATCH_SIZE,
+    job_batch_size: int = DEFAULT_SUPPORT_JOB_BATCH_SIZE,
     max_in_flight: int = DEFAULT_MAX_IN_FLIGHT,
     refill_size: int = DEFAULT_REFILL_SIZE,
 ) -> list[Nugget]:
@@ -188,59 +355,36 @@ def build_nuggets_for_topic(
         if key in corpus_by_key
     ]
 
-    if len(strong_jobs)  < min_support_jobs:
+    if not strong_jobs:
         return []
 
     extracted = _extract_candidates(client, topic, strong_jobs, max_in_flight=max_in_flight, refill_size=refill_size)
 
-    by_key = {
-        job.job_key: job
-        for job in strong_jobs
-    }
-
-    verification_inputs = []
-
-    for item in extracted:
-        claimed_keys = [
-            key
-            for key
-            in item.get("support_job_keys", [])
-            if key in by_key
-        ]
-
-        candidate_jobs = [
-            by_key[key]
-            for key in claimed_keys
-        ]
-
-        if len(candidate_jobs) < min_support_jobs:
-            continue
-
-        verification_inputs.append((item, candidate_jobs))
-
-    config = RefillWindowConfig(max_in_flight=max_in_flight, refill_size=refill_size,)
-    def verify_item(item: dict, candidate_jobs: list[CorpusJob]):
-        verified_keys = sorted(set(_verify_support(client, item["text"], candidate_jobs)))
-
-        return (item, verified_keys,)
-
-    verified_results = (
-        run_refill_window(
-            [
-                partial(verify_item, item, candidate_jobs,)
-                for (item, candidate_jobs) in verification_inputs
-            ],
-            config=config,
-            label=f"nugget-verify:{topic.topic_id}",
-        )
+    # Extractor support_job_keys are hints/provenance only.  Authoritative
+    # prevalence is measured against every strong job for this topic.
+    verified_keys_by_item = _verify_support_matrix(
+        client,
+        extracted,
+        strong_jobs,
+        nugget_batch_size=nugget_batch_size,
+        job_batch_size=job_batch_size,
+        max_in_flight=max_in_flight,
+        refill_size=refill_size,
     )
 
     nuggets: list[Nugget] = []
-    for (item, verified_keys) in verified_results:
-        if len(verified_keys) < min_support_jobs:
+    strong_job_key_set = {job.job_key for job in strong_jobs}
+    for item, verified_keys in zip(extracted, verified_keys_by_item, strict=True):
+        if not set(verified_keys).issubset(strong_job_key_set):
+            raise ValueError("Nugget verifier returned a job outside the strong-job universe")
+
+        support_count = len(set(verified_keys))
+        if support_count < min_support_jobs:
             continue
 
-        prevalence = len(verified_keys) / len(strong_jobs)
+        prevalence = support_count / len(strong_jobs)
+        if not 0 <= prevalence <= 1:
+            raise RuntimeError("Nugget prevalence must be between 0 and 1")
         normalized = _normalize(item["text"])
         nugget_id = (
             "nug-"
@@ -261,7 +405,7 @@ def build_nuggets_for_topic(
                 text=item["text"],
                 normalized_text=normalized,
                 support_job_keys=tuple(verified_keys),
-                support_count=len(verified_keys),
+                support_count=support_count,
                 prevalence=prevalence,
                 weight=prevalence,
                 importance=(

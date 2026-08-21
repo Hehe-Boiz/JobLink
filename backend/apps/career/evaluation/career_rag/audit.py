@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Iterable
@@ -26,9 +27,26 @@ def sha256_text(text: str) -> str:
 
 
 def sha256_tree(paths: Iterable[Path]) -> str:
+    resolved_paths = [Path(path).resolve() for path in paths]
+    if not resolved_paths:
+        return hashlib.sha256().hexdigest()
+
+    # The logical root is the common parent directory.  Using the files
+    # themselves makes a singleton tree's relative path become ".", which
+    # loses the filename from the digest.
+    try:
+        root = Path(os.path.commonpath([str(path.parent) for path in resolved_paths]))
+    except ValueError as exc:
+        raise ValueError("sha256_tree paths must share a common root") from exc
+
     digest = hashlib.sha256()
-    for path in sorted(paths, key=lambda item: str(item)):
-        digest.update(str(path).encode("utf-8"))
+    entries = sorted(
+        ((path.relative_to(root).as_posix(), path) for path in resolved_paths),
+        key=lambda item: item[0],
+    )
+    for relative_path, path in entries:
+        digest.update(relative_path.encode("utf-8"))
+        digest.update(b"\0")
         digest.update(path.read_bytes())
     return digest.hexdigest()
 
