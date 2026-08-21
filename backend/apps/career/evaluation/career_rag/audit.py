@@ -40,14 +40,21 @@ def sha256_tree(paths: Iterable[Path]) -> str:
         raise ValueError("sha256_tree paths must share a common root") from exc
 
     digest = hashlib.sha256()
+    digest.update(b"career-rag-tree-v2\0")
     entries = sorted(
         ((path.relative_to(root).as_posix(), path) for path in resolved_paths),
         key=lambda item: item[0],
     )
     for relative_path, path in entries:
-        digest.update(relative_path.encode("utf-8"))
-        digest.update(b"\0")
-        digest.update(path.read_bytes())
+        path_bytes = relative_path.encode("utf-8")
+        content_digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                content_digest.update(chunk)
+
+        digest.update(len(path_bytes).to_bytes(8, "big"))
+        digest.update(path_bytes)
+        digest.update(content_digest.digest())
     return digest.hexdigest()
 
 

@@ -14,7 +14,7 @@ from .judges import JudgeClient
 from .schema import CareerTopic, CorpusJob, Nugget, RelevanceJudgment
 from .semantics import topic_description
 
-NUGGET_PROMPT_VERSION = "career-rag-silver-nuggets-v2"
+NUGGET_PROMPT_VERSION = "career-rag-silver-nuggets-v3"
 DEFAULT_VITAL_PREVALENCE = 0.35
 DEFAULT_NUGGET_BATCH_SIZE = 8
 DEFAULT_SUPPORT_JOB_BATCH_SIZE = 8
@@ -219,7 +219,11 @@ def _verify_support_matrix_batch(
     jobs: list[CorpusJob],
     *,
     evidence_chars: int,
+    schema_retries: int = 2,
 ) -> list[list[str]]:
+    if schema_retries < 0:
+        raise ValueError("schema_retries must be >= 0")
+
     nugget_ids = tuple(f"N{index}" for index in range(1, len(candidates) + 1))
     job_ids = tuple(f"J{index}" for index in range(1, len(jobs) + 1))
     candidate_blocks = [
@@ -231,27 +235,60 @@ def _verify_support_matrix_batch(
         for job_id, job in zip(job_ids, jobs, strict=True)
     ]
 
-    data = client.json_call(
-        system=(
-            "Verify whether each candidate career nugget is explicitly or clearly "
-            "semantically supported by each supplied raw JD. Be conservative. "
-            "Return JSON only as a complete support matrix: "
-            '{"support":{"N1":{"J1":true,"J2":false}}}. '
-            "Use exactly the supplied N IDs and exactly the supplied J IDs in every row. "
-            "Every cell must be a JSON boolean; do not omit or add rows or cells."
-        ),
-        user=(
-            "Candidate nuggets and their local IDs:\n\n"
-            + "\n\n---\n\n".join(candidate_blocks)
-            + "\n\nJobs and their local IDs:\n\n"
-            + "\n\n---\n\n".join(job_blocks)
-        ),
+    system_prompt = (
+        "Verify whether each candidate career nugget is explicitly or clearly "
+        "semantically supported by each supplied raw JD. Be conservative. "
+        "Return JSON only as a complete support matrix: "
+        '{"support":{"N1":{"J1":true,"J2":false}}}. '
+        "Use exactly the supplied N IDs and exactly the supplied J IDs in every row. "
+        "Every cell must be a JSON boolean; do not omit or add rows or cells."
     )
-    matrix = _validate_support_matrix(
-        data,
-        nugget_ids=nugget_ids,
-        job_ids=job_ids,
+    base_user_prompt = (
+        "Candidate nuggets and their local IDs:\n\n"
+        + "\n\n---\n\n".join(candidate_blocks)
+        + "\n\nJobs and their local IDs:\n\n"
+        + "\n\n---\n\n".join(job_blocks)
     )
+    expected_nuggets = ", ".join(nugget_ids)
+    expected_jobs = ", ".join(job_ids)
+
+    matrix: dict[str, dict[str, bool]] | None = None
+    last_error: Exception | None = None
+    for attempt in range(schema_retries + 1):
+        user_prompt = base_user_prompt
+        if attempt:
+            user_prompt += (
+                "\n\nIMPORTANT CORRECTION: The previous response failed strict "
+                "schema validation. Return JSON only with exactly one top-level "
+                "key named 'support'. The support object must contain all and "
+                f"only these nugget IDs: {expected_nuggets}. Every nugget row "
+                "must contain all and only these job IDs: "
+                f"{expected_jobs}. Every cell value must be a literal JSON "
+                "true or false, never a string, number, or null. Do not omit "
+                "or add any row or cell."
+            )
+
+        try:
+            data = client.json_call(
+                system=system_prompt,
+                user=user_prompt,
+                retries=0,
+            )
+            matrix = _validate_support_matrix(
+                data,
+                nugget_ids=nugget_ids,
+                job_ids=job_ids,
+            )
+            break
+        except Exception as exc:
+            last_error = exc
+
+    if matrix is None:
+        raise RuntimeError(
+            "Nugget matrix verifier failed strict schema validation after "
+            f"{schema_retries} retries; nugget_ids={list(nugget_ids)!r}; "
+            f"job_ids={list(job_ids)!r}; error={last_error}"
+        ) from last_error
 
     jobs_by_id = dict(zip(job_ids, jobs, strict=True))
     return [
@@ -272,6 +309,7 @@ def _verify_support_matrix(
     nugget_batch_size: int = DEFAULT_NUGGET_BATCH_SIZE,
     job_batch_size: int = DEFAULT_SUPPORT_JOB_BATCH_SIZE,
     evidence_chars: int = 5000,
+    schema_retries: int = 2,
     max_in_flight: int = DEFAULT_MAX_IN_FLIGHT,
     refill_size: int = DEFAULT_REFILL_SIZE,
 ) -> list[list[str]]:
@@ -279,6 +317,8 @@ def _verify_support_matrix(
         raise ValueError("nugget_batch_size must be positive")
     if job_batch_size <= 0:
         raise ValueError("job_batch_size must be positive")
+    if schema_retries < 0:
+        raise ValueError("schema_retries must be >= 0")
 
     verified: list[set[str]] = [set() for _ in candidates]
     if not candidates or not jobs:
@@ -305,6 +345,7 @@ def _verify_support_matrix(
                 candidate_batch,
                 job_batch,
                 evidence_chars=evidence_chars,
+                schema_retries=schema_retries,
             )
             for _, candidate_batch, job_batch in specifications
         ],
@@ -338,6 +379,7 @@ def build_nuggets_for_topic(
     vital_prevalence: float = DEFAULT_VITAL_PREVALENCE,
     nugget_batch_size: int = DEFAULT_NUGGET_BATCH_SIZE,
     job_batch_size: int = DEFAULT_SUPPORT_JOB_BATCH_SIZE,
+    schema_retries: int = 2,
     max_in_flight: int = DEFAULT_MAX_IN_FLIGHT,
     refill_size: int = DEFAULT_REFILL_SIZE,
 ) -> list[Nugget]:
@@ -368,6 +410,7 @@ def build_nuggets_for_topic(
         strong_jobs,
         nugget_batch_size=nugget_batch_size,
         job_batch_size=job_batch_size,
+        schema_retries=schema_retries,
         max_in_flight=max_in_flight,
         refill_size=refill_size,
     )

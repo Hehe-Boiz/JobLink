@@ -8,6 +8,7 @@ from pathlib import Path
 from .audit import sha256_tree
 from .nuggets import (
     DEFAULT_VITAL_PREVALENCE,
+    NUGGET_PROMPT_VERSION,
     _verify_support,
     _verify_support_matrix,
     build_nuggets_for_topic,
@@ -22,14 +23,16 @@ class FakeJudgeClient:
         *,
         candidate_texts: tuple[str, ...] = ("REST API",),
         extractor_support_keys: tuple[str, ...] = ("vietjobs::J1",),
+        support_by_candidate: dict[str, dict[str, bool]] | None = None,
     ) -> None:
         self.support = support
         self.candidate_texts = candidate_texts
         self.extractor_support_keys = extractor_support_keys
-        self.calls: list[tuple[str, str]] = []
+        self.support_by_candidate = support_by_candidate or {}
+        self.calls: list[tuple[str, str, int]] = []
 
-    def json_call(self, *, system: str, user: str) -> dict:
-        self.calls.append((system, user))
+    def json_call(self, *, system: str, user: str, retries: int = 2) -> dict:
+        self.calls.append((system, user, retries))
         if "Extract atomic career-information" in system:
             return {
                 "nuggets": [
@@ -46,14 +49,22 @@ class FakeJudgeClient:
             user,
         )
         if "support matrix" in system:
-            nugget_ids = re.findall(r"(?m)^(N\d+)\nCandidate nugget:", user)
+            nugget_rows = re.findall(
+                r"(?m)^(N\d+)\nCandidate nugget: (.+)$",
+                user,
+            )
             return {
                 "support": {
                     nugget_id: {
                         local_job_id: self.support[job_id]
                         for local_job_id, job_id in job_pairs
                     }
-                    for nugget_id in nugget_ids
+                    if candidate_text not in self.support_by_candidate
+                    else {
+                        local_job_id: self.support_by_candidate[candidate_text][job_id]
+                        for local_job_id, job_id in job_pairs
+                    }
+                    for nugget_id, candidate_text in nugget_rows
                 }
             }
 
@@ -90,6 +101,9 @@ def _qrels(count: int = 4) -> list[RelevanceJudgment]:
 
 
 class NuggetConstructionTests(unittest.TestCase):
+    def test_nugget_protocol_version_is_v3(self) -> None:
+        self.assertEqual(NUGGET_PROMPT_VERSION, "career-rag-silver-nuggets-v3")
+
     def _build(
         self,
         support: dict[str, bool],
@@ -188,11 +202,11 @@ class NuggetConstructionTests(unittest.TestCase):
 
 
 class StaticMatrixClient:
-    def __init__(self, payload: dict) -> None:
+    def __init__(self, payload: object) -> None:
         self.payload = payload
         self.calls = 0
 
-    def json_call(self, *, system: str, user: str) -> dict:
+    def json_call(self, *, system: str, user: str, retries: int = 2) -> object:
         self.calls += 1
         return self.payload
 
@@ -208,11 +222,11 @@ class NuggetMatrixValidationTests(unittest.TestCase):
         )
 
     def test_missing_nugget_matrix_row_is_rejected(self) -> None:
-        with self.assertRaises(ValueError):
+        with self.assertRaises(RuntimeError):
             self._verify({"support": {"N1": {"J1": True, "J2": False}}})
 
     def test_missing_matrix_cell_is_rejected(self) -> None:
-        with self.assertRaises(ValueError):
+        with self.assertRaises(RuntimeError):
             self._verify(
                 {
                     "support": {
@@ -223,7 +237,7 @@ class NuggetMatrixValidationTests(unittest.TestCase):
             )
 
     def test_extra_matrix_row_is_rejected(self) -> None:
-        with self.assertRaises(ValueError):
+        with self.assertRaises(RuntimeError):
             self._verify(
                 {
                     "support": {
@@ -235,7 +249,7 @@ class NuggetMatrixValidationTests(unittest.TestCase):
             )
 
     def test_extra_matrix_cell_is_rejected(self) -> None:
-        with self.assertRaises(ValueError):
+        with self.assertRaises(RuntimeError):
             self._verify(
                 {
                     "support": {
@@ -246,7 +260,7 @@ class NuggetMatrixValidationTests(unittest.TestCase):
             )
 
     def test_matrix_string_boolean_is_rejected(self) -> None:
-        with self.assertRaises(ValueError):
+        with self.assertRaises(RuntimeError):
             self._verify(
                 {
                     "support": {
@@ -257,9 +271,16 @@ class NuggetMatrixValidationTests(unittest.TestCase):
             )
 
     def test_different_batch_sizes_are_semantically_identical(self) -> None:
-        support = {f"J{i}": i <= 3 for i in range(1, 5)}
+        support_by_candidate = {
+            "REST API": {"J1": True, "J2": False, "J3": True, "J4": False},
+            "Python": {"J1": False, "J2": True, "J3": False, "J4": True},
+        }
         first = build_nuggets_for_topic(
-            FakeJudgeClient(support, candidate_texts=("REST API", "Python")),
+            FakeJudgeClient(
+                {},
+                candidate_texts=("REST API", "Python"),
+                support_by_candidate=support_by_candidate,
+            ),
             _topic(),
             _qrels(),
             {job.job_key: job for job in _jobs()},
@@ -270,7 +291,11 @@ class NuggetMatrixValidationTests(unittest.TestCase):
             refill_size=1,
         )
         second = build_nuggets_for_topic(
-            FakeJudgeClient(support, candidate_texts=("REST API", "Python")),
+            FakeJudgeClient(
+                {},
+                candidate_texts=("REST API", "Python"),
+                support_by_candidate=support_by_candidate,
+            ),
             _topic(),
             _qrels(),
             {job.job_key: job for job in _jobs()},
@@ -281,6 +306,108 @@ class NuggetMatrixValidationTests(unittest.TestCase):
             refill_size=1,
         )
         self.assertEqual(first, second)
+        support_by_text = {nugget.text: set(nugget.support_job_keys) for nugget in first}
+        self.assertEqual(support_by_text["REST API"], {"vietjobs::J1", "vietjobs::J3"})
+        self.assertEqual(support_by_text["Python"], {"vietjobs::J2", "vietjobs::J4"})
+
+    def test_matrix_reconstructs_distinct_rows_across_parallel_job_batches(self) -> None:
+        client = FakeJudgeClient(
+            {},
+            support_by_candidate={
+                "REST API": {"J1": True, "J2": False, "J3": True, "J4": False},
+                "Python": {"J1": False, "J2": True, "J3": False, "J4": True},
+            },
+        )
+        result = _verify_support_matrix(
+            client,
+            [{"text": "REST API"}, {"text": "Python"}],
+            _jobs(4),
+            nugget_batch_size=2,
+            job_batch_size=2,
+            max_in_flight=2,
+            refill_size=2,
+        )
+        self.assertEqual(
+            result,
+            [
+                ["vietjobs::J1", "vietjobs::J3"],
+                ["vietjobs::J2", "vietjobs::J4"],
+            ],
+        )
+
+
+class SequencedMatrixClient:
+    def __init__(self, payloads: list[object]) -> None:
+        self.payloads = list(payloads)
+        self.calls: list[tuple[str, str, int]] = []
+
+    def json_call(self, *, system: str, user: str, retries: int = 2) -> object:
+        self.calls.append((system, user, retries))
+        if not self.payloads:
+            raise AssertionError("fake matrix client exhausted its payloads")
+        return self.payloads.pop(0)
+
+
+class CacheLikeSequencedMatrixClient(SequencedMatrixClient):
+    def __init__(self, payloads: list[object]) -> None:
+        super().__init__(payloads)
+        self.cache: dict[tuple[str, str], object] = {}
+
+    def json_call(self, *, system: str, user: str, retries: int = 2) -> object:
+        self.calls.append((system, user, retries))
+        cache_key = (system, user)
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+        if not self.payloads:
+            raise AssertionError("fake matrix client exhausted its payloads")
+        payload = self.payloads.pop(0)
+        self.cache[cache_key] = payload
+        return payload
+
+
+class NuggetMatrixRetryTests(unittest.TestCase):
+    def _verify(self, client: object) -> list[list[str]]:
+        return _verify_support_matrix(
+            client,
+            [{"text": "REST API"}],
+            _jobs(2),
+            max_in_flight=1,
+            refill_size=1,
+        )
+
+    @staticmethod
+    def _valid_payload() -> dict:
+        return {"support": {"N1": {"J1": True, "J2": False}}}
+
+    @staticmethod
+    def _malformed_payload() -> dict:
+        return {"support": {"N1": {"J1": True}}}
+
+    def test_schema_retry_recovers_after_first_malformed_response(self) -> None:
+        client = SequencedMatrixClient([self._malformed_payload(), self._valid_payload()])
+        self.assertEqual(self._verify(client), [["vietjobs::J1"]])
+        self.assertEqual(len(client.calls), 2)
+        self.assertEqual([call[2] for call in client.calls], [0, 0])
+        self.assertNotEqual(client.calls[0][1], client.calls[1][1])
+        self.assertIn("all and only these nugget IDs: N1", client.calls[1][1])
+        self.assertIn("all and only these job IDs: J1, J2", client.calls[1][1])
+        self.assertIn("literal JSON true or false", client.calls[1][1])
+
+    def test_schema_retry_budget_is_exact_when_every_response_is_malformed(self) -> None:
+        client = SequencedMatrixClient(
+            [self._malformed_payload(), self._malformed_payload(), self._malformed_payload()]
+        )
+        with self.assertRaisesRegex(RuntimeError, "after 2 retries"):
+            self._verify(client)
+        self.assertEqual(len(client.calls), 3)
+        self.assertEqual([call[2] for call in client.calls], [0, 0, 0])
+
+    def test_cached_malformed_response_cannot_block_corrective_prompt(self) -> None:
+        client = CacheLikeSequencedMatrixClient([self._malformed_payload(), self._valid_payload()])
+        self.assertEqual(self._verify(client), [["vietjobs::J1"]])
+        self.assertEqual(len(client.calls), 2)
+        self.assertNotEqual(client.calls[0][1], client.calls[1][1])
+        self.assertEqual(len(client.cache), 2)
 
 
 class TreeHashTests(unittest.TestCase):
@@ -333,3 +460,16 @@ class TreeHashTests(unittest.TestCase):
             first = sha256_tree([path])
             path.write_bytes(b"after")
             self.assertNotEqual(first, sha256_tree([path]))
+
+    def test_structural_boundary_collision_is_impossible(self) -> None:
+        with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
+            first_root = Path(first)
+            second_root = Path(second)
+            (first_root / "a").write_bytes(b"x")
+            (first_root / "bc").write_bytes(b"y")
+            (second_root / "a").write_bytes(b"xb")
+            (second_root / "c").write_bytes(b"y")
+
+            tree_a = sha256_tree([first_root / "a", first_root / "bc"])
+            tree_b = sha256_tree([second_root / "a", second_root / "c"])
+            self.assertNotEqual(tree_a, tree_b)
