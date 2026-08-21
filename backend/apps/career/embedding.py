@@ -22,9 +22,7 @@ class CareerEmbeddingService:
 
     @property
     def dimension(self) -> int:
-
         dimension = self.model.get_embedding_dimension()
-
         if dimension is None:
             raise RuntimeError("Could not determine embedding dimension")
 
@@ -39,34 +37,15 @@ class CareerEmbeddingService:
             for chunk in chunks
         ]
 
-        embeddings = self.model.encode(
-            texts,
-            batch_size=self.batch_size,
-            convert_to_numpy=True,
-            normalize_embeddings=True,
-            show_progress_bar=False,
-        )
-
-        return embeddings.astype(
-            np.float32,
-            copy=False,
-        )
+        embeddings = self.model.encode(texts, batch_size=self.batch_size, convert_to_numpy=True, normalize_embeddings=True, show_progress_bar=False)
+        return embeddings.astype(np.float32, copy=False)
 
     def embed_query(self, query: str) -> np.ndarray:
         normalized_query = query.strip()
-
         if not normalized_query:
             raise ValueError("Query must not be empty")
 
         query_text = f"query: {normalized_query}"
-        embedding = self.model.encode(
-            query_text,
-            convert_to_numpy=True,
-            normalize_embeddings=True,
-            show_progress_bar=False,
-        )
-
-        return embedding.astype(
-            np.float32,
-            copy=False,
-        )
+        embedding = self.model.encode(query_text, convert_to_numpy=True, normalize_embeddings=True, show_progress_bar=False)
+        
+        return embedding.astype(np.float32, copy=False)

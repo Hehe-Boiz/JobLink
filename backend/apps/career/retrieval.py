@@ -116,24 +116,10 @@ class CareerRetriever:
             Tối đa bao nhiêu chunk evidence được giữ cho mỗi job.
         """
 
-        self._validate_search_args(
-            query=query,
-            top_k=top_k,
-            candidate_multiplier=candidate_multiplier,
-            evidence_per_job=evidence_per_job,
-        )
-
-        query_vector = self.embedder.embed_query(
-            query
-        )
-
-        candidate_limit = (
-            top_k * candidate_multiplier
-        )
-
-        queryset = CareerJobChunk.objects.filter(
-            active=True
-        )
+        self._validate_search_args(query=query, top_k=top_k, candidate_multiplier=candidate_multiplier, evidence_per_job=evidence_per_job)
+        query_vector = self.embedder.embed_query(query)
+        candidate_limit = top_k * candidate_multiplier
+        queryset = CareerJobChunk.objects.filter(active=True)
 
         queryset = self._apply_filters(
             queryset=queryset,
@@ -201,9 +187,7 @@ class CareerRetriever:
         }
 
         if filters:
-            queryset = queryset.filter(
-                **filters
-            )
+            queryset = queryset.filter(**filters)
 
         return queryset
 
@@ -242,23 +226,15 @@ class CareerRetriever:
         đồng thời giữ các chunk tốt nhất làm evidence.
         """
 
-        jobs: dict[
-            tuple[str, str],
-            dict,
-        ] = {}
-
+        jobs: dict[tuple[str, str], dict] = {}
         for chunk in candidates:
             job_key = (
                 chunk.source,
                 chunk.source_job_id,
             )
 
-            distance = float(
-                chunk.distance
-            )
-
+            distance = float(chunk.distance)
             similarity = 1.0 - distance
-
             evidence = CareerEvidenceChunk(
                 chunk_id=chunk.chunk_id,
                 section=chunk.section,
@@ -270,48 +246,25 @@ class CareerRetriever:
             if job_key not in jobs:
                 jobs[job_key] = {
                     "source": chunk.source,
-                    "source_job_id": (
-                        chunk.source_job_id
-                    ),
+                    "source_job_id": chunk.source_job_id,
                     "job_title": chunk.job_title,
-                    "company_name": (
-                        chunk.company_name
-                    ),
-                    "location_key": (
-                        chunk.location_key
-                    ),
-                    "experience_level": (
-                        chunk.experience_level
-                    ),
-                    "employment_type": (
-                        chunk.employment_type
-                    ),
-                    "category_key": (
-                        chunk.category_key
-                    ),
-                    "published_at": (
-                        chunk.published_at
-                    ),
-                    "source_url": (
-                        chunk.source_url
-                    ),
+                    "company_name": chunk.company_name,
+                    "location_key": chunk.location_key,
+                    "experience_level": chunk.experience_level,
+                    "employment_type": chunk.employment_type,
+                    "category_key": chunk.category_key,
+                    "published_at": chunk.published_at,
+                    "source_url": chunk.source_url,
                     "score": similarity,
                     "evidence": [evidence],
                 }
 
                 continue
 
-            current_evidence = jobs[
-                job_key
-            ]["evidence"]
+            current_evidence = jobs[job_key]["evidence"]
 
-            if (
-                len(current_evidence)
-                < evidence_per_job
-            ):
-                current_evidence.append(
-                    evidence
-                )
+            if len(current_evidence) < evidence_per_job:
+                current_evidence.append(evidence)
 
         ranked_jobs = sorted(
             jobs.values(),
@@ -322,33 +275,17 @@ class CareerRetriever:
         return [
             CareerRetrievedJob(
                 source=item["source"],
-                source_job_id=(
-                    item["source_job_id"]
-                ),
+                source_job_id=item["source_job_id"],
                 job_title=item["job_title"],
-                company_name=(
-                    item["company_name"]
-                ),
-                location_key=(
-                    item["location_key"]
-                ),
-                experience_level=(
-                    item["experience_level"]
-                ),
-                employment_type=(
-                    item["employment_type"]
-                ),
-                category_key=(
-                    item["category_key"]
-                ),
-                published_at=(
-                    item["published_at"]
-                ),
+                company_name=item["company_name"],
+                location_key=item["location_key"],
+                experience_level=item["experience_level"],
+                employment_type=item["employment_type"],
+                category_key=item["category_key"],
+                published_at=item["published_at"],
                 source_url=item["source_url"],
                 score=item["score"],
-                evidence=tuple(
-                    item["evidence"]
-                ),
+                evidence=tuple(item["evidence"]),
             )
             for item in ranked_jobs[:top_k]
         ]

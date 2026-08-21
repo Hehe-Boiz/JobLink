@@ -19,14 +19,7 @@ from .judges import JUDGE_PROMPT_VERSION, JudgeClient, build_and_judge_controls,
 from .nuggets import DEFAULT_VITAL_PREVALENCE, NUGGET_PROMPT_VERSION, build_nuggets_for_topic
 from .pooling import PoolingService, load_corpus_jobs
 from .schema import BenchmarkManifest, CareerQuery, CareerTopic, Nugget, RelevanceJudgment
-from .topics import (
-    DEFAULT_MIN_SPECIFIC_TITLE_JOBS,
-    DEFAULT_RANDOM_SEED,
-    SPECIFICITY_WILSON_Z,
-    TOPIC_SELECTION_POLICY_VERSION,
-    discover_topics,
-    load_skill_hints_from_csv,
-)
+from .topics import DEFAULT_MIN_SPECIFIC_TITLE_JOBS, DEFAULT_RANDOM_SEED, SPECIFICITY_WILSON_Z, TOPIC_SELECTION_POLICY_VERSION, discover_topics, load_skill_hints_from_csv
 
 BACKEND_ROOT = Path(__file__).resolve().parents[4]
 DEFAULT_OUTPUT_DIR = BACKEND_ROOT / "data" / "career_eval" / "career_rag_bench_auto_v2"
@@ -64,10 +57,7 @@ def _find_vietjobs_csv() -> Path:
 def _index_configuration() -> list[str]:
     table = "career_careerjobchunk"
     with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT indexdef FROM pg_indexes WHERE tablename = %s ORDER BY indexname",
-            [table],
-        )
+        cursor.execute("SELECT indexdef FROM pg_indexes WHERE tablename = %s ORDER BY indexname", [table])
         return [row[0] for row in cursor.fetchall()]
 
 def _source_sha() -> tuple[str, str, bool]:
@@ -127,14 +117,8 @@ def build_benchmark(
     #   embedding/chunk/index configuration
     # -----------------------------------------------------
 
-    source_records = list(
-        VietJobsSource(
-            dataset_dir=csv_path.parent
-        ).iter_records()
-    )
-
+    source_records = list(VietJobsSource(dataset_dir=csv_path.parent).iter_records())
     raw_rows = len(source_records)
-
     source_ids = {
         record.source_job_id
         for record in source_records
@@ -153,9 +137,7 @@ def build_benchmark(
             f"got {raw_rows:,}."
         )
 
-    corpus_jobs = load_corpus_jobs(
-        source="vietjobs"
-    )
+    corpus_jobs = load_corpus_jobs(source="vietjobs")
 
     if not corpus_jobs:
         raise RuntimeError(
@@ -175,29 +157,16 @@ def build_benchmark(
     }
 
     db_unique_jobs = len(db_job_ids)
-
-    source_rows_not_indexed = (
-        source_ids - db_job_ids
-    )
-
-    db_only_source_ids = (
-        db_job_ids - source_ids
-    )
+    source_rows_not_indexed = source_ids - db_job_ids
+    db_only_source_ids = db_job_ids - source_ids
 
     # -----------------------------------------------------
     # Leakage must fail BEFORE pools / LLM judging.
     # -----------------------------------------------------
 
-    leakage_preflight = (
-        audit_derived_label_leakage()
-    )
-
+    leakage_preflight = audit_derived_label_leakage()
     if not leakage_preflight["passed"]:
-        _json_dump(
-            reports_dir
-            / "preflight_leakage.json",
-            leakage_preflight,
-        )
+        _json_dump(reports_dir / "preflight_leakage.json", leakage_preflight)
 
         raise RuntimeError(
             "Derived-label leakage detected in "
@@ -221,15 +190,8 @@ def build_benchmark(
 
     chunk_queryset = (
         CareerJobChunk.objects
-        .filter(
-            active=True,
-            source="vietjobs",
-        )
-        .order_by(
-            "source_job_id",
-            "chunk_index",
-            "chunk_id",
-        )
+        .filter(active=True, source="vietjobs")
+        .order_by("source_job_id", "chunk_index", "chunk_id")
         .values_list(
             "source_job_id",
             "chunk_id",
@@ -244,14 +206,9 @@ def build_benchmark(
         )
     )
 
-    db_chunk_count = (
-        chunk_queryset.count()
-    )
+    db_chunk_count = chunk_queryset.count()
 
-    if (
-        db_unique_jobs != 47_097
-        or db_chunk_count != 152_379
-    ):
+    if db_unique_jobs != 47_097 or db_chunk_count != 152_379:
         raise RuntimeError(
             "Frozen corpus drift detected. "
             "Expected 47,097 indexed VietJobs jobs "
@@ -260,14 +217,7 @@ def build_benchmark(
             f"{db_chunk_count:,} chunks."
         )
 
-    corpus_membership_sha256 = (
-        sha256_text(
-            "\n".join(
-                sorted(db_job_ids)
-            )
-        )
-    )
-
+    corpus_membership_sha256 = sha256_text("\n".join(sorted(db_job_ids)))
     chunk_hasher = hashlib.sha256()
 
     for (
@@ -286,90 +236,41 @@ def build_benchmark(
     ):
         payload = json.dumps(
             {
-                "source_job_id": (
-                    source_job_id
-                ),
+                "source_job_id": source_job_id,
                 "chunk_id": chunk_id,
-                "chunk_index": (
-                    chunk_index
-                ),
+                "chunk_index": chunk_index,
                 "job_title": job_title,
                 "section": section,
                 "content": content,
-                "location_key": (
-                    location_key
-                ),
-                "experience_level": (
-                    experience_level
-                ),
-                "employment_type": (
-                    employment_type
-                ),
-                "category_key": (
-                    category_key
-                ),
+                "location_key": location_key,
+                "experience_level": experience_level,
+                "employment_type": employment_type,
+                "category_key": category_key,
             },
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
         )
 
-        chunk_hasher.update(
-            payload.encode("utf-8")
-        )
+        chunk_hasher.update(payload.encode("utf-8"))
+        chunk_hasher.update(b"\n")
 
-        chunk_hasher.update(
-            b"\n"
-        )
-
-    corpus_chunks_sha256 = (
-        chunk_hasher.hexdigest()
-    )
+    corpus_chunks_sha256 = (chunk_hasher.hexdigest())
 
     print()
-    print(
-        "========== FROZEN CORPUS =========="
-    )
-    print(
-        f"Raw source rows       : "
-        f"{raw_rows:,}"
-    )
-    print(
-        f"Indexed jobs          : "
-        f"{db_unique_jobs:,}"
-    )
-    print(
-        f"Source rows not in DB : "
-        f"{len(source_rows_not_indexed):,}"
-    )
-    print(
-        f"DB-only source IDs    : "
-        f"{len(db_only_source_ids):,}"
-    )
-    print(
-        f"Indexed chunks        : "
-        f"{db_chunk_count:,}"
-    )
-    print(
-        "Membership SHA256     : "
-        f"{corpus_membership_sha256}"
-    )
-    print(
-        "Chunks SHA256         : "
-        f"{corpus_chunks_sha256}"
-    )
-    print(
-        "==================================="
-    )
+    print("========== FROZEN CORPUS ==========")
+    print(f"Raw source rows       : {raw_rows:,}")
+    print(f"Indexed jobs          : {db_unique_jobs:,}")
+    print(f"Source rows not in DB : {len(source_rows_not_indexed):,}")
+    print(f"DB-only source IDs    : {len(db_only_source_ids):,}")
+    print(f"Indexed chunks        : {db_chunk_count:,}")
+    print(f"Membership SHA256     : {corpus_membership_sha256}")
+    print(f"Chunks SHA256         : {corpus_chunks_sha256}")
+    print("===================================")
     print()
 
     category_hints, title_hints = load_skill_hints_from_csv(csv_path)
-    topics, queries, dev_family_ids, test_family_ids = discover_topics(
-        corpus_jobs,
-        random_seed=seed,
-        category_skill_hints=category_hints,
-        title_skill_hints=title_hints,
-    )
+    topics, queries, dev_family_ids, test_family_ids = discover_topics(corpus_jobs, random_seed=seed, category_skill_hints=category_hints, title_skill_hints=title_hints,)
     queries_by_topic: dict[str, list[CareerQuery]] = defaultdict(list)
     for query in queries:
         queries_by_topic[query.topic_id].append(query)
@@ -381,23 +282,13 @@ def build_benchmark(
         "dataset_sha256": dataset_sha,
         "raw_row_count": raw_rows,
         "db_unique_job_count": db_unique_jobs,
-        "source_rows_not_indexed": (
-            len(source_rows_not_indexed)
-        ),
-        "db_only_source_id_count": (
-            len(db_only_source_ids)
-        ),
+        "source_rows_not_indexed": len(source_rows_not_indexed),
+        "db_only_source_id_count": len(db_only_source_ids),
         "db_chunk_count": db_chunk_count,
-        "corpus_identity_policy": (
-            "frozen-index-membership-v1"
-        ),
+        "corpus_identity_policy": "frozen-index-membership-v1",
         "historical_selection_reconstructible": False,
-        "corpus_membership_sha256": (
-            corpus_membership_sha256
-        ),
-        "corpus_chunks_sha256": (
-            corpus_chunks_sha256
-        ),
+        "corpus_membership_sha256": corpus_membership_sha256,
+        "corpus_chunks_sha256": corpus_chunks_sha256,
         "corpus_identity_note": (
             "48,092 VietJobs source records map to "
             "the frozen production retrieval corpus "
@@ -507,26 +398,16 @@ def build_benchmark(
         dev_family_ids=tuple(dev_family_ids),
         test_family_ids=tuple(test_family_ids),
         configuration={
-            "topic_selection_policy": (
-                TOPIC_SELECTION_POLICY_VERSION
-            ),
+            "topic_selection_policy": TOPIC_SELECTION_POLICY_VERSION,
             "specific_title_selection": (
                 "log1p(local_support)"
                 "*wilson_lower_bound("
                 "local_support/global_support)"
             ),
-            "specific_title_min_support": (
-                DEFAULT_MIN_SPECIFIC_TITLE_JOBS
-            ),
-            "specificity_wilson_z": (
-                SPECIFICITY_WILSON_Z
-            ),
-            "judge_prompt_version": (
-                JUDGE_PROMPT_VERSION
-            ),
-            "nugget_prompt_version": (
-                NUGGET_PROMPT_VERSION
-            ),
+            "specific_title_min_support": DEFAULT_MIN_SPECIFIC_TITLE_JOBS,
+            "specificity_wilson_z": SPECIFICITY_WILSON_Z,
+            "judge_prompt_version": JUDGE_PROMPT_VERSION,
+            "nugget_prompt_version": NUGGET_PROMPT_VERSION,
             "pool_depth": pool_depth,
             "max_pool": max_pool,
             "rrf_k": 60,

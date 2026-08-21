@@ -54,34 +54,13 @@ class VietJobsSource:
             category_key=self._optional_value(row, "category"),
             is_active=True,
             metadata={
-                "country": self._optional_value(
-                    row,
-                    "country",
-                ),
-                "qualifications": self._optional_value(
-                    row,
-                    "qualifications",
-                ),
-                "technical_skills": self._optional_value(
-                    row,
-                    "technical_skills",
-                ),
-                "soft_skills": self._optional_value(
-                    row,
-                    "soft_skills",
-                ),
-                "languages_required": self._optional_value(
-                    row,
-                    "languages_required",
-                ),
-                "salary": self._optional_value(
-                    row,
-                    "salary",
-                ),
-                "working_hours": self._optional_value(
-                    row,
-                    "working_hours",
-                ),
+                "country": self._optional_value(row, "country"),
+                "qualifications": self._optional_value(row, "qualifications"),
+                "technical_skills": self._optional_value(row, "technical_skills"),
+                "soft_skills": self._optional_value(row, "soft_skills"),
+                "languages_required": self._optional_value(row, "languages_required"),
+                "salary": self._optional_value(row, "salary"),
+                "working_hours": self._optional_value(row, "working_hours"),
             },
         )
 

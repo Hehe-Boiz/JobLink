@@ -4,7 +4,5 @@ from .views import CareerAskView
 
 
 urlpatterns = [
-    path(
-        "career/ask/", CareerAskView.as_view(), name="career-ask",
-    ),
+    path("career/ask/", CareerAskView.as_view(), name="career-ask"),
 ]

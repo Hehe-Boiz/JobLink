@@ -16,8 +16,5 @@ class Command(BaseCommand):
         total_chunks = indexer.index_joblink_jobs()
 
         self.stdout.write(
-            self.style.SUCCESS(
-                "Career RAG indexing completed. "
-                f"Indexed {total_chunks} chunks."
-            )
+            self.style.SUCCESS(f"Career RAG indexing completed. Indexed {total_chunks} chunks.")
         )

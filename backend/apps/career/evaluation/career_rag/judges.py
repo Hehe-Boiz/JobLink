@@ -21,12 +21,7 @@ from apps.career.normalization import normalize_key
 from .schema import CareerTopic, CorpusJob, PooledCandidate, RelevanceJudgment
 from .semantics import topic_description
 
-from .concurrency import (
-    DEFAULT_MAX_IN_FLIGHT,
-    DEFAULT_REFILL_SIZE,
-    RefillWindowConfig,
-    run_refill_window,
-)
+from .concurrency import DEFAULT_MAX_IN_FLIGHT, DEFAULT_REFILL_SIZE, RefillWindowConfig, run_refill_window
 
 JUDGE_PROMPT_VERSION = "career-rag-silver-qrels-v2"
 JUDGE_VIEWS = (
@@ -84,82 +79,26 @@ class JudgeClient:
     _current_interval = 0.0
     _rate_limit_streak = 0
 
-    def __init__(
-        self,
-        model_name: str,
-        client: OpenAI | None = None,
-    ) -> None:
+    def __init__(self, model_name: str, client: OpenAI | None = None) -> None:
         self.model_name = model_name
-        self.client = (
-            client
-            or self._make_client()
-        )
+        self.client = client or self._make_client()
 
-    # =====================================================
-    # Client
-    # =====================================================
 
     @staticmethod
     def _make_client() -> OpenAI:
-        api_key = getattr(
-            settings,
-            "CKEY_API_KEY",
-            "",
-        )
-
-        base_url = getattr(
-            settings,
-            "CKEY_BASE_URL",
-            "",
-        )
-
+        api_key = getattr(settings, "CKEY_API_KEY", "",)
+        base_url = getattr(settings, "CKEY_BASE_URL", "")
         if not api_key:
-            raise RuntimeError(
-                "CKEY_API_KEY is required to build "
-                "silver qrels/nuggets."
-            )
+            raise RuntimeError("CKEY_API_KEY is required to build silver qrels/nuggets.")
 
         if not api_key.isascii():
-            raise RuntimeError(
-                "CKEY_API_KEY contains non-ASCII "
-                "characters. Check that a placeholder "
-                "was not exported accidentally."
-            )
+            raise RuntimeError("CKEY_API_KEY contains non-ASCII characters. Check that a placeholder was not exported accidentally.")
 
-        timeout = float(
-            os.environ.get(
-                "CAREER_RAG_HTTP_TIMEOUT_SECONDS",
-                "240",
-            )
-        )
+        timeout = float(os.environ.get("CAREER_RAG_HTTP_TIMEOUT_SECONDS", "240"))
+        return OpenAI(api_key=api_key, base_url=base_url or None, max_retries=0, timeout=timeout,)
 
-        return OpenAI(
-            api_key=api_key,
-            base_url=base_url or None,
-
-            # Exactly one retry layer:
-            # ours.
-            max_retries=0,
-
-            timeout=timeout,
-        )
-
-    # =====================================================
-    # Persistent exact-prompt cache
-    # =====================================================
-
-    def _cache_key(
-        self,
-        *,
-        system: str,
-        user: str,
-    ) -> str:
-        base_url = getattr(
-            settings,
-            "CKEY_BASE_URL",
-            "",
-        )
-
+    def _cache_key(self, *, system: str, user: str) -> str:
+        base_url = getattr(settings, "CKEY_BASE_URL", "")
         payload = json.dumps(
             {
                 "model": self.model_name,
@@ -173,23 +112,10 @@ class JudgeClient:
             separators=(",", ":"),
         )
 
-        return hashlib.sha256(
-            payload.encode("utf-8")
-        ).hexdigest()
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
-    def _cache_path(
-        self,
-        *,
-        system: str,
-        user: str,
-    ) -> Path | None:
-        if (
-            os.environ.get(
-                "CAREER_RAG_DISABLE_LLM_CACHE",
-                "0",
-            )
-            == "1"
-        ):
+    def _cache_path(self, *, system: str, user: str) -> Path | None:
+        if os.environ.get("CAREER_RAG_DISABLE_LLM_CACHE", "0") == "1":
             return None
 
         root = Path(
@@ -203,87 +129,37 @@ class JudgeClient:
             )
         )
 
-        key = self._cache_key(
-            system=system,
-            user=user,
-        )
+        key = self._cache_key(system=system, user=user)
 
-        return (
-            root
-            / key[:2]
-            / f"{key}.json"
-        )
+        return root / key[:2] / f"{key}.json"
 
-    def _load_cache(
-        self,
-        *,
-        system: str,
-        user: str,
-    ) -> dict | None:
-        path = self._cache_path(
-            system=system,
-            user=user,
-        )
-
-        if (
-            path is None
-            or not path.exists()
-        ):
+    def _load_cache(self, *, system: str, user: str) -> dict | None:
+        path = self._cache_path(system=system, user=user,)
+        if path is None or not path.exists():
             return None
 
         try:
-            data = json.loads(
-                path.read_text(
-                    encoding="utf-8"
-                )
-            )
-
-            payload = data.get(
-                "payload"
-            )
-
-            if not isinstance(
-                payload,
-                dict,
-            ):
-                raise ValueError(
-                    "cached payload is not dict"
-                )
+            data = json.loads(path.read_text(encoding="utf-8"))
+            payload = data.get("payload")
+            if not isinstance(payload, dict,):
+                raise ValueError("cached payload is not dict")
 
             return payload
 
         except Exception:
-            # Corrupted/incomplete cache must never
-            # poison benchmark construction.
             try:
-                path.unlink(
-                    missing_ok=True
-                )
+                path.unlink(missing_ok=True)
             except OSError:
                 pass
 
             return None
 
-    def _save_cache(
-        self,
-        *,
-        system: str,
-        user: str,
-        payload: dict,
-    ) -> None:
-        path = self._cache_path(
-            system=system,
-            user=user,
-        )
-
+    def _save_cache(self, *, system: str, user: str, payload: dict) -> None:
+        path = self._cache_path(system=system, user=user)
         if path is None:
             return
 
-        path.parent.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
-
+        path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(
             (
                 f".{path.name}."
@@ -305,41 +181,18 @@ class JudgeClient:
             encoding="utf-8",
         )
 
-        os.replace(
-            tmp,
-            path,
-        )
-
-    # =====================================================
-    # Global adaptive request gate
-    # =====================================================
+        os.replace(tmp, path)
 
     @classmethod
-    def _base_interval(
-        cls,
-    ) -> float:
-        return float(
-            os.environ.get(
-                "CAREER_RAG_MIN_REQUEST_INTERVAL_SECONDS",
-                "1.5",
-            )
-        )
+    def _base_interval(cls) -> float:
+        return float(os.environ.get("CAREER_RAG_MIN_REQUEST_INTERVAL_SECONDS", "1.5"))
 
     @classmethod
-    def _max_interval(
-        cls,
-    ) -> float:
-        return float(
-            os.environ.get(
-                "CAREER_RAG_MAX_REQUEST_INTERVAL_SECONDS",
-                "6",
-            )
-        )
+    def _max_interval(cls) -> float:
+        return float(os.environ.get("CAREER_RAG_MAX_REQUEST_INTERVAL_SECONDS", "6"))
 
     @classmethod
-    def _wait_for_request_slot(
-        cls,
-    ) -> None:
+    def _wait_for_request_slot(cls) -> None:
         """
         Space REQUEST STARTS globally.
 
@@ -351,69 +204,35 @@ class JudgeClient:
         while True:
             with cls._gate_lock:
                 now = time.monotonic()
-
                 base = cls._base_interval()
 
-                if (
-                    cls._current_interval
-                    < base
-                ):
-                    cls._current_interval = (
-                        base
-                    )
+                if cls._current_interval < base:
+                    cls._current_interval = base
 
-                target = max(
-                    cls._next_request_at,
-                    cls._cooldown_until,
-                )
+                target = max(cls._next_request_at, cls._cooldown_until)
 
                 if now >= target:
-                    cls._next_request_at = (
-                        now
-                        + cls._current_interval
-                    )
+                    cls._next_request_at = now + cls._current_interval
 
                     return
 
                 delay = target - now
 
-            # Wake periodically because another thread
-            # may extend the global cooldown.
-            time.sleep(
-                min(
-                    delay,
-                    1.0,
-                )
-            )
+            time.sleep(min(delay, 1.0))
 
     @classmethod
-    def _register_success(
-        cls,
-    ) -> None:
+    def _register_success(cls) -> None:
         """
         Slowly recover throughput after successful calls.
         """
 
         with cls._gate_lock:
             base = cls._base_interval()
-
-            cls._current_interval = max(
-                base,
-                cls._current_interval
-                * 0.90,
-            )
-
-            cls._rate_limit_streak = max(
-                0,
-                cls._rate_limit_streak - 1,
-            )
+            cls._current_interval = max(base, cls._current_interval* 0.90)
+            cls._rate_limit_streak = max(0, cls._rate_limit_streak - 1)
 
     @classmethod
-    def _register_rate_limit(
-        cls,
-        *,
-        retry_after: float | None,
-    ) -> tuple[float, float]:
+    def _register_rate_limit(cls, *, retry_after: float | None) -> tuple[float, float]:
         """
         Global congestion response.
 
@@ -424,179 +243,60 @@ class JudgeClient:
         with cls._gate_lock:
             cls._rate_limit_streak += 1
 
-            base_cooldown = float(
-                os.environ.get(
-                    "CAREER_RAG_RATE_LIMIT_COOLDOWN_SECONDS",
-                    "10",
-                )
-            )
-
-            max_cooldown = float(
-                os.environ.get(
-                    "CAREER_RAG_RATE_LIMIT_MAX_COOLDOWN_SECONDS",
-                    "60",
-                )
-            )
-
-            exponent = min(
-                cls._rate_limit_streak - 1,
-                4,
-            )
-
-            cooldown = min(
-                max_cooldown,
-                base_cooldown
-                * (2 ** exponent),
-            )
+            base_cooldown = float(os.environ.get("CAREER_RAG_RATE_LIMIT_COOLDOWN_SECONDS", "10"))
+            max_cooldown = float(os.environ.get("CAREER_RAG_RATE_LIMIT_MAX_COOLDOWN_SECONDS", "60"))
+            exponent = min(cls._rate_limit_streak - 1, 4)
+            cooldown = min(max_cooldown, base_cooldown * (2 ** exponent))
 
             if retry_after is not None:
-                cooldown = max(
-                    cooldown,
-                    retry_after,
-                )
+                cooldown = max(cooldown, retry_after)
 
             now = time.monotonic()
-
-            cls._cooldown_until = max(
-                cls._cooldown_until,
-                now + cooldown,
-            )
-
-            base_interval = (
-                cls._base_interval()
-            )
-
-            current = max(
-                cls._current_interval,
-                base_interval,
-            )
-
+            cls._cooldown_until = max(cls._cooldown_until,now + cooldown)
+            base_interval = cls._base_interval()
+            current = max(cls._current_interval, base_interval,)
             cls._current_interval = min(
                 cls._max_interval(),
-                max(
-                    base_interval,
-                    current * 1.5,
-                ),
+                max(base_interval, current * 1.5),
             )
 
-            return (
-                cooldown,
-                cls._current_interval,
-            )
-
-    # =====================================================
-    # Retry-After
-    # =====================================================
+            return (cooldown, cls._current_interval)
 
     @staticmethod
-    def _retry_after_seconds(
-        exc: Exception,
-    ) -> float | None:
-        response = getattr(
-            exc,
-            "response",
-            None,
-        )
-
-        headers = getattr(
-            response,
-            "headers",
-            None,
-        )
+    def _retry_after_seconds(exc: Exception) -> float | None:
+        response = getattr(exc, "response", None)
+        headers = getattr(response, "headers", None)
 
         if not headers:
             return None
 
-        value = (
-            headers.get(
-                "retry-after"
-            )
-            or headers.get(
-                "Retry-After"
-            )
-        )
+        value = headers.get("retry-after") or headers.get("Retry-After")
 
         if value is None:
             return None
 
         try:
-            result = float(
-                value
-            )
+            result = float(value)
 
             if result >= 0:
                 return result
 
-        except (
-            TypeError,
-            ValueError,
-        ):
+        except (TypeError, ValueError):
             pass
 
         return None
 
-    # =====================================================
-    # Main call
-    # =====================================================
-
-    def json_call(
-        self,
-        system: str,
-        user: str,
-        *,
-        retries: int = 2,
-    ) -> dict:
-
-        # -------------------------------------------------
-        # Exact prompt cache.
-        # -------------------------------------------------
-
-        cached = self._load_cache(
-            system=system,
-            user=user,
-        )
+    def json_call(self, system: str,user: str, *, retries: int = 2) -> dict:
+        cached = self._load_cache(system=system, user=user)
 
         if cached is not None:
             return cached
 
-        # -------------------------------------------------
-        # Independent retry budgets.
-        # -------------------------------------------------
-
-        rate_limit_budget = int(
-            os.environ.get(
-                "CAREER_RAG_RATE_LIMIT_RETRIES",
-                "50",
-            )
-        )
-
-        transport_budget = int(
-            os.environ.get(
-                "CAREER_RAG_TRANSPORT_RETRIES",
-                "10",
-            )
-        )
-
-        transport_base = float(
-            os.environ.get(
-                "CAREER_RAG_RETRY_BASE_SECONDS",
-                "3",
-            )
-        )
-
-        transport_max = float(
-            os.environ.get(
-                "CAREER_RAG_RETRY_MAX_SECONDS",
-                "30",
-            )
-        )
-
-        jitter = float(
-            os.environ.get(
-                "CAREER_RAG_RETRY_JITTER_SECONDS",
-                "1",
-            )
-        )
+        rate_limit_budget = int(os.environ.get("CAREER_RAG_RATE_LIMIT_RETRIES", "50"))
+        transport_budget = int(os.environ.get("CAREER_RAG_TRANSPORT_RETRIES", "10"))
+        transport_base = float(os.environ.get( "CAREER_RAG_RETRY_BASE_SECONDS", "3"))
+        transport_max = float(os.environ.get("CAREER_RAG_RETRY_MAX_SECONDS", "30"))
+        jitter = float(os.environ.get("CAREER_RAG_RETRY_JITTER_SECONDS", "1"))
 
         rate_limit_used = 0
         transport_used = 0
@@ -618,9 +318,6 @@ class JudgeClient:
         }
 
         while True:
-
-            # Every actual network attempt passes the
-            # same global gate.
             self._wait_for_request_slot()
 
             try:
@@ -644,54 +341,18 @@ class JudgeClient:
                     )
                 )
 
-                content = (
-                    response
-                    .choices[0]
-                    .message
-                    .content
-                    or ""
-                )
-
-                payload = self._parse_json(
-                    content
-                )
-
+                content = response.choices[0].message.content or ""
+                payload = self._parse_json(content)
                 self._register_success()
-
-                # Successful parsed response gets
-                # persisted IMMEDIATELY.
-                self._save_cache(
-                    system=system,
-                    user=user,
-                    payload=payload,
-                )
+                self._save_cache(system=system, user=user, payload=payload)
 
                 return payload
 
             except Exception as exc:
-                status = getattr(
-                    exc,
-                    "status_code",
-                    None,
-                )
-
-                error_name = (
-                    exc.__class__.__name__
-                )
-
-                # =====================================
-                # 429: SPECIAL GLOBAL handling
-                # =====================================
-
-                if (
-                    status == 429
-                    or error_name
-                    == "RateLimitError"
-                ):
-                    if (
-                        rate_limit_used
-                        >= rate_limit_budget
-                    ):
+                status = getattr(exc, "status_code", None)
+                error_name = exc.__class__.__name__
+                if status == 429 or error_name == "RateLimitError":
+                    if rate_limit_used >= rate_limit_budget:
                         raise RuntimeError(
                             "Judge rate limit persisted "
                             "after "
@@ -701,22 +362,8 @@ class JudgeClient:
                         ) from exc
 
                     rate_limit_used += 1
-
-                    retry_after = (
-                        self._retry_after_seconds(
-                            exc
-                        )
-                    )
-
-                    (
-                        cooldown,
-                        interval,
-                    ) = (
-                        self._register_rate_limit(
-                            retry_after=retry_after
-                        )
-                    )
-
+                    retry_after = self._retry_after_seconds(exc)
+                    (cooldown, interval) = self._register_rate_limit(retry_after=retry_after)
                     print(
                         "[rate-limit] "
                         f"429; "
@@ -729,26 +376,11 @@ class JudgeClient:
                         f"{interval:.2f}s"
                     )
 
-                    # No local sleep needed.
-                    # Global gate owns the pause.
                     continue
 
-                # =====================================
-                # Transient network / upstream errors
-                # =====================================
-
-                is_transport = (
-                    status
-                    in transient_statuses
-                    or error_name
-                    in transient_names
-                )
-
+                is_transport = status in transient_statuses or error_name in transient_names
                 if is_transport:
-                    if (
-                        transport_used
-                        >= transport_budget
-                    ):
+                    if transport_used >= transport_budget:
                         raise RuntimeError(
                             "Judge transport failure "
                             "persisted after "
@@ -759,20 +391,8 @@ class JudgeClient:
                             f"detail={exc}"
                         ) from exc
 
-                    delay = min(
-                        transport_max,
-                        transport_base
-                        * (
-                            2
-                            ** transport_used
-                        ),
-                    )
-
-                    delay += random.uniform(
-                        0.0,
-                        jitter,
-                    )
-
+                    delay = min(transport_max, transport_base* (2 ** transport_used))
+                    delay += random.uniform(0.0, jitter)
                     transport_used += 1
 
                     print(
@@ -785,61 +405,25 @@ class JudgeClient:
                         f"sleep={delay:.1f}s"
                     )
 
-                    time.sleep(
-                        delay
-                    )
+                    time.sleep(delay)
 
                     continue
 
-                # =====================================
-                # Non-retryable HTTP/client errors
-                # =====================================
 
-                if (
-                    status is not None
-                    and 400 <= status < 500
-                ):
-                    raise RuntimeError(
-                        "Non-retryable judge HTTP "
-                        f"error {status}: {exc}"
-                    ) from exc
+                if status is not None and 400 <= status < 500:
+                    raise RuntimeError(f"Non-retryable judge HTTP error {status}: {exc}") from exc
 
-                if isinstance(
-                    exc,
-                    (
-                        UnicodeEncodeError,
-                        TypeError,
-                    ),
-                ):
+                if isinstance(exc, (UnicodeEncodeError, TypeError)):
                     raise RuntimeError(
                         "Non-retryable local judge "
                         f"error: {exc}"
                     ) from exc
 
-                # =====================================
-                # Model returned malformed JSON etc.
-                # =====================================
-
                 if generic_used >= retries:
-                    raise RuntimeError(
-                        "Judge call failed after "
-                        "semantic/JSON retries: "
-                        f"{error_name}: {exc}"
-                    ) from exc
+                    raise RuntimeError(f"Judge call failed after semantic/JSON retries: {error_name}: {exc}") from exc
 
                 generic_used += 1
-
-                delay = min(
-                    2.0,
-                    0.25
-                    * (
-                        2
-                        ** (
-                            generic_used - 1
-                        )
-                    ),
-                )
-
+                delay = min(2.0, 0.25 * (2 ** (generic_used - 1)))
                 print(
                     "[json-retry] "
                     f"error={error_name}; "
@@ -848,23 +432,12 @@ class JudgeClient:
                     f"sleep={delay:.2f}s"
                 )
 
-                time.sleep(
-                    delay
-                )
-
-    # =====================================================
-    # JSON parser
-    # =====================================================
+                time.sleep(delay)
 
     @staticmethod
-    def _parse_json(
-        text: str,
-    ) -> dict:
+    def _parse_json(text: str) -> dict:
         stripped = text.strip()
-
-        if stripped.startswith(
-            "```"
-        ):
+        if stripped.startswith("```"):
             stripped = re.sub(
                 (
                     r"^```(?:json)?\s*"
@@ -872,49 +445,26 @@ class JudgeClient:
                 ),
                 "",
                 stripped,
-                flags=(
-                    re.IGNORECASE
-                    | re.DOTALL
-                ),
+                flags=(re.IGNORECASE | re.DOTALL),
             )
 
         try:
-            value = json.loads(
-                stripped
-            )
-
-            if isinstance(
-                value,
-                dict,
-            ):
+            value = json.loads(stripped)
+            if isinstance(value, dict):
                 return value
 
         except json.JSONDecodeError:
             pass
 
-        match = re.search(
-            r"\{.*\}",
-            stripped,
-            flags=re.DOTALL,
-        )
+        match = re.search(r"\{.*\}", stripped, flags=re.DOTALL)
 
         if not match:
-            raise ValueError(
-                "Model did not return JSON: "
-                f"{text[:300]!r}"
-            )
+            raise ValueError(f"Model did not return JSON: {text[:300]!r}")
 
-        value = json.loads(
-            match.group(0)
-        )
+        value = json.loads(match.group(0))
 
-        if not isinstance(
-            value,
-            dict,
-        ):
-            raise ValueError(
-                "Expected a JSON object"
-            )
+        if not isinstance(value, dict):
+            raise ValueError("Expected a JSON object")
 
         return value
 
@@ -951,26 +501,14 @@ def judge_candidates(
     """
 
     if batch_size <= 0:
-        raise ValueError(
-            "batch_size must be positive"
-        )
+        raise ValueError("batch_size must be positive")
 
     if schema_retries < 0:
-        raise ValueError(
-            "schema_retries must be >= 0"
-        )
+        raise ValueError("schema_retries must be >= 0")
 
-    config = RefillWindowConfig(
-        max_in_flight=max_in_flight,
-        refill_size=refill_size,
-    )
-
+    config = RefillWindowConfig(max_in_flight=max_in_flight, refill_size=refill_size,)
     config.validate()
-
-    grades_by_key: dict[
-        str,
-        list[int | None],
-    ] = {
+    grades_by_key: dict[str, list[int | None]] = {
         candidate.job_key: [
             None
             for _ in JUDGE_VIEWS
@@ -978,50 +516,24 @@ def judge_candidates(
         for candidate in candidates
     }
 
-    def run_batch(
-        view_index: int,
-        view: str,
-        batch_index: int,
-        batch: list[PooledCandidate],
-    ):
+    def run_batch(view_index: int, view: str, batch_index: int, batch: list[PooledCandidate]):
         blocks: list[str] = []
+        id_to_key: dict[str,str] = {}
 
-        id_to_key: dict[
-            str,
-            str,
-        ] = {}
-
-        for index, candidate in enumerate(
-            batch,
-            start=1,
-        ):
+        for index, candidate in enumerate(batch, start=1):
             cid = f"C{index}"
 
-            id_to_key[cid] = (
-                candidate.job_key
-            )
-
-            job = corpus_by_key[
-                candidate.job_key
-            ]
+            id_to_key[cid] = candidate.job_key
+            job = corpus_by_key[candidate.job_key]
 
             blocks.append(
                 f"{cid}\n"
                 f"{job.raw_evidence[:evidence_chars]}"
             )
 
-        expected_ids = tuple(
-            id_to_key
-        )
-
-        expected_set = set(
-            expected_ids
-        )
-
-        expected_text = ", ".join(
-            expected_ids
-        )
-
+        expected_ids = tuple(id_to_key)
+        expected_set = set(expected_ids)
+        expected_text = ", ".join(expected_ids)
         example_grades = ", ".join(
             f'"{cid}": 0'
             for cid in expected_ids
@@ -1064,23 +576,12 @@ def judge_candidates(
             )
         )
 
-        validated: (
-            dict[str, int]
-            | None
-        ) = None
+        validated: dict[str, int] | None = None
 
-        last_error: (
-            Exception
-            | None
-        ) = None
+        last_error: Exception | None = None
 
-        for attempt in range(
-            schema_retries + 1
-        ):
-            user_prompt = (
-                base_user_prompt
-            )
-
+        for attempt in range(schema_retries + 1):
+            user_prompt = base_user_prompt
             if attempt:
                 user_prompt += (
                     "\n\nIMPORTANT: "
@@ -1094,11 +595,7 @@ def judge_candidates(
                 )
 
             try:
-                payload = client.json_call(
-                    system=system_prompt,
-                    user=user_prompt,
-                    retries=0,
-                )
+                payload = client.json_call(system=system_prompt, user=user_prompt, retries=0)
 
                 if set(payload) != {
                     "grades"
@@ -1110,32 +607,14 @@ def judge_candidates(
                         f"{sorted(payload)}"
                     )
 
-                raw = payload[
-                    "grades"
-                ]
+                raw = payload["grades"]
 
-                if not isinstance(
-                    raw,
-                    dict,
-                ):
-                    raise ValueError(
-                        "'grades' must be "
-                        "a JSON object"
-                    )
+                if not isinstance(raw, dict):
+                    raise ValueError("'grades' must be a JSON object")
 
-                returned_ids = set(
-                    raw
-                )
-
-                missing = sorted(
-                    expected_set
-                    - returned_ids
-                )
-
-                extra = sorted(
-                    returned_ids
-                    - expected_set
-                )
+                returned_ids = set(raw)
+                missing = sorted(expected_set - returned_ids)
+                extra = sorted(returned_ids - expected_set)
 
                 if missing or extra:
                     raise ValueError(
@@ -1144,81 +623,30 @@ def judge_candidates(
                         f"extra={extra}"
                     )
 
-                current: dict[
-                    str,
-                    int,
-                ] = {}
-
+                current: dict[str, int] = {}
                 for cid in expected_ids:
                     value = raw[cid]
 
-                    if isinstance(
-                        value,
-                        bool,
-                    ):
-                        raise ValueError(
-                            "Boolean is not a valid "
-                            "relevance grade for "
-                            f"{cid}"
-                        )
+                    if isinstance(value, bool):
+                        raise ValueError(f"Boolean is not a valid relevance grade for {cid}")
 
                     try:
-                        grade = int(
-                            value
-                        )
+                        grade = int(value)
 
-                    except (
-                        TypeError,
-                        ValueError,
-                    ) as exc:
-                        raise ValueError(
-                            "Non-integer relevance "
-                            f"grade {value!r} "
-                            f"for {cid}"
-                        ) from exc
+                    except (TypeError, ValueError) as exc:
+                        raise ValueError(f"Non-integer relevance grade {value!r} for {cid}") from exc
 
-                    if (
-                        isinstance(
-                            value,
-                            float,
-                        )
-                        and not value.is_integer()
-                    ):
-                        raise ValueError(
-                            "Non-integral relevance "
-                            f"grade {value!r} "
-                            f"for {cid}"
-                        )
+                    if isinstance(value, float) and not value.is_integer():
+                        raise ValueError(f"Non-integral relevance grade {value!r} for {cid}")
 
-                    if (
-                        isinstance(
-                            value,
-                            str,
-                        )
-                        and value.strip()
-                        != str(grade)
-                    ):
-                        raise ValueError(
-                            "Malformed relevance "
-                            f"grade {value!r} "
-                            f"for {cid}"
-                        )
+                    if isinstance(value, str) and value.strip() != str(grade):
+                        raise ValueError(f"Malformed relevance grade {value!r} for {cid}")
 
-                    if grade not in (
-                        0,
-                        1,
-                        2,
-                        3,
-                    ):
-                        raise ValueError(
-                            "Invalid relevance grade "
-                            f"{grade} for {cid}"
-                        )
+                    if grade not in (0, 1, 2, 3):
+                        raise ValueError(f"Invalid relevance grade {grade} for {cid}")
 
                     current[cid] = grade
-
                 validated = current
-
                 break
 
             except Exception as exc:
@@ -1236,100 +664,29 @@ def judge_candidates(
                 f"error={last_error}"
             ) from last_error
 
-        return (
-            view_index,
-            id_to_key,
-            validated,
-        )
+        return (view_index, id_to_key, validated)
 
     tasks = []
+    for (view_index, view) in enumerate(JUDGE_VIEWS):
+        for (batch_index, start) in enumerate(range(0, len(candidates), batch_size)):
+            batch = candidates[start: start + batch_size]
 
-    for (
-        view_index,
-        view,
-    ) in enumerate(
-        JUDGE_VIEWS
-    ):
-        for (
-            batch_index,
-            start,
-        ) in enumerate(
-            range(
-                0,
-                len(candidates),
-                batch_size,
-            )
-        ):
-            batch = candidates[
-                start:
-                start + batch_size
-            ]
+            tasks.append(partial(run_batch, view_index, view, batch_index, batch))
 
-            tasks.append(
-                partial(
-                    run_batch,
-                    view_index,
-                    view,
-                    batch_index,
-                    batch,
-                )
-            )
+    batch_results = run_refill_window(tasks, config=config, label=(f"judge:{topic.topic_id}"))
+    for (view_index, id_to_key, validated) in batch_results:
+        for (cid, key) in id_to_key.items():
+            grades_by_key[key][view_index] = validated[cid]
 
-    batch_results = (
-        run_refill_window(
-            tasks,
-            config=config,
-            label=(
-                f"judge:"
-                f"{topic.topic_id}"
-            ),
-        )
-    )
-
-    # Commit only AFTER all request tasks
-    # completed successfully.
-    for (
-        view_index,
-        id_to_key,
-        validated,
-    ) in batch_results:
-
-        for (
-            cid,
-            key,
-        ) in id_to_key.items():
-
-            grades_by_key[
-                key
-            ][
-                view_index
-            ] = validated[
-                cid
-            ]
-
-    output: list[
-        RelevanceJudgment
-    ] = []
-
+    output: list[RelevanceJudgment] = []
     by_candidate = {
         candidate.job_key: candidate
         for candidate in candidates
     }
 
-    for (
-        key,
-        raw_grades,
-    ) in grades_by_key.items():
-
-        if any(
-            grade is None
-            for grade in raw_grades
-        ):
-            raise RuntimeError(
-                "Missing judge view grade "
-                f"for {key}: "
-                f"{raw_grades}"
-            )
+    for (key, raw_grades) in grades_by_key.items():
+        if any(grade is None for grade in raw_grades):
+            raise RuntimeError(f"Missing judge view grade for {key}: {raw_grades}")
 
         grades = [
             int(grade)
@@ -1337,53 +694,20 @@ def judge_candidates(
             if grade is not None
         ]
 
-        if (
-            len(grades)
-            != len(JUDGE_VIEWS)
-        ):
-            raise RuntimeError(
-                "Expected "
-                f"{len(JUDGE_VIEWS)} "
-                "judge grades for "
-                f"{key}; got {grades}"
-            )
+        if len(grades)  != len(JUDGE_VIEWS):
+            raise RuntimeError(f"Expected {len(JUDGE_VIEWS)} judge grades for {key}; got {grades}")
 
-        final_grade = int(
-            median(grades)
-        )
-
-        uncertain = (
-            max(grades)
-            - min(grades)
-            >= 2
-        )
-
-        candidate = (
-            by_candidate[key]
-        )
-
+        final_grade = int(median(grades))
+        uncertain = (max(grades) - min(grades) >= 2)
+        candidate = by_candidate[key]
         output.append(
             RelevanceJudgment(
-                topic_id=(
-                    topic.topic_id
-                ),
-                source=(
-                    candidate.source
-                ),
-                source_job_id=(
-                    candidate.source_job_id
-                ),
-                grade=(
-                    final_grade
-                ),
-                judge_grades=(
-                    grades[0],
-                    grades[1],
-                    grades[2],
-                ),
-                uncertain=(
-                    uncertain
-                ),
+                topic_id=topic.topic_id,
+                source=candidate.source,
+                source_job_id=candidate.source_job_id,
+                grade=final_grade,
+                judge_grades=(grades[0], grades[1], grades[2]),
+                uncertain=uncertain,
             )
         )
 
@@ -1409,12 +733,7 @@ def build_and_judge_controls(
             exact = [
                 job
                 for job in positives
-                if (
-                    normalize_key(
-                        job.job_title
-                    )
-                    == topic.title_key
-                )
+                if (normalize_key(job.job_title)== topic.title_key)
             ]
             positive = (exact or positives)[0] if positives else None
         else:

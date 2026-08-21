@@ -55,7 +55,6 @@ class CareerJobIndexer:
 
     def index_records(self, records: Iterable[RawJobRecord],) -> int:
         total_chunks = 0
-
         for record in records:
             total_chunks += self.index_record(record)
 
@@ -63,7 +62,6 @@ class CareerJobIndexer:
 
     def index_joblink_jobs(self) -> int:
         source = JobLinkJobSource()
-
         return self.index_records(source.iter_records(active_only=False))
 
     @staticmethod

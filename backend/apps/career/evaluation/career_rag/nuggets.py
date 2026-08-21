@@ -68,20 +68,11 @@ def _extract_candidates(
     )
 
     batches = [
-        strong_jobs[
-            start:
-            start + batch_jobs
-        ]
-        for start in range(
-            0,
-            len(strong_jobs),
-            batch_jobs,
-        )
+        strong_jobs[start: start + batch_jobs]
+        for start in range(0, len(strong_jobs), batch_jobs)
     ]
 
-    def extract_batch(
-        batch: list[CorpusJob],
-    ) -> list[dict]:
+    def extract_batch(batch: list[CorpusJob]) -> list[dict]:
         blocks = [
             (
                 f"JOB_KEY={job.job_key}\n"
@@ -117,42 +108,24 @@ def _extract_candidates(
             ),
         )
 
-        raw = data.get(
-            "nuggets",
-            [],
-        )
+        raw = data.get("nuggets", [])
 
-        if not isinstance(
-            raw,
-            list,
-        ):
-            raise ValueError(
-                "Nugget extractor returned "
-                "non-list nuggets"
-            )
+        if not isinstance(raw, list,):
+            raise ValueError("Nugget extractor returned non-list nuggets")
 
         return [
             item
             for item in raw
-            if isinstance(
-                item,
-                dict,
-            )
+            if isinstance(item, dict)
         ]
 
     groups = run_refill_window(
         [
-            partial(
-                extract_batch,
-                batch,
-            )
+            partial(extract_batch, batch)
             for batch in batches
         ],
         config=config,
-        label=(
-            f"nugget-extract:"
-            f"{topic.topic_id}"
-        ),
+        label=f"nugget-extract:{topic.topic_id}",
     )
 
     items = [
@@ -161,9 +134,7 @@ def _extract_candidates(
         for item in group
     ]
 
-    return _dedup_candidates(
-        items
-    )
+    return _dedup_candidates(items)
 
 def _verify_support(
     client: JudgeClient,
@@ -207,10 +178,7 @@ def build_nuggets_for_topic(
         {
             qrel.job_key
             for qrel in qrels
-            if (
-                not qrel.uncertain
-                and qrel.grade >= 2
-            )
+            if not qrel.uncertain and qrel.grade >= 2
         }
     )
 
@@ -220,19 +188,10 @@ def build_nuggets_for_topic(
         if key in corpus_by_key
     ]
 
-    if (
-        len(strong_jobs)
-        < min_support_jobs
-    ):
+    if len(strong_jobs)  < min_support_jobs:
         return []
 
-    extracted = _extract_candidates(
-        client,
-        topic,
-        strong_jobs,
-        max_in_flight=max_in_flight,
-        refill_size=refill_size,
-    )
+    extracted = _extract_candidates(client, topic, strong_jobs, max_in_flight=max_in_flight, refill_size=refill_size)
 
     by_key = {
         job.job_key: job
@@ -245,10 +204,7 @@ def build_nuggets_for_topic(
         claimed_keys = [
             key
             for key
-            in item.get(
-                "support_job_keys",
-                [],
-            )
+            in item.get("support_job_keys", [])
             if key in by_key
         ]
 
@@ -257,89 +213,35 @@ def build_nuggets_for_topic(
             for key in claimed_keys
         ]
 
-        if (
-            len(candidate_jobs)
-            < min_support_jobs
-        ):
+        if len(candidate_jobs) < min_support_jobs:
             continue
 
-        verification_inputs.append(
-            (
-                item,
-                candidate_jobs,
-            )
-        )
+        verification_inputs.append((item, candidate_jobs))
 
-    config = RefillWindowConfig(
-        max_in_flight=max_in_flight,
-        refill_size=refill_size,
-    )
+    config = RefillWindowConfig(max_in_flight=max_in_flight, refill_size=refill_size,)
+    def verify_item(item: dict, candidate_jobs: list[CorpusJob]):
+        verified_keys = sorted(set(_verify_support(client, item["text"], candidate_jobs)))
 
-    def verify_item(
-        item: dict,
-        candidate_jobs: list[CorpusJob],
-    ):
-        verified_keys = sorted(
-            set(
-                _verify_support(
-                    client,
-                    item["text"],
-                    candidate_jobs,
-                )
-            )
-        )
-
-        return (
-            item,
-            verified_keys,
-        )
+        return (item, verified_keys,)
 
     verified_results = (
         run_refill_window(
             [
-                partial(
-                    verify_item,
-                    item,
-                    candidate_jobs,
-                )
-                for (
-                    item,
-                    candidate_jobs,
-                )
-                in verification_inputs
+                partial(verify_item, item, candidate_jobs,)
+                for (item, candidate_jobs) in verification_inputs
             ],
             config=config,
-            label=(
-                f"nugget-verify:"
-                f"{topic.topic_id}"
-            ),
+            label=f"nugget-verify:{topic.topic_id}",
         )
     )
 
-    nuggets: list[
-        Nugget
-    ] = []
-
-    for (
-        item,
-        verified_keys,
-    ) in verified_results:
-
-        if (
-            len(verified_keys)
-            < min_support_jobs
-        ):
+    nuggets: list[Nugget] = []
+    for (item, verified_keys) in verified_results:
+        if len(verified_keys) < min_support_jobs:
             continue
 
-        prevalence = (
-            len(verified_keys)
-            / len(strong_jobs)
-        )
-
-        normalized = _normalize(
-            item["text"]
-        )
-
+        prevalence = len(verified_keys) / len(strong_jobs)
+        normalized = _normalize(item["text"])
         nugget_id = (
             "nug-"
             + hashlib.sha256(
@@ -354,20 +256,12 @@ def build_nuggets_for_topic(
 
         nuggets.append(
             Nugget(
-                topic_id=(
-                    topic.topic_id
-                ),
+                topic_id=topic.topic_id,
                 nugget_id=nugget_id,
                 text=item["text"],
-                normalized_text=(
-                    normalized
-                ),
-                support_job_keys=tuple(
-                    verified_keys
-                ),
-                support_count=len(
-                    verified_keys
-                ),
+                normalized_text=normalized,
+                support_job_keys=tuple(verified_keys),
+                support_count=len(verified_keys),
                 prevalence=prevalence,
                 weight=prevalence,
                 importance=(

@@ -9,16 +9,9 @@ import unicodedata
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Iterable
-
 from apps.career.normalization import normalize_key
-
 from .semantics import topic_intent_label
-
-from .schema import (
-    CareerQuery,
-    CareerTopic,
-    CorpusJob,
-)
+from .schema import CareerQuery, CareerTopic, CorpusJob
 
 
 DEFAULT_RANDOM_SEED = 20260819
@@ -30,23 +23,10 @@ DEFAULT_MIN_FAMILY_JOBS = 100
 # Preferred specific-title support.
 DEFAULT_MIN_SPECIFIC_TITLE_JOBS = 8
 
-# HARD floor.
-#
-# CareerRAGBench audit requires at least 5 strong relevant
-# jobs/topic, therefore a specific role with <5 corpus jobs
-# cannot robustly satisfy the benchmark protocol.
 HARD_MIN_SPECIFIC_TITLE_JOBS = 8
-
 SPECIFICITY_WILSON_Z = 1.96
+TOPIC_SELECTION_POLICY_VERSION = "all-supported-nongeneric-wilson-specificity-v2"
 
-TOPIC_SELECTION_POLICY_VERSION = (
-    "all-supported-nongeneric-wilson-specificity-v2"
-)
-
-
-# Generic/catch-all taxonomy buckets are not meaningful
-# career intents and must not occupy one of the benchmark's
-# 16 career-family slots.
 GENERIC_CATEGORY_TOKENS = {
     "khac",
     "other",
@@ -95,18 +75,13 @@ GENERIC_PERSONALIZED = (
 
 
 def _ascii(text: str) -> str:
-    normalized = unicodedata.normalize(
-        "NFKD",
-        text,
-    )
-
+    normalized = unicodedata.normalize("NFKD", text)
     ascii_text = "".join(
         char
         for char in normalized
         if not unicodedata.combining(char)
     )
 
-    # Vietnamese Đ/đ do not decompose under NFKD.
     return (
         ascii_text
         .replace("Đ", "D")
@@ -114,44 +89,22 @@ def _ascii(text: str) -> str:
     )
 
 def _display_label(value: str) -> str:
-    text = re.sub(
-        r"[_\-]+",
-        " ",
-        value,
-    ).strip()
-
-    return re.sub(
-        r"\s+",
-        " ",
-        text,
-    )
+    text = re.sub(r"[_\-]+", " ", value).strip()
+    return re.sub(r"\s+", " ", text)
 
 
-def _is_generic_category(
-    value: str,
-) -> bool:
-    ascii_value = _ascii(
-        value
-    ).casefold()
-
+def _is_generic_category(value: str) -> bool:
+    ascii_value = _ascii(value).casefold()
     tokens = {
         token
-        for token in re.split(
-            r"[_\-\s]+",
-            ascii_value,
-        )
+        for token in re.split(r"[_\-\s]+", ascii_value)
         if token
     }
 
-    return bool(
-        tokens
-        & GENERIC_CATEGORY_TOKENS
-    )
+    return bool(tokens & GENERIC_CATEGORY_TOKENS)
 
 
-def _parse_skill_list(
-    value: str | None,
-) -> list[str]:
+def _parse_skill_list(value: str | None) -> list[str]:
     if not value:
         return []
 
@@ -162,33 +115,22 @@ def _parse_skill_list(
 
     try:
         parsed = ast.literal_eval(text)
-    except (
-        ValueError,
-        SyntaxError,
-    ):
+    except (ValueError, SyntaxError):
         parsed = None
 
-    if isinstance(
-        parsed,
-        (list, tuple, set),
-    ):
+    if isinstance(parsed, (list, tuple, set)):
         values = [
             str(item).strip()
             for item in parsed
         ]
 
     elif parsed is not None:
-        values = [
-            str(parsed).strip()
-        ]
+        values = [str(parsed).strip()]
 
     else:
         values = [
             part.strip()
-            for part in re.split(
-                r"[,;|]",
-                text,
-            )
+            for part in re.split(r"[,;|]", text)
         ]
 
     return [
@@ -198,156 +140,65 @@ def _parse_skill_list(
     ]
 
 
-def load_skill_hints_from_csv(
-    csv_path: Path,
-) -> tuple[
-    dict[str, Counter[str]],
-    dict[tuple[str, str], Counter[str]],
-]:
-    by_category: dict[
-        str,
-        Counter[str],
-    ] = defaultdict(Counter)
+def load_skill_hints_from_csv(csv_path: Path) -> tuple[dict[str, Counter[str]], dict[tuple[str, str], Counter[str]]]:
+    by_category: dict[str, Counter[str]] = defaultdict(Counter)
+    by_category_title: dict[tuple[str, str], Counter[str]] = defaultdict(Counter)
 
-    by_category_title: dict[
-        tuple[str, str],
-        Counter[str],
-    ] = defaultdict(Counter)
-
-    with csv_path.open(
-        "r",
-        encoding="utf-8-sig",
-        newline="",
-    ) as handle:
-        reader = csv.DictReader(
-            handle
-        )
+    with csv_path.open("r", encoding="utf-8-sig", newline="",) as handle:
+        reader = csv.DictReader(handle)
 
         for row in reader:
-            category = normalize_key(
-                (
-                    row.get("category")
-                    or ""
-                ).strip()
-            )
-
-            title = normalize_key(
-                (
-                    row.get("job_title")
-                    or ""
-                ).strip()
-            )
-
+            category = normalize_key((row.get("category") or "").strip())
+            title = normalize_key((row.get("job_title") or "").strip())
             if not category:
                 continue
 
-            skills = _parse_skill_list(
-                row.get(
-                    "technical_skills"
-                )
-            )
-
+            skills = _parse_skill_list(row.get("technical_skills"))
             for skill in skills:
-                normalized_skill = (
-                    normalize_key(skill)
-                )
+                normalized_skill = normalize_key(skill)
 
                 if not normalized_skill:
                     continue
 
-                by_category[
-                    category
-                ][skill] += 1
-
+                by_category[category][skill] += 1
                 if title:
-                    by_category_title[
-                        (
-                            category,
-                            title,
-                        )
-                    ][skill] += 1
+                    by_category_title[(category, title)][skill] += 1
 
-    return (
-        dict(by_category),
-        dict(by_category_title),
-    )
+    return (dict(by_category), dict(by_category_title))
 
 
-def _count_topic_support(
-    jobs: Iterable[CorpusJob],
-) -> tuple[
+def _count_topic_support(jobs: Iterable[CorpusJob]) -> tuple[
     Counter[str],
     dict[str, Counter[str]],
-    dict[
-        tuple[str, str],
-        Counter[str],
-    ],
+    dict[tuple[str, str], Counter[str]],
 ]:
-    category_jobs: Counter[str] = (
-        Counter()
-    )
-
-    title_jobs: dict[
-        str,
-        Counter[str],
-    ] = defaultdict(Counter)
-
-    title_display: dict[
-        tuple[str, str],
-        Counter[str],
-    ] = defaultdict(Counter)
-
+    category_jobs: Counter[str] = Counter()
+    title_jobs: dict[str, Counter[str]] = defaultdict(Counter)
+    title_display: dict[tuple[str, str], Counter[str]] = defaultdict(Counter)
     seen: set[str] = set()
 
     for job in jobs:
         if job.job_key in seen:
             continue
 
-        seen.add(
-            job.job_key
-        )
-
-        category = normalize_key(
-            job.category_key
-        )
-
-        title_key = normalize_key(
-            job.job_title
-        )
+        seen.add(job.job_key)
+        category = normalize_key(job.category_key)
+        title_key = normalize_key(job.job_title)
 
         if not category:
             continue
 
-        category_jobs[
-            category
-        ] += 1
+        category_jobs[category] += 1
 
         if title_key:
-            title_jobs[
-                category
-            ][title_key] += 1
+            title_jobs[category][title_key] += 1
+            title_display[(category, title_key)][job.job_title.strip()] += 1
 
-            title_display[
-                (
-                    category,
-                    title_key,
-                )
-            ][
-                job.job_title.strip()
-            ] += 1
-
-    return (
-        category_jobs,
-        title_jobs,
-        title_display,
-    )
+    return (category_jobs, title_jobs, title_display)
 
 
 def _global_title_support(
-    title_jobs: dict[
-        str,
-        Counter[str],
-    ],
+    title_jobs: dict[str, Counter[str]],
 ) -> Counter[str]:
     totals: Counter[str] = Counter()
 
@@ -357,72 +208,32 @@ def _global_title_support(
     return totals
 
 
-def _wilson_lower_bound(
-    successes: int,
-    total: int,
-    *,
-    z: float = SPECIFICITY_WILSON_Z,
-) -> float:
+def _wilson_lower_bound(successes: int, total: int, *, z: float = SPECIFICITY_WILSON_Z) -> float:
     if total <= 0:
         return 0.0
 
     p = successes / total
     z2 = z * z
 
-    denominator = (
-        1.0
-        + z2 / total
-    )
+    denominator = 1.0 + z2 / total
+    center = p + z2 / (2.0 * total)
+    margin = z * math.sqrt(p * (1.0 - p) / total + z2 / (4.0 * total * total))
 
-    center = (
-        p
-        + z2 / (2.0 * total)
-    )
-
-    margin = z * math.sqrt(
-        p * (1.0 - p) / total
-        + z2 / (
-            4.0
-            * total
-            * total
-        )
-    )
-
-    return (
-        center - margin
-    ) / denominator
+    return (center - margin) / denominator
 
 
-def _specific_title_score(
-    *,
-    local_support: int,
-    global_support: int,
-) -> float:
-    return (
-        math.log1p(local_support)
-        * _wilson_lower_bound(
-            local_support,
-            global_support,
-        )
-    )
-
+def _specific_title_score(*, local_support: int, global_support: int) -> float:
+    return math.log1p(local_support) * _wilson_lower_bound(local_support, global_support)
 
 def _select_categories(
     category_jobs: Counter[str],
-    title_jobs: dict[
-        str,
-        Counter[str],
-    ],
+    title_jobs: dict[str, Counter[str]],
     *,
     family_count: int,
     min_family_jobs: int,
     preferred_specific_support: int,
     hard_min_specific_support: int,
-) -> tuple[
-    list[str],
-    int,
-    list[str],
-]:
+) -> tuple[list[str], int, list[str]]:
     """
     Select every meaningful family satisfying
     frozen-corpus support constraints.
@@ -432,23 +243,11 @@ def _select_categories(
     TEST metrics.
     """
 
-    # Compatibility only.
-    # V2 intentionally keeps ALL eligible
-    # non-generic families.
     del family_count
-
-    effective_specific_support = max(
-        preferred_specific_support,
-        hard_min_specific_support,
-    )
+    effective_specific_support = max(preferred_specific_support, hard_min_specific_support)
 
     best_specific_support = {
-        category: max(
-            title_jobs[
-                category
-            ].values(),
-            default=0,
-        )
+        category: max(title_jobs[category].values(), default=0)
         for category
         in category_jobs
     }
@@ -457,9 +256,7 @@ def _select_categories(
         category
         for category
         in category_jobs
-        if _is_generic_category(
-            category
-        )
+        if _is_generic_category(category)
     )
 
     selected = [
@@ -467,127 +264,58 @@ def _select_categories(
         for category
         in category_jobs
         if (
-            not _is_generic_category(
-                category
-            )
-            and category_jobs[
-                category
-            ] >= min_family_jobs
-            and best_specific_support[
-                category
-            ] >= effective_specific_support
+            not _is_generic_category(category)
+            and category_jobs[category] >= min_family_jobs
+            and best_specific_support[category] >= effective_specific_support
         )
     ]
 
     selected.sort(
         key=lambda category: (
-            -category_jobs[
-                category
-            ],
-            -best_specific_support[
-                category
-            ],
+            -category_jobs[category],
+            -best_specific_support[category],
             category,
         )
     )
 
     if not selected:
-        raise RuntimeError(
-            "No career family satisfies "
-            "the frozen topic eligibility policy."
-        )
+        raise RuntimeError("No career family satisfies the frozen topic eligibility policy.")
 
-    return (
-        selected,
-        effective_specific_support,
-        generic_excluded,
-    )
+    return (selected, effective_specific_support, generic_excluded)
 
 def discover_topics(
     jobs: Iterable[CorpusJob],
     *,
-    family_count: int = (
-        DEFAULT_FAMILY_COUNT
-    ),
-    min_family_jobs: int = (
-        DEFAULT_MIN_FAMILY_JOBS
-    ),
-    min_specific_title_jobs: int = (
-        DEFAULT_MIN_SPECIFIC_TITLE_JOBS
-    ),
-    random_seed: int = (
-        DEFAULT_RANDOM_SEED
-    ),
-    category_skill_hints: (
-        dict[str, Counter[str]]
-        | None
-    ) = None,
-    title_skill_hints: (
-        dict[
-            tuple[str, str],
-            Counter[str],
-        ]
-        | None
-    ) = None,
+    family_count: int = DEFAULT_FAMILY_COUNT,
+    min_family_jobs: int = DEFAULT_MIN_FAMILY_JOBS,
+    min_specific_title_jobs: int = DEFAULT_MIN_SPECIFIC_TITLE_JOBS,
+    random_seed: int = DEFAULT_RANDOM_SEED,
+    category_skill_hints: dict[str, Counter[str]] | None = None,
+    title_skill_hints: dict[tuple[str, str], Counter[str]] | None = None,
 ) -> tuple[
     list[CareerTopic],
     list[CareerQuery],
     list[str],
     list[str],
 ]:
-    category_skill_hints = (
-        category_skill_hints
-        or {}
-    )
-
-    title_skill_hints = (
-        title_skill_hints
-        or {}
-    )
-
+    category_skill_hints = category_skill_hints or {}
+    title_skill_hints = title_skill_hints or {}
     jobs = list(jobs)
 
-    (
-        category_jobs,
-        title_jobs,
-        title_display,
-    ) = _count_topic_support(
-        jobs
-    )
-
-    global_title_jobs = (
-        _global_title_support(
-            title_jobs
-        )
-    )
-
-    (
-        selected_categories,
-        effective_specific_support,
-        generic_excluded,
-    ) = _select_categories(
+    (category_jobs, title_jobs, title_display) = _count_topic_support(jobs)
+    global_title_jobs = (_global_title_support(title_jobs))
+    (selected_categories, effective_specific_support, generic_excluded) = _select_categories(
         category_jobs,
         title_jobs,
         family_count=family_count,
         min_family_jobs=min_family_jobs,
-        preferred_specific_support=(
-            min_specific_title_jobs
-        ),
-        hard_min_specific_support=(
-            HARD_MIN_SPECIFIC_TITLE_JOBS
-        ),
+        preferred_specific_support=min_specific_title_jobs,
+        hard_min_specific_support=HARD_MIN_SPECIFIC_TITLE_JOBS,
     )
 
-    # Freeze the actual number of meaningful families
-    # discovered from the frozen corpus.
-    family_count = len(
-        selected_categories
-    )
-
+    family_count = len(selected_categories)
     broad_support_floor = min(
-        category_jobs[
-            category
-        ]
+        category_jobs[category]
         for category
         in selected_categories
     )
@@ -608,10 +336,7 @@ def discover_topics(
         f"{len(generic_excluded)}."
     )
 
-    if (
-        broad_support_floor
-        < min_family_jobs
-    ):
+    if broad_support_floor < min_family_jobs:
         print(
             "Topic selection note: "
             "preferred broad-family support "
@@ -622,36 +347,13 @@ def discover_topics(
             f"{broad_support_floor}."
         )
 
-    shuffled = list(
-        selected_categories
-    )
+    shuffled = list(selected_categories)
+    random.Random(random_seed).shuffle(shuffled)
+    dev_categories = set(shuffled[:family_count // 2])
+    test_categories = set(shuffled[family_count // 2:])
 
-    random.Random(
-        random_seed
-    ).shuffle(
-        shuffled
-    )
-
-    dev_categories = set(
-        shuffled[
-            :family_count // 2
-        ]
-    )
-
-    test_categories = set(
-        shuffled[
-            family_count // 2:
-        ]
-    )
-
-    if (
-        dev_categories
-        & test_categories
-    ):
-        raise RuntimeError(
-            "Family-disjoint DEV/TEST "
-            "split invariant failed."
-        )
+    if dev_categories & test_categories:
+        raise RuntimeError("Family-disjoint DEV/TEST split invariant failed.")
 
     split_by_family = {
         category: "dev"
@@ -667,97 +369,50 @@ def discover_topics(
         }
     )
 
-    topics: list[
-        CareerTopic
-    ] = []
+    topics: list[CareerTopic] = []
+    queries: list[CareerQuery] = []
+    family_id_by_category: dict[str, str] = {}
 
-    queries: list[
-        CareerQuery
-    ] = []
-
-    family_id_by_category: dict[
-        str,
-        str,
-    ] = {}
-
-    for (
-        family_index,
-        category,
-    ) in enumerate(
-        selected_categories,
-        start=1,
-    ):
-        split = split_by_family[
-            category
-        ]
+    for (family_index, category) in enumerate(selected_categories, start=1):
+        split = split_by_family[category]
 
         family_id = (
             f"family-{family_index:02d}-"
             f"{category}"
         )
 
-        family_id_by_category[
-            category
-        ] = family_id
-
-        broad_label = (
-            _display_label(
-                category
-            )
-        )
-
+        family_id_by_category[category] = family_id
+        broad_label = _display_label(category)
         broad_skills = tuple(
             skill
             for skill, _
-            in category_skill_hints.get(
-                category,
-                Counter(),
-            ).most_common(2)
+            in category_skill_hints.get(category, Counter()).most_common(2)
         )
 
         topics.append(
             CareerTopic(
-                topic_id=(
-                    f"{family_id}-broad"
-                ),
+                topic_id=f"{family_id}-broad",
                 family_id=family_id,
                 scope="broad",
                 label=broad_label,
                 category_key=category,
-                known_skills=(
-                    broad_skills
-                ),
+                known_skills=broad_skills,
                 split=split,
             )
         )
 
         specific_candidates = [
-            (
-                title_key,
-                count,
-            )
-            for (
-                title_key,
-                count,
-            )
-            in title_jobs[
-                category
-            ].items()
-            if (
-                count
-                >= effective_specific_support
-            )
+            (title_key, count)
+            for (title_key, count)
+            in title_jobs[category].items()
+            if count >= effective_specific_support
         ]
 
         specific_candidates.sort(
             key=lambda item: (
                 -_specific_title_score(
                     local_support=item[1],
-                    global_support=(
-                        global_title_jobs[
-                            item[0]
-                        ]
-                    ),
+                    global_support=global_title_jobs[item[0]],
                 ),
                 -item[1],
                 item[0],
@@ -773,78 +428,41 @@ def discover_topics(
                 f"{effective_specific_support}."
             )
 
-        title_key = (
-            specific_candidates[
-                0
-            ][0]
-        )
-
-        display_counter = (
-            title_display[
-                (
-                    category,
-                    title_key,
-                )
-            ]
-        )
-
+        title_key = specific_candidates[0][0]
+        display_counter = title_display[(category, title_key)]
         specific_label = (
-            display_counter
-            .most_common(1)[0][0]
+            display_counter.most_common(1)[0][0]
             if display_counter
-            else _display_label(
-                title_key
-            )
+            else _display_label(title_key)
         )
 
         specific_skills = tuple(
             skill
             for skill, _
-            in title_skill_hints.get(
-                (
-                    category,
-                    title_key,
-                ),
-                Counter(),
-            ).most_common(2)
+            in title_skill_hints.get((category, title_key), Counter()).most_common(2)
         )
 
         if not specific_skills:
-            specific_skills = (
-                broad_skills
-            )
+            specific_skills = broad_skills
 
         topics.append(
             CareerTopic(
-                topic_id=(
-                    f"{family_id}-specific"
-                ),
+                topic_id=f"{family_id}-specific",
                 family_id=family_id,
                 scope="specific",
                 label=specific_label,
                 category_key=category,
                 title_key=title_key,
-                known_skills=(
-                    specific_skills
-                ),
+                known_skills=specific_skills,
                 split=split,
             )
         )
 
     for topic in topics:
-        queries.extend(
-            generate_query_variants(
-                topic,
-                random_seed=(
-                    random_seed
-                ),
-            )
-        )
+        queries.extend(generate_query_variants(topic, random_seed=random_seed))
 
     dev_family_ids = [
-        family_id_by_category[
-            category
-        ]
+        family_id_by_category[category]
         for category
         in selected_categories
         if category
@@ -852,66 +470,26 @@ def discover_topics(
     ]
 
     test_family_ids = [
-        family_id_by_category[
-            category
-        ]
+        family_id_by_category[category]
         for category
         in selected_categories
         if category
         in test_categories
     ]
 
-    # -------------------------------------------------
-    # Structural invariants.
-    # -------------------------------------------------
+    if len(topics) != family_count * 2:
+        raise RuntimeError(f"Expected {family_count * 2} topics, constructed {len(topics)}.")
 
-    if (
-        len(topics)
-        != family_count * 2
-    ):
-        raise RuntimeError(
-            f"Expected "
-            f"{family_count * 2} topics, "
-            f"constructed "
-            f"{len(topics)}."
-        )
+    if len(queries) != family_count * 2 * 4:
+        raise RuntimeError(f"Expected {family_count * 2 * 4} queries, constructed {len(queries)}.")
 
-    if (
-        len(queries)
-        != family_count * 2 * 4
-    ):
-        raise RuntimeError(
-            f"Expected "
-            f"{family_count * 2 * 4} "
-            "queries, constructed "
-            f"{len(queries)}."
-        )
+    if len(dev_family_ids) + len(test_family_ids) != family_count:
+        raise RuntimeError("Family split count invariant failed.")
 
-    if (
-        len(dev_family_ids)
-        + len(test_family_ids)
-        != family_count
-    ):
-        raise RuntimeError(
-            "Family split count "
-            "invariant failed."
-        )
+    if set(dev_family_ids) & set(test_family_ids):
+        raise RuntimeError("DEV/TEST family overlap detected.")
 
-    if (
-        set(dev_family_ids)
-        & set(test_family_ids)
-    ):
-        raise RuntimeError(
-            "DEV/TEST family overlap "
-            "detected."
-        )
-
-    return (
-        topics,
-        queries,
-        dev_family_ids,
-        test_family_ids,
-    )
+    return (topics, queries, dev_family_ids, test_family_ids)
 
 
 def summarize_topic_selection(
@@ -921,14 +499,7 @@ def summarize_topic_selection(
     jobs = list(jobs)
     topics = list(topics)
 
-    (
-        category_jobs,
-        title_jobs,
-        _,
-    ) = _count_topic_support(
-        jobs
-    )
-
+    (category_jobs, title_jobs, _,) = _count_topic_support(jobs)
     broad_topics = [
         topic
         for topic in topics
@@ -938,125 +509,51 @@ def summarize_topic_selection(
     specific_topics = [
         topic
         for topic in topics
-        if topic.scope
-        == "specific"
+        if topic.scope == "specific"
     ]
 
     broad_support = {
-        topic.family_id: (
-            category_jobs[
-                normalize_key(
-                    topic.category_key
-                )
-            ]
-        )
+        topic.family_id: category_jobs[normalize_key(topic.category_key)]
         for topic
         in broad_topics
     }
 
     specific_support = {
-        topic.family_id: (
-            title_jobs[
-                normalize_key(
-                    topic.category_key
-                )
-            ][
-                normalize_key(
-                    topic.title_key
-                )
-            ]
-        )
+        topic.family_id: title_jobs[normalize_key(topic.category_key)][normalize_key(topic.title_key)]
         for topic
         in specific_topics
         if topic.title_key
     }
 
     return {
-        "policy_version": (
-            TOPIC_SELECTION_POLICY_VERSION
-        ),
-        "family_count": (
-            len(broad_topics)
-        ),
-        "topic_count": (
-            len(topics)
-        ),
-        "preferred_broad_family_jobs": (
-            DEFAULT_MIN_FAMILY_JOBS
-        ),
-        "preferred_specific_title_jobs": (
-            DEFAULT_MIN_SPECIFIC_TITLE_JOBS
-        ),
-        "hard_min_specific_title_jobs": (
-            HARD_MIN_SPECIFIC_TITLE_JOBS
-        ),
-        "observed_broad_family_support_floor": (
-            min(
-                broad_support.values(),
-                default=0,
-            )
-        ),
-        "observed_specific_title_support_floor": (
-            min(
-                specific_support.values(),
-                default=0,
-            )
-        ),
-        "generic_category_tokens": (
-            sorted(
-                GENERIC_CATEGORY_TOKENS
-            )
-        ),
+        "policy_version": TOPIC_SELECTION_POLICY_VERSION,
+        "family_count": len(broad_topics),
+        "topic_count": len(topics),
+        "preferred_broad_family_jobs": DEFAULT_MIN_FAMILY_JOBS,
+        "preferred_specific_title_jobs": DEFAULT_MIN_SPECIFIC_TITLE_JOBS,
+        "hard_min_specific_title_jobs": HARD_MIN_SPECIFIC_TITLE_JOBS,
+        "observed_broad_family_support_floor": min(broad_support.values(), default=0),
+        "observed_specific_title_support_floor": min(specific_support.values(), default=0),
+        "generic_category_tokens": sorted(GENERIC_CATEGORY_TOKENS),
     }
 
 
 def generate_query_variants(
     topic: CareerTopic,
     *,
-    random_seed: int = (
-        DEFAULT_RANDOM_SEED
-    ),
+    random_seed: int = DEFAULT_RANDOM_SEED,
 ) -> list[CareerQuery]:
-    rng = random.Random(
-        f"{random_seed}:"
-        f"{topic.topic_id}"
-    )
-
+    rng = random.Random(f"{random_seed}:{topic.topic_id}")
     label = topic_intent_label(topic)
-
-    known = ", ".join(
-        topic.known_skills
-    )
-
+    known = ", ".join(topic.known_skills)
     texts = [
-        rng.choice(
-            DIRECT_TEMPLATES
-        ).format(
-            label=label
-        ),
-        rng.choice(
-            CONVERSATIONAL_TEMPLATES
-        ).format(
-            label=label
-        ),
-        rng.choice(
-            NOISY_TEMPLATES
-        ).format(
-            label_ascii=_ascii(
-                label
-            )
-        ),
+        rng.choice(DIRECT_TEMPLATES).format(label=label),
+        rng.choice(CONVERSATIONAL_TEMPLATES).format(label=label),
+        rng.choice(NOISY_TEMPLATES).format(label_ascii=_ascii(label)),
         (
-            rng.choice(
-                PERSONALIZED_TEMPLATES
-            ).format(
-                label=label,
-                known=known,
-            )
+            rng.choice(PERSONALIZED_TEMPLATES).format(label=label, known=known,)
             if known
-            else GENERIC_PERSONALIZED.format(
-                label=label
-            )
+            else GENERIC_PERSONALIZED.format(label=label)
         ),
     ]
 
@@ -1069,35 +566,11 @@ def generate_query_variants(
 
     return [
         CareerQuery(
-            query_id=(
-                f"{topic.topic_id}-q"
-                f"{index}"
-            ),
-            topic_id=(
-                topic.topic_id
-            ),
+            query_id=f"{topic.topic_id}-q{index}",
+            topic_id=topic.topic_id,
             variant=variant,
             text=text,
-            known_skills=(
-                topic.known_skills
-                if variant
-                == "personalized"
-                else ()
-            ),
+            known_skills=topic.known_skills if variant == "personalized" else (),
         )
-        for (
-            index,
-            (
-                variant,
-                text,
-            ),
-        )
-        in enumerate(
-            zip(
-                variants,
-                texts,
-                strict=True,
-            ),
-            start=1,
-        )
+        for (index,(variant, text)) in enumerate(zip(variants, texts, strict=True), start=1)
     ]

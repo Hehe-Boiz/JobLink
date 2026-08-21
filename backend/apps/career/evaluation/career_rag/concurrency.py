@@ -15,53 +15,24 @@ from typing import TypeVar, cast
 T = TypeVar("T")
 
 
-DEFAULT_MAX_IN_FLIGHT = int(
-    os.environ.get(
-        "CAREER_RAG_MAX_IN_FLIGHT",
-        "10",
-    )
-)
-
-DEFAULT_REFILL_SIZE = int(
-    os.environ.get(
-        "CAREER_RAG_REFILL_SIZE",
-        "5",
-    )
-)
+DEFAULT_MAX_IN_FLIGHT = int(os.environ.get("CAREER_RAG_MAX_IN_FLIGHT", "10"))
+DEFAULT_REFILL_SIZE = int(os.environ.get("CAREER_RAG_REFILL_SIZE", "5"))
 
 
-@dataclass(
-    frozen=True,
-    slots=True,
-)
+@dataclass(frozen=True, slots=True)
 class RefillWindowConfig:
-    max_in_flight: int = (
-        DEFAULT_MAX_IN_FLIGHT
-    )
-
-    refill_size: int = (
-        DEFAULT_REFILL_SIZE
-    )
+    max_in_flight: int = (DEFAULT_MAX_IN_FLIGHT)
+    refill_size: int = (DEFAULT_REFILL_SIZE)
 
     def validate(self) -> None:
         if self.max_in_flight <= 0:
-            raise ValueError(
-                "max_in_flight must be > 0"
-            )
+            raise ValueError("max_in_flight must be > 0")
 
         if self.refill_size <= 0:
-            raise ValueError(
-                "refill_size must be > 0"
-            )
+            raise ValueError("refill_size must be > 0")
 
-        if (
-            self.refill_size
-            > self.max_in_flight
-        ):
-            raise ValueError(
-                "refill_size cannot exceed "
-                "max_in_flight"
-            )
+        if self.refill_size > self.max_in_flight:
+            raise ValueError("refill_size cannot exceed max_in_flight")
 
 
 def run_refill_window(
@@ -87,68 +58,35 @@ def run_refill_window(
     if not tasks:
         return []
 
-    config = (
-        config
-        or RefillWindowConfig()
-    )
-
+    config = config or RefillWindowConfig()
     config.validate()
-
     total = len(tasks)
-
     unset = object()
-
     results: list[object] = [
         unset
         for _ in tasks
     ]
 
-    pending: dict[
-        Future[T],
-        int,
-    ] = {}
-
+    pending: dict[Future[T], int] = {}
     next_index = 0
     completed = 0
     completed_since_refill = 0
 
-    with ThreadPoolExecutor(
-        max_workers=config.max_in_flight,
-        thread_name_prefix="career-rag",
-    ) as executor:
+    with ThreadPoolExecutor(max_workers=config.max_in_flight, thread_name_prefix="career-rag") as executor:
 
-        def submit(
-            count: int,
-        ) -> int:
+        def submit(count: int) -> int:
             nonlocal next_index
-
             submitted = 0
-
-            while (
-                submitted < count
-                and next_index < total
-            ):
+            while submitted < count and next_index < total:
                 index = next_index
-
-                future = executor.submit(
-                    tasks[index]
-                )
-
-                pending[
-                    future
-                ] = index
-
+                future = executor.submit(tasks[index])
+                pending[future] = index
                 next_index += 1
                 submitted += 1
 
             return submitted
 
-        initial = submit(
-            min(
-                config.max_in_flight,
-                total,
-            )
-        )
+        initial = submit(min(config.max_in_flight, total))
 
         print(
             f"[concurrency] {label}: "
@@ -162,13 +100,7 @@ def run_refill_window(
         try:
             while pending:
 
-                wait(
-                    tuple(pending),
-                    return_when=FIRST_COMPLETED,
-                )
-
-                # Several requests may have completed
-                # between wake-up and this scan.
+                wait(tuple(pending), return_when=FIRST_COMPLETED)
                 done = [
                     future
                     for future
@@ -177,47 +109,24 @@ def run_refill_window(
                 ]
 
                 for future in done:
-                    index = pending.pop(
-                        future
-                    )
+                    index = pending.pop(future)
 
-                    results[index] = (
-                        future.result()
-                    )
+                    results[index] = (future.result())
 
                     completed += 1
                     completed_since_refill += 1
 
                 submitted_now = 0
 
-                while (
-                    next_index < total
-                    and completed_since_refill
-                    >= config.refill_size
-                ):
-                    capacity = (
-                        config.max_in_flight
-                        - len(pending)
-                    )
-
+                while (next_index < total and completed_since_refill >= config.refill_size):
+                    capacity = config.max_in_flight - len(pending)
                     if capacity <= 0:
                         break
 
-                    amount = min(
-                        config.refill_size,
-                        capacity,
-                        total - next_index,
-                    )
-
-                    actual = submit(
-                        amount
-                    )
-
+                    amount = min(config.refill_size, capacity, total - next_index)
+                    actual = submit(amount)
                     submitted_now += actual
-
-                    completed_since_refill -= (
-                        actual
-                    )
+                    completed_since_refill -= (actual)
 
                     if actual <= 0:
                         break
@@ -226,17 +135,8 @@ def run_refill_window(
                 # Normally unreachable, but prevents
                 # a scheduler deadlock if configuration
                 # changes later.
-                if (
-                    not pending
-                    and next_index < total
-                ):
-                    actual = submit(
-                        min(
-                            config.max_in_flight,
-                            total - next_index,
-                        )
-                    )
-
+                if not pending and next_index < total:
+                    actual = submit(min(config.max_in_flight, total - next_index))
                     submitted_now += actual
                     completed_since_refill = 0
 
@@ -261,12 +161,6 @@ def run_refill_window(
         value is unset
         for value in results
     ):
-        raise RuntimeError(
-            "Concurrency scheduler completed "
-            "with missing results."
-        )
+        raise RuntimeError("Concurrency scheduler completed with missing results.")
 
-    return cast(
-        list[T],
-        results,
-    )
+    return cast(list[T], results)
