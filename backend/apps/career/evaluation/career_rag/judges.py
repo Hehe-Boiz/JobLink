@@ -20,6 +20,7 @@ from apps.career.normalization import normalize_key
 
 from .schema import CareerTopic, CorpusJob, PooledCandidate, RelevanceJudgment
 from .semantics import canonical_information_need
+from .evidence import pack_job_evidence
 
 from .concurrency import DEFAULT_MAX_IN_FLIGHT, DEFAULT_REFILL_SIZE, RefillWindowConfig, run_refill_window
 
@@ -528,7 +529,7 @@ def judge_candidates(
 
             blocks.append(
                 f"{cid}\n"
-                f"{job.raw_evidence[:evidence_chars]}"
+                f"{pack_job_evidence(job, char_budget=evidence_chars)}"
             )
 
         expected_ids = tuple(id_to_key)

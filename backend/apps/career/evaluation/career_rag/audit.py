@@ -13,6 +13,29 @@ from apps.career.models import CareerJobChunk
 
 from .schema import CareerTopic, CorpusJob, Nugget, RelevanceJudgment
 
+V3_REQUIRED_ARTIFACTS = (
+    "corpus_manifest.json",
+    "topics.jsonl",
+    "queries.jsonl",
+    "pool.jsonl",
+    "qrels.silver.jsonl",
+    "qrels.uncertain.jsonl",
+    "controls.jsonl",
+    "nuggets.silver.jsonl",
+    "dev_ids.json",
+    "test_ids.json",
+    "reports/build_audit.json",
+    "reports/preflight_corpus.json",
+    "reports/preflight_leakage.json",
+    "reports/preflight_topics.json",
+    "reports/preflight_report.json",
+    "reports/preflight_embedding_provenance.json",
+    "reports/preflight_evidence_truncation.json",
+    "reports/preflight_pooling.json",
+)
+V3_BENCHMARK_NAME = "CareerRAGBench-Auto-V3"
+V3_BENCHMARK_VERSION = "3.0"
+
 FORBIDDEN_DERIVED_KEYS = {"technical_skills", "soft_skills", "gold_nuggets", "judge_labels", "derived_role_labels"}
 EMBEDDING_PROVENANCE_SCHEMA_VERSION = "career-rag-embedding-provenance-v1"
 EMBEDDING_INPUT_FIELD_POLICY = "raw-job-fields-only-no-forbidden-derived-fields-v1"
@@ -72,6 +95,267 @@ def sha256_tree(paths: Iterable[Path]) -> str:
         digest.update(path_bytes)
         digest.update(content_digest.digest())
     return digest.hexdigest()
+
+
+def artifact_sha256_map(output_dir: Path) -> dict[str, str]:
+    """Hash every artifact required to interpret a frozen V3 benchmark."""
+
+    output_dir = Path(output_dir)
+    hashes: dict[str, str] = {}
+    missing: list[str] = []
+    for relative in V3_REQUIRED_ARTIFACTS:
+        path = output_dir / relative
+        if not path.is_file():
+            missing.append(relative)
+            continue
+        hashes[relative] = sha256_file(path)
+    if missing:
+        raise RuntimeError(
+            "Cannot finalize V3 manifest; required artifacts are missing: "
+            + ", ".join(missing)
+        )
+    return hashes
+
+
+def _read_json_file(path: Path) -> object:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _read_jsonl_file(path: Path) -> list[dict]:
+    rows: list[dict] = []
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        value = json.loads(line)
+        if not isinstance(value, dict):
+            raise ValueError(f"{path}:{line_number} must contain a JSON object")
+        rows.append(value)
+    return rows
+
+
+def verify_frozen_benchmark(output_dir: Path) -> dict:
+    """Verify a frozen V3 directory without any external or paid resource."""
+
+    output_dir = Path(output_dir)
+    blockers: list[str] = []
+    checks: dict[str, bool] = {}
+    manifest: dict = {}
+
+    manifest_path = output_dir / "benchmark_manifest.json"
+    try:
+        raw_manifest = _read_json_file(manifest_path)
+        if not isinstance(raw_manifest, dict):
+            raise ValueError("manifest must be a JSON object")
+        manifest = raw_manifest
+        checks["manifest_readable"] = True
+    except Exception as exc:  # noqa: BLE001 - verifier reports all failures
+        checks["manifest_readable"] = False
+        blockers.append(f"manifest unreadable: {exc}")
+
+    if manifest:
+        checks["benchmark_identity"] = (
+            manifest.get("benchmark_name") == V3_BENCHMARK_NAME
+            and manifest.get("benchmark_version") == V3_BENCHMARK_VERSION
+        )
+        if not checks["benchmark_identity"]:
+            blockers.append("benchmark name/version is not CareerRAGBench-Auto-V3 3.0")
+
+        recorded = manifest.get("artifact_sha256")
+        if not isinstance(recorded, dict):
+            checks["artifact_manifest"] = False
+            blockers.append("manifest has no artifact_sha256 mapping")
+            recorded = {}
+        else:
+            checks["artifact_manifest"] = all(
+                relative in recorded for relative in V3_REQUIRED_ARTIFACTS
+            )
+            missing = [relative for relative in V3_REQUIRED_ARTIFACTS if relative not in recorded]
+            if missing:
+                blockers.append("manifest does not bind: " + ", ".join(missing))
+
+        artifact_ok = True
+        recorded_paths = set(recorded) | set(V3_REQUIRED_ARTIFACTS)
+        for relative in sorted(recorded_paths):
+            if not isinstance(relative, str):
+                artifact_ok = False
+                blockers.append("artifact_sha256 contains a non-string path")
+                continue
+            relative_path = Path(relative)
+            if relative_path.is_absolute() or ".." in relative_path.parts:
+                artifact_ok = False
+                blockers.append(f"artifact hash path escapes benchmark directory: {relative}")
+                continue
+            path = output_dir / relative
+            expected = recorded.get(relative)
+            if not path.is_file():
+                artifact_ok = False
+                blockers.append(f"missing bound artifact: {relative}")
+                continue
+            actual = sha256_file(path)
+            if actual != expected:
+                artifact_ok = False
+                blockers.append(f"artifact hash mismatch: {relative}")
+        checks["artifact_hashes"] = artifact_ok and checks.get("artifact_manifest", False)
+
+        explicit_hash_pairs = {
+            "corpus_manifest_sha256": "corpus_manifest.json",
+            "topics_sha256": "topics.jsonl",
+            "queries_sha256": "queries.jsonl",
+            "pool_sha256": "pool.jsonl",
+            "qrels_sha256": "qrels.silver.jsonl",
+            "nuggets_sha256": "nuggets.silver.jsonl",
+        }
+        explicit_ok = True
+        for field, relative in explicit_hash_pairs.items():
+            path = output_dir / relative
+            if not path.is_file() or manifest.get(field) != sha256_file(path):
+                explicit_ok = False
+                blockers.append(f"explicit manifest hash mismatch: {field}")
+        checks["explicit_hashes"] = explicit_ok
+
+    lock_ok = False
+    lock_path = output_dir / "test_lock.json"
+    try:
+        lock = _read_json_file(lock_path)
+        lock_ok = (
+            isinstance(lock, dict)
+            and lock.get("status") == "LOCKED"
+            and lock.get("immutable") is True
+            and lock.get("frozen") is True
+            and lock.get("benchmark_name") == V3_BENCHMARK_NAME
+            and lock.get("benchmark_version") == V3_BENCHMARK_VERSION
+            and lock.get("benchmark_manifest_sha256") == sha256_file(manifest_path)
+            and lock.get("test_ids_sha256") == sha256_file(output_dir / "test_ids.json")
+        )
+        if not lock_ok:
+            blockers.append("test_lock does not bind the immutable manifest and TEST ids")
+    except Exception as exc:  # noqa: BLE001
+        blockers.append(f"test_lock unreadable: {exc}")
+    checks["test_lock"] = lock_ok
+
+    try:
+        corpus_manifest = _read_json_file(output_dir / "corpus_manifest.json")
+        corpus_ok = (
+            isinstance(corpus_manifest, dict)
+            and corpus_manifest.get("benchmark") == V3_BENCHMARK_NAME
+            and corpus_manifest.get("dataset_sha256") == manifest.get("dataset_sha256")
+        )
+        checks["corpus_manifest"] = corpus_ok
+        if not corpus_ok:
+            blockers.append("corpus_manifest identity does not match the V3 manifest")
+
+        build_audit = _read_json_file(output_dir / "reports" / "build_audit.json")
+        checks["build_audit"] = isinstance(build_audit, dict) and build_audit.get("passed") is True
+        if not checks["build_audit"]:
+            blockers.append("build_audit does not report passed=true")
+
+        topics = _read_jsonl_file(output_dir / "topics.jsonl")
+        queries = _read_jsonl_file(output_dir / "queries.jsonl")
+        topic_ids = {row["topic_id"] for row in topics}
+        by_topic: dict[str, list[dict]] = defaultdict(list)
+        for query in queries:
+            by_topic[query["topic_id"]].append(query)
+        query_shape_ok = all(
+            len(rows) == 3
+            and {row.get("variant") for row in rows} == {"direct", "conversational", "noisy"}
+            and all(row.get("topic_id") in topic_ids and row.get("known_skills") == [] for row in rows)
+            for rows in by_topic.values()
+        ) and len(by_topic) == len(topic_ids) and all(row.get("known_skills") == [] for row in topics)
+        checks["topic_query_shape"] = query_shape_ok
+        if not query_shape_ok:
+            blockers.append("topics do not have exactly direct/conversational/noisy queries with empty known_skills")
+
+        dev = set(manifest.get("dev_family_ids", []))
+        test = set(manifest.get("test_family_ids", []))
+        checks["family_disjoint"] = not dev.intersection(test)
+        if dev.intersection(test):
+            blockers.append("DEV/TEST family IDs overlap")
+
+        qrels = _read_jsonl_file(output_dir / "qrels.silver.jsonl")
+        uncertain = _read_jsonl_file(output_dir / "qrels.uncertain.jsonl")
+        qrel_ok = all(
+            row.get("topic_id") in topic_ids
+            and type(row.get("grade")) is int
+            and row.get("grade") in {0, 1, 2, 3}
+            and isinstance(row.get("source"), str)
+            and isinstance(row.get("source_job_id"), str)
+            for row in qrels + uncertain
+        )
+        uncertain_ok = all(type(row.get("uncertain")) is bool for row in qrels + uncertain)
+        uncertain_ok = uncertain_ok and all(row.get("uncertain") is False for row in qrels)
+        uncertain_ok = uncertain_ok and all(row.get("uncertain") is True for row in uncertain)
+        checks["qrel_shape"] = qrel_ok and uncertain_ok
+        if not checks["qrel_shape"]:
+            blockers.append("qrels contain invalid topic IDs, grades, or uncertain shape")
+
+        from .nuggets import NUGGET_WEIGHT_POLICY, PREVALENCE_UNAVAILABLE
+
+        nuggets = _read_jsonl_file(output_dir / "nuggets.silver.jsonl")
+        strong_keys_by_topic: dict[str, set[str]] = defaultdict(set)
+        for row in qrels:
+            if row.get("grade", -1) >= 2 and row.get("uncertain") is False:
+                strong_keys_by_topic[row["topic_id"]].add(
+                    f"{row.get('source')}::{row.get('source_job_id')}"
+                )
+        nugget_ok = all(
+            row.get("topic_id") in topic_ids
+            and row.get("importance") in {"VITAL", "OKAY"}
+            and row.get("weight") == NUGGET_WEIGHT_POLICY[row["importance"]]
+            and row.get("prevalence") == PREVALENCE_UNAVAILABLE
+            and type(row.get("support_count")) is int
+            and isinstance(row.get("support_job_keys"), list)
+            and all(isinstance(key, str) for key in row.get("support_job_keys", []))
+            and row.get("support_count") == len(set(row.get("support_job_keys", [])))
+            and set(row.get("support_job_keys", [])).issubset(
+                strong_keys_by_topic[row.get("topic_id")]
+            )
+            for row in nuggets
+        )
+        checks["nugget_shape"] = nugget_ok
+        if not nugget_ok:
+            blockers.append("nuggets violate adaptive support/prevalence/importance policy")
+    except Exception as exc:  # noqa: BLE001
+        checks["construction_shape"] = False
+        blockers.append(f"construction artifact shape verification failed: {exc}")
+
+    configuration = manifest.get("configuration", {}) if manifest else {}
+    provenance_report_ok = False
+    try:
+        provenance_report = _read_json_file(
+            output_dir / "reports" / "preflight_embedding_provenance.json"
+        )
+        provenance_report_ok = (
+            isinstance(provenance_report, dict)
+            and provenance_report.get("status") == "VERIFIED_CLEAN"
+        )
+    except Exception:  # noqa: BLE001
+        provenance_report_ok = False
+    provenance_ok = provenance_report_ok and (
+        configuration.get("embedding_provenance_status") == "VERIFIED_CLEAN"
+        or isinstance(configuration.get("embedding_provenance"), dict)
+        and configuration["embedding_provenance"].get("status") == "VERIFIED_CLEAN"
+    )
+    checks["embedding_provenance"] = provenance_ok
+    if not provenance_ok:
+        blockers.append("embedding provenance report/manifest is not VERIFIED_CLEAN")
+    checks["source_hashes"] = bool(
+        configuration.get("git_head") not in (None, "", "unknown")
+        and isinstance(manifest.get("builder_source_sha256"), str)
+        and len(manifest.get("builder_source_sha256", "")) == 64
+        and isinstance(manifest.get("judge_prompt_sha256"), str)
+        and len(manifest.get("judge_prompt_sha256", "")) == 64
+    )
+    if not checks["source_hashes"]:
+        blockers.append("git/source hashes are missing")
+
+    checks["passed"] = not blockers
+    return {
+        "passed": not blockers,
+        "status": "PASS" if not blockers else "FAIL",
+        "output_dir": str(output_dir),
+        "checks": checks,
+        "blockers": blockers,
+    }
 
 
 def _percentile(values: list[int], fraction: float) -> float:

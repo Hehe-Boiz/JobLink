@@ -14,6 +14,8 @@ from .schema import CareerQuery, CareerTopic, CorpusJob, PooledCandidate
 
 RRF_K = 60
 INDEPENDENT_POOL_SYSTEMS = ("bm25", "dense", "title")
+POOLING_POLICY_RRF = "rrf-v1"
+POOLING_POLICY_NEUTRAL_ROUND_ROBIN = "neutral-round-robin-v1"
 
 
 def _tokens(text: str) -> list[str]:
@@ -140,18 +142,106 @@ def audit_pool_coverage(
             for topic_id, variant_rankings in sorted(rankings_by_topic.items())
         }
 
-        aggregate_variants: dict[str, dict[str, list[str]]] = {}
-        for topic_id, variant_rankings in sorted(rankings_by_topic.items()):
-            for variant, rankings in sorted(variant_rankings.items()):
-                aggregate_variants[f"{topic_id}:{variant}"] = rankings
+        topic_count = len(topic_reports)
+        direct_union_sizes = [
+            report["direct_union_size"] for report in topic_reports.values()
+        ]
+
+        def _summary(values: list[int]) -> dict[str, float | int]:
+            if not values:
+                return {"mean": 0.0, "median": 0.0, "min": 0, "max": 0}
+            ordered = sorted(values)
+            middle = len(ordered) // 2
+            median = (
+                float(ordered[middle])
+                if len(ordered) % 2
+                else (ordered[middle - 1] + ordered[middle]) / 2
+            )
+            return {
+                "mean": sum(ordered) / len(ordered),
+                "median": median,
+                "min": ordered[0],
+                "max": ordered[-1],
+            }
+
+        truncating_topics = [
+            report for report in topic_reports.values()
+            if report["max_pool_truncates_system_unique"]
+        ]
+        max_pool_truncating_topics = [
+            report for report in topic_reports.values()
+            if report["max_pool_dropped_count"] > 0
+        ]
+        total_unique = {
+            system: sum(
+                report["unique_contribution_counts"][system]
+                for report in topic_reports.values()
+            )
+            for system in INDEPENDENT_POOL_SYSTEMS
+        }
+        total_dropped = {
+            system: sum(
+                report["max_pool_drops_system_unique_counts"][system]
+                for report in topic_reports.values()
+            )
+            for system in INDEPENDENT_POOL_SYSTEMS
+        }
+        topics_dropping = {
+            system: sum(
+                bool(report["max_pool_drops_system_unique_counts"][system])
+                for report in topic_reports.values()
+            )
+            for system in INDEPENDENT_POOL_SYSTEMS
+        }
+        pairwise_overlaps = {
+            pair: sum(
+                report["pairwise_overlap_counts"].get(pair, 0)
+                for report in topic_reports.values()
+            )
+            for pair in (
+                "bm25&dense",
+                "bm25&title",
+                "dense&title",
+            )
+        }
 
         depth_reports[str(depth)] = {
             "topics": topic_reports,
-            "aggregate": _pool_coverage_scope(
-                aggregate_variants,
-                depth=depth,
-                max_pool=max_pool,
-            ),
+            "aggregate": {
+                "depth": depth,
+                "max_pool": max_pool,
+                "topic_count": topic_count,
+                "direct_union_size": _summary(direct_union_sizes),
+                "pairwise_overlap_counts": pairwise_overlaps,
+                "truncating_topic_count": len(max_pool_truncating_topics),
+                "truncating_topic_percentage": (
+                    100.0 * len(max_pool_truncating_topics) / topic_count
+                    if topic_count else 0.0
+                ),
+                "system_unique_loss_topic_count": len(truncating_topics),
+                "system_unique_loss_topic_percentage": (
+                    100.0 * len(truncating_topics) / topic_count
+                    if topic_count else 0.0
+                ),
+                "total_system_unique_candidates": total_unique,
+                "total_system_unique_candidates_dropped": total_dropped,
+                "total_unique_candidates_dropped": sum(total_dropped.values()),
+                "topics_dropping_system_unique": topics_dropping,
+                "topics_dropping_system_unique_percentage": {
+                    system: (
+                        100.0 * count / topic_count if topic_count else 0.0
+                    )
+                    for system, count in topics_dropping.items()
+                },
+                "total_candidate_count_before_max_pool": sum(
+                    report["candidate_count_before_max_pool"]
+                    for report in topic_reports.values()
+                ),
+                "total_candidate_count_after_max_pool": sum(
+                    report["candidate_count_after_max_pool"]
+                    for report in topic_reports.values()
+                ),
+            },
         }
     return {
         "depths": list(depths),
@@ -212,6 +302,31 @@ def audit_pool_coverage_offline(
         }
     )
     return report
+
+
+def choose_pooling_policy(
+    report: dict,
+    *,
+    decision_depth: int = 20,
+) -> tuple[str, str, bool]:
+    """Apply the frozen V3 candidate-coverage decision rule."""
+
+    depth_report = report.get("reports", {}).get(str(decision_depth))
+    if not isinstance(depth_report, dict):
+        raise ValueError(f"Pooling audit has no depth={decision_depth} report")
+    aggregate = depth_report.get("aggregate", {})
+    truncating = int(aggregate.get("system_unique_loss_topic_count", 0))
+    if truncating:
+        return (
+            POOLING_POLICY_NEUTRAL_ROUND_ROBIN,
+            f"At depth={decision_depth}, {truncating} topic(s) lose an independently system-unique candidate under max_pool.",
+            True,
+        )
+    return (
+        POOLING_POLICY_RRF,
+        f"At depth={decision_depth}, no topic loses an independently system-unique candidate under max_pool.",
+        False,
+    )
 
 
 def load_corpus_jobs(*, source: str = "vietjobs") -> list[CorpusJob]:
@@ -280,23 +395,65 @@ class PoolingService:
                 scores[key] += 1.0 / (k + rank)
         return [key for key, _ in sorted(scores.items(), key=lambda item: (-item[1], item[0]))[:depth]]
 
-    def pool_topic(self, topic_id: str, queries: list[CareerQuery], *, depth: int = 20, max_pool: int = 80) -> list[PooledCandidate]:
+    def pool_topic(
+        self,
+        topic_id: str,
+        queries: list[CareerQuery],
+        *,
+        depth: int = 20,
+        max_pool: int = 80,
+        pooling_policy: str = POOLING_POLICY_RRF,
+    ) -> list[PooledCandidate]:
+        if pooling_policy not in {
+            POOLING_POLICY_RRF,
+            POOLING_POLICY_NEUTRAL_ROUND_ROBIN,
+        }:
+            raise ValueError(f"Unknown pooling policy: {pooling_policy}")
         rank_map: dict[str, dict[str, int]] = defaultdict(dict)
         aggregate_rrf: dict[str, float] = defaultdict(float)
+        independent_rankings: list[tuple[str, str, list[str]]] = []
 
-        for query in queries:
+        for query in sorted(queries, key=lambda item: (item.variant, item.query_id)):
             bm25 = self.bm25(query.text, depth)
             dense = self.dense(query.text, depth)
             title = self.title_lexical(query.text, depth)
             hybrid = self.rrf([bm25, dense], depth)
             systems = {"bm25": bm25, "dense": dense, "title": title, "rrf": hybrid}
+            for system in INDEPENDENT_POOL_SYSTEMS:
+                independent_rankings.append((query.variant, system, systems[system]))
             for system, ranking in systems.items():
                 name = f"{system}:{query.variant}"
                 for rank, key in enumerate(ranking, start=1):
                     rank_map[key][name] = rank
                     aggregate_rrf[key] += 1.0 / (RRF_K + rank)
 
-        ordered = sorted(aggregate_rrf, key=lambda key: (-aggregate_rrf[key], key))[:max_pool]
+        if pooling_policy == POOLING_POLICY_RRF:
+            ordered = sorted(
+                aggregate_rrf,
+                key=lambda key: (-aggregate_rrf[key], key),
+            )[:max_pool]
+        else:
+            # Deterministic coverage-preserving policy.  Streams are already
+            # stable by (variant, system); one item is considered from each
+            # stream on every round, skipping duplicate job keys.
+            ordered = []
+            selected: set[str] = set()
+            cursors = [0] * len(independent_rankings)
+            while len(ordered) < max_pool:
+                made_progress = False
+                for index, (_, _, ranking) in enumerate(independent_rankings):
+                    while cursors[index] < len(ranking):
+                        key = ranking[cursors[index]]
+                        cursors[index] += 1
+                        if key not in selected:
+                            selected.add(key)
+                            ordered.append(key)
+                            made_progress = True
+                            break
+                    if len(ordered) >= max_pool:
+                        break
+                if not made_progress:
+                    break
         result: list[PooledCandidate] = []
         for key in ordered:
             job = self.by_key.get(key)

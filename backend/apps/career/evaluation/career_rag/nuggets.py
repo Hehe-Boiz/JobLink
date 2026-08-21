@@ -13,12 +13,14 @@ from .concurrency import (
 from .judges import JudgeClient
 from .schema import CareerTopic, CorpusJob, Nugget, RelevanceJudgment
 from .semantics import canonical_information_need
+from .evidence import pack_job_evidence
 
 NUGGET_PROMPT_VERSION = "career-rag-silver-nuggets-v4"
 NUGGET_IMPORTANCE_POLICY_VERSION = "career-rag-nugget-importance-v1"
 NUGGET_WEIGHT_POLICY = {"VITAL": 1.0, "OKAY": 0.5}
 PREVALENCE_UNAVAILABLE = -1.0
 PREVALENCE_POLICY_VERSION = "career-rag-nugget-prevalence-adaptive-v1"
+NUGGET_SUPPORT_SEMANTICS_VERSION = "career-rag-nugget-support-observed-before-adaptive-stop-v1"
 DEFAULT_NUGGET_BATCH_SIZE = 8
 DEFAULT_SUPPORT_JOB_BATCH_SIZE = 8
 DEFAULT_IMPORTANCE_BATCH_SIZE = 8
@@ -82,7 +84,7 @@ def _extract_candidates(
         blocks = [
             (
                 f"JOB_KEY={job.job_key}\n"
-                f"{job.raw_evidence[:evidence_chars]}"
+                f"{pack_job_evidence(job, char_budget=evidence_chars)}"
             )
             for job in batch
         ]
@@ -154,7 +156,10 @@ def _verify_support(
     for start in range(0, len(jobs), batch_size):
         batch = jobs[start : start + batch_size]
         mapping = {f"J{index}": job for index, job in enumerate(batch, start=1)}
-        blocks = [f"{jid}\n{job.raw_evidence[:evidence_chars]}" for jid, job in mapping.items()]
+        blocks = [
+            f"{jid}\n{pack_job_evidence(job, char_budget=evidence_chars)}"
+            for jid, job in mapping.items()
+        ]
         data = client.json_call(
             system=(
                 "Verify whether each raw JD explicitly or clearly semantically supports the candidate career nugget. "
@@ -237,7 +242,7 @@ def _verify_support_matrix_batch(
         for nugget_id, item in zip(nugget_ids, candidates, strict=True)
     ]
     job_blocks = [
-        f"{job_id}\n{job.raw_evidence[:evidence_chars]}"
+        f"{job_id}\n{pack_job_evidence(job, char_budget=evidence_chars)}"
         for job_id, job in zip(job_ids, jobs, strict=True)
     ]
 
@@ -356,7 +361,10 @@ def _importance_evidence(
         job = corpus_by_key.get(job_key)
         if job is None:
             continue
-        lines.append(f"SUPPORTING_EVIDENCE_{index}\n{job.raw_evidence[:evidence_chars]}")
+        lines.append(
+            f"SUPPORTING_EVIDENCE_{index}\n"
+            f"{pack_job_evidence(job, char_budget=evidence_chars)}"
+        )
     if not lines:
         return "SUPPORTING_EVIDENCE_PREVIEW\n(no evidence preview available)"
     return "\n\n".join(lines)

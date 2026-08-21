@@ -9,7 +9,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 from . import audit as audit_module
+from . import build_benchmark as build_benchmark_module
 from .audit import (
+    V3_REQUIRED_ARTIFACTS,
+    artifact_sha256_map,
     audit_derived_label_leakage,
     audit_evidence_truncation,
     audit_split,
@@ -17,13 +20,22 @@ from .audit import (
     embedding_provenance_contract,
     embedding_provenance_is_freeze_safe,
     sha256_tree,
+    verify_frozen_benchmark,
 )
+from .build_benchmark import (
+    _assert_final_output_available,
+    _create_building_directory,
+    _finalize_candidate,
+    build_benchmark,
+)
+from .evidence import EVIDENCE_PACKING_POLICY_VERSION, pack_job_evidence
 from .judges import judge_candidates
 from .nuggets import (
     NUGGET_IMPORTANCE_POLICY_VERSION,
     NUGGET_PROMPT_VERSION,
     NUGGET_WEIGHT_POLICY,
     PREVALENCE_UNAVAILABLE,
+    NUGGET_SUPPORT_SEMANTICS_VERSION,
     _judge_importance_batch,
     _validate_importance,
     _verify_support,
@@ -142,6 +154,10 @@ class NuggetConstructionTests(unittest.TestCase):
     def test_nugget_protocol_and_importance_policy_versions_are_frozen(self) -> None:
         self.assertEqual(NUGGET_PROMPT_VERSION, "career-rag-silver-nuggets-v4")
         self.assertEqual(NUGGET_IMPORTANCE_POLICY_VERSION, "career-rag-nugget-importance-v1")
+        self.assertEqual(
+            NUGGET_SUPPORT_SEMANTICS_VERSION,
+            "career-rag-nugget-support-observed-before-adaptive-stop-v1",
+        )
         self.assertEqual(NUGGET_WEIGHT_POLICY, {"VITAL": 1.0, "OKAY": 0.5})
 
     def _build(
@@ -695,6 +711,140 @@ class TreeHashTests(unittest.TestCase):
             self.assertNotEqual(tree_a, tree_b)
 
 
+class FreezeIntegrityTests(unittest.TestCase):
+    @staticmethod
+    def _write_frozen_fixture(root: Path) -> None:
+        root.mkdir(parents=True, exist_ok=True)
+        rows = {
+            "corpus_manifest.json": {"benchmark": "CareerRAGBench-Auto-V3", "dataset_sha256": "d" * 64},
+            "topics.jsonl": [
+                {"topic_id": "topic-1", "family_id": "family-1", "scope": "broad", "label": "Tech", "category_key": "tech", "known_skills": [], "split": "dev"}
+            ],
+            "queries.jsonl": [
+                {"query_id": "q1", "topic_id": "topic-1", "variant": "direct", "text": "Tech", "known_skills": []},
+                {"query_id": "q2", "topic_id": "topic-1", "variant": "conversational", "text": "Tech", "known_skills": []},
+                {"query_id": "q3", "topic_id": "topic-1", "variant": "noisy", "text": "Tech", "known_skills": []},
+            ],
+            "pool.jsonl": [],
+            "qrels.silver.jsonl": [],
+            "qrels.uncertain.jsonl": [],
+            "controls.jsonl": [],
+            "nuggets.silver.jsonl": [],
+            "dev_ids.json": {"family_ids": ["family-1"], "topic_ids": ["topic-1"]},
+            "test_ids.json": {"family_ids": ["family-2"], "topic_ids": []},
+            "reports/build_audit.json": {"passed": True},
+            "reports/preflight_corpus.json": {"indexed_vietjobs_jobs": 1},
+            "reports/preflight_leakage.json": {"passed": True},
+            "reports/preflight_topics.json": {"topic_count": 1},
+            "reports/preflight_report.json": {"readiness": {"status": "READY_FOR_PAID_BUILD"}},
+            "reports/preflight_embedding_provenance.json": {"status": "VERIFIED_CLEAN"},
+            "reports/preflight_evidence_truncation.json": {"cutoff_chars": 5000},
+            "reports/preflight_pooling.json": {"mode": "real_offline"},
+        }
+        for relative, payload in rows.items():
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if relative.endswith(".jsonl"):
+                path.write_text(
+                    "".join(json.dumps(row, sort_keys=True) + "\n" for row in payload),
+                    encoding="utf-8",
+                )
+            else:
+                path.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+        hashes = artifact_sha256_map(root)
+        manifest = {
+            "benchmark_name": "CareerRAGBench-Auto-V3",
+            "benchmark_version": "3.0",
+            "random_seed": 20260819,
+            "dataset_sha256": "d" * 64,
+            "corpus_manifest_sha256": hashes["corpus_manifest.json"],
+            "topics_sha256": hashes["topics.jsonl"],
+            "queries_sha256": hashes["queries.jsonl"],
+            "pool_sha256": hashes["pool.jsonl"],
+            "qrels_sha256": hashes["qrels.silver.jsonl"],
+            "nuggets_sha256": hashes["nuggets.silver.jsonl"],
+            "judge_model": "offline-test",
+            "judge_prompt_sha256": "p" * 64,
+            "builder_source_sha256": "b" * 64,
+            "judge_model_same_as_generator": False,
+            "dev_family_ids": ["family-1"],
+            "test_family_ids": ["family-2"],
+            "configuration": {
+                "git_head": "deadbeef",
+                "embedding_provenance": {"status": "VERIFIED_CLEAN"},
+            },
+            "artifact_sha256": hashes,
+        }
+        manifest_path = root / "benchmark_manifest.json"
+        manifest_path.write_text(json.dumps(manifest, sort_keys=True) + "\n", encoding="utf-8")
+        (root / "test_lock.json").write_text(
+            json.dumps({
+                "status": "LOCKED", "immutable": True, "frozen": True,
+                "benchmark_name": "CareerRAGBench-Auto-V3", "benchmark_version": "3.0",
+                "benchmark_manifest_sha256": __import__("hashlib").sha256(manifest_path.read_bytes()).hexdigest(),
+                "test_ids_sha256": __import__("hashlib").sha256((root / "test_ids.json").read_bytes()).hexdigest(),
+            }, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+    def test_frozen_fixture_verifies_and_any_bound_artifact_tamper_fails(self) -> None:
+        for relative in V3_REQUIRED_ARTIFACTS:
+            with self.subTest(relative=relative), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._write_frozen_fixture(root)
+                before = verify_frozen_benchmark(root)
+                self.assertTrue(before["passed"], before)
+                with (root / relative).open("ab") as handle:
+                    handle.write(b"tamper")
+                after = verify_frozen_benchmark(root)
+                self.assertFalse(after["passed"], after)
+
+    def test_existing_frozen_and_partial_directories_are_never_overwritten(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "bench"
+            root.mkdir()
+            (root / "benchmark_manifest.json").write_text("{}", encoding="utf-8")
+            with self.assertRaises(RuntimeError):
+                _assert_final_output_available(root)
+            partial = Path(directory) / "partial"
+            partial.mkdir()
+            (partial / "topics.jsonl").write_text("partial", encoding="utf-8")
+            with self.assertRaises(RuntimeError):
+                _assert_final_output_available(partial)
+
+    def test_candidate_finalize_is_atomic_and_failed_build_has_no_final_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            final = Path(directory) / "bench"
+            candidate = _create_building_directory(final)
+            (candidate / "test_lock.json").write_text("candidate", encoding="utf-8")
+            _finalize_candidate(candidate, final)
+            self.assertTrue(final.is_dir())
+            self.assertFalse(candidate.exists())
+
+            failed = Path(directory) / "failed"
+            with patch.object(build_benchmark_module, "_build_benchmark_into", side_effect=RuntimeError("free failure")):
+                with self.assertRaisesRegex(RuntimeError, "free failure"):
+                    build_benchmark(output_dir=failed, judge_model="offline-test")
+            self.assertFalse(failed.exists())
+
+    def test_free_preflight_failure_never_instantiates_paid_judge(self) -> None:
+        blocked = {"readiness": {"status": "BLOCKED", "blockers": ["UNVERIFIED"]}}
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "candidate"
+            candidate.mkdir()
+            with patch.object(build_benchmark_module, "run_construction_preflight", return_value=blocked), \
+                    patch.object(build_benchmark_module, "JudgeClient") as judge_client:
+                with self.assertRaisesRegex(RuntimeError, "free preflight blocked"):
+                    build_benchmark_module._build_benchmark_into(
+                        candidate,
+                        judge_model="offline-test",
+                        seed=20260819,
+                        pool_depth=20,
+                        max_pool=80,
+                    )
+            judge_client.assert_not_called()
+
+
 class CandidateJudgeSchemaRetryClient:
     def __init__(self, payloads: list[object]) -> None:
         self.payloads = list(payloads)
@@ -842,6 +992,8 @@ class TopicSemanticsTests(unittest.TestCase):
             by_topic.setdefault(query.topic_id, []).append(query)
         self.assertTrue(all(len(by_topic[topic.topic_id]) == 3 for topic in topics))
         self.assertTrue(all(set(query.variant for query in by_topic[topic.topic_id]) == set(BASE_QUERY_VARIANTS) for topic in topics))
+        self.assertTrue(all(topic.known_skills == () for topic in topics))
+        self.assertTrue(all(query.known_skills == () for query in queries))
 
 
 class OfflineDiagnosticTests(unittest.TestCase):
@@ -902,6 +1054,31 @@ class OfflineDiagnosticTests(unittest.TestCase):
             {system: set(values) for system, values in detail["unique_contribution"].items()},
             {"bm25": {"A"}, "dense": {"D"}, "title": {"E"}},
         )
+
+    def test_pool_aggregate_is_a_summary_of_topics_not_a_global_repool(self) -> None:
+        rankings = {
+            "topic-a": {
+                "direct": {
+                    "bm25": ["A"],
+                    "dense": ["A"],
+                    "title": ["A"],
+                }
+            },
+            "topic-b": {
+                "direct": {
+                    "bm25": ["B1", "B2", "B3"],
+                    "dense": ["D1", "D2", "D3"],
+                    "title": ["T1", "T2", "T3"],
+                }
+            },
+        }
+        report = audit_pool_coverage(rankings, depths=(5,), max_pool=2)
+        aggregate = report["reports"]["5"]["aggregate"]
+        self.assertEqual(aggregate["topic_count"], 2)
+        self.assertEqual(aggregate["truncating_topic_count"], 1)
+        self.assertEqual(aggregate["topics_dropping_system_unique"], {"bm25": 1, "dense": 1, "title": 1})
+        self.assertEqual(report["reports"]["5"]["topics"]["topic-a"]["max_pool_truncates_system_unique"], False)
+        self.assertTrue(report["reports"]["5"]["topics"]["topic-b"]["max_pool_truncates_system_unique"])
 
     def test_offline_pool_audit_runs_local_rankings_without_llm(self) -> None:
         class StubPooler:
@@ -990,6 +1167,29 @@ class OfflineDiagnosticTests(unittest.TestCase):
         self.assertEqual(first["qualification_content_lost_job_count"], 2)
         self.assertGreater(first["qualification_content_chars_lost_total"], 0)
 
+    def test_section_aware_evidence_packing_preserves_late_required_qualifications(self) -> None:
+        job = CorpusJob(
+            source="vietjobs",
+            source_job_id="J-pack",
+            job_title="Engineer",
+            category_key="tech",
+            location_key="Hanoi",
+            experience_level="mid",
+            employment_type="full-time",
+            chunks=(
+                {"section": "description", "content": "d" * 4800},
+                {"section": "required qualifications", "content": "Python Docker Kubernetes"},
+                {"section": "benefits", "content": "b" * 1000},
+            ),
+        )
+        first = pack_job_evidence(job, char_budget=5000)
+        second = pack_job_evidence(job, char_budget=5000)
+        self.assertEqual(first, second)
+        self.assertLessEqual(len(first), 5000)
+        self.assertIn("[required qualifications]", first)
+        self.assertIn("Python Docker Kubernetes", first)
+        self.assertEqual(EVIDENCE_PACKING_POLICY_VERSION, "career-rag-evidence-packing-v1")
+
     def test_embedding_provenance_is_explicitly_unverified_without_history(self) -> None:
         backend_root = Path(__file__).resolve().parents[4]
         contract = embedding_provenance_contract(
@@ -1076,6 +1276,27 @@ class OfflineDiagnosticTests(unittest.TestCase):
             )
         self.assertEqual(contract["status"], "UNVERIFIED")
         self.assertFalse(embedding_provenance_is_freeze_safe(contract))
+
+    def test_mismatched_embedding_membership_is_unverified(self) -> None:
+        backend_root = Path(__file__).resolve().parents[4]
+        artifact = embedding_provenance_expected_contract(
+            backend_root=backend_root,
+            corpus_membership_sha256="m" * 64,
+            corpus_chunks_sha256="c" * 64,
+        )
+        artifact.update({"status": "VERIFIED_CLEAN", "indexing_timestamp": "2026-08-21T00:00:00Z"})
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "embedding-provenance.json"
+            path.write_text(json.dumps(artifact), encoding="utf-8")
+            contract = embedding_provenance_contract(
+                backend_root=backend_root,
+                corpus_membership_sha256="different" + "m" * 56,
+                corpus_chunks_sha256="c" * 64,
+                forbidden_derived_metadata_present=False,
+                provenance_path=path,
+            )
+        self.assertEqual(contract["status"], "UNVERIFIED")
+        self.assertIn("corpus_membership_sha256", contract["mismatched_fields"])
 
     def test_vietjobs_leakage_audit_ignores_unrelated_sources(self) -> None:
         class FakeQuery:
