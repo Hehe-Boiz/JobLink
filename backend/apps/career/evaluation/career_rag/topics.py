@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import csv
+import math
 import random
 import re
 import unicodedata
@@ -10,6 +11,8 @@ from pathlib import Path
 from typing import Iterable
 
 from apps.career.normalization import normalize_key
+
+from .semantics import topic_intent_label
 
 from .schema import (
     CareerQuery,
@@ -34,8 +37,10 @@ DEFAULT_MIN_SPECIFIC_TITLE_JOBS = 8
 # cannot robustly satisfy the benchmark protocol.
 HARD_MIN_SPECIFIC_TITLE_JOBS = 8
 
+SPECIFICITY_WILSON_Z = 1.96
+
 TOPIC_SELECTION_POLICY_VERSION = (
-    "all-supported-nongeneric-families-v1"
+    "all-supported-nongeneric-wilson-specificity-v2"
 )
 
 
@@ -95,12 +100,18 @@ def _ascii(text: str) -> str:
         text,
     )
 
-    return "".join(
+    ascii_text = "".join(
         char
         for char in normalized
         if not unicodedata.combining(char)
     )
 
+    # Vietnamese Đ/đ do not decompose under NFKD.
+    return (
+        ascii_text
+        .replace("Đ", "D")
+        .replace("đ", "d")
+    )
 
 def _display_label(value: str) -> str:
     text = re.sub(
@@ -332,6 +343,70 @@ def _count_topic_support(
     )
 
 
+def _global_title_support(
+    title_jobs: dict[
+        str,
+        Counter[str],
+    ],
+) -> Counter[str]:
+    totals: Counter[str] = Counter()
+
+    for counter in title_jobs.values():
+        totals.update(counter)
+
+    return totals
+
+
+def _wilson_lower_bound(
+    successes: int,
+    total: int,
+    *,
+    z: float = SPECIFICITY_WILSON_Z,
+) -> float:
+    if total <= 0:
+        return 0.0
+
+    p = successes / total
+    z2 = z * z
+
+    denominator = (
+        1.0
+        + z2 / total
+    )
+
+    center = (
+        p
+        + z2 / (2.0 * total)
+    )
+
+    margin = z * math.sqrt(
+        p * (1.0 - p) / total
+        + z2 / (
+            4.0
+            * total
+            * total
+        )
+    )
+
+    return (
+        center - margin
+    ) / denominator
+
+
+def _specific_title_score(
+    *,
+    local_support: int,
+    global_support: int,
+) -> float:
+    return (
+        math.log1p(local_support)
+        * _wilson_lower_bound(
+            local_support,
+            global_support,
+        )
+    )
+
+
 def _select_categories(
     category_jobs: Counter[str],
     title_jobs: dict[
@@ -340,6 +415,7 @@ def _select_categories(
     ],
     *,
     family_count: int,
+    min_family_jobs: int,
     preferred_specific_support: int,
     hard_min_specific_support: int,
 ) -> tuple[
@@ -348,35 +424,23 @@ def _select_categories(
     list[str],
 ]:
     """
-    Discover ALL meaningful, well-supported career families
-    from the frozen VietJobs corpus.
+    Select every meaningful family satisfying
+    frozen-corpus support constraints.
 
-    `family_count` is intentionally NOT used as a target.
-
-    The previous implementation forced the corpus into an
-    arbitrary target of 16 families. On the frozen corpus,
-    only 15 non-generic families satisfy the benchmark's
-    high-support criteria.
-
-    Forcing a 16th family would require either:
-      - including a catch-all taxonomy bucket; or
-      - weakening the specific-title support threshold.
-
-    Both make the benchmark less defensible.
-
-    Final V1 eligibility:
-
-      broad category support >= DEFAULT_MIN_FAMILY_JOBS
-      best specific title support >= preferred_specific_support
-      category is not generic/catch-all
-
-    Topic selection remains completely independent from
-    BM25, Dense, RRF, LLM judgments, DEV scores and TEST
-    scores.
+    Selection is independent from retrieval
+    results, LLM judgments, DEV metrics and
+    TEST metrics.
     """
 
+    # Compatibility only.
+    # V2 intentionally keeps ALL eligible
+    # non-generic families.
     del family_count
-    del hard_min_specific_support
+
+    effective_specific_support = max(
+        preferred_specific_support,
+        hard_min_specific_support,
+    )
 
     best_specific_support = {
         category: max(
@@ -408,10 +472,10 @@ def _select_categories(
             )
             and category_jobs[
                 category
-            ] >= DEFAULT_MIN_FAMILY_JOBS
+            ] >= min_family_jobs
             and best_specific_support[
                 category
-            ] >= preferred_specific_support
+            ] >= effective_specific_support
         )
     ]
 
@@ -429,13 +493,13 @@ def _select_categories(
 
     if not selected:
         raise RuntimeError(
-            "No career family satisfies the frozen "
-            "topic eligibility policy."
+            "No career family satisfies "
+            "the frozen topic eligibility policy."
         )
 
     return (
         selected,
-        preferred_specific_support,
+        effective_specific_support,
         generic_excluded,
     )
 
@@ -491,6 +555,12 @@ def discover_topics(
         jobs
     )
 
+    global_title_jobs = (
+        _global_title_support(
+            title_jobs
+        )
+    )
+
     (
         selected_categories,
         effective_specific_support,
@@ -499,6 +569,7 @@ def discover_topics(
         category_jobs,
         title_jobs,
         family_count=family_count,
+        min_family_jobs=min_family_jobs,
         preferred_specific_support=(
             min_specific_title_jobs
         ),
@@ -669,20 +740,29 @@ def discover_topics(
                 title_key,
                 count,
             )
-            in sorted(
-                title_jobs[
-                    category
-                ].items(),
-                key=lambda item: (
-                    -item[1],
-                    item[0],
-                ),
-            )
+            in title_jobs[
+                category
+            ].items()
             if (
                 count
                 >= effective_specific_support
             )
         ]
+
+        specific_candidates.sort(
+            key=lambda item: (
+                -_specific_title_score(
+                    local_support=item[1],
+                    global_support=(
+                        global_title_jobs[
+                            item[0]
+                        ]
+                    ),
+                ),
+                -item[1],
+                item[0],
+            )
+        )
 
         if not specific_candidates:
             raise RuntimeError(
@@ -942,7 +1022,7 @@ def generate_query_variants(
         f"{topic.topic_id}"
     )
 
-    label = topic.label
+    label = topic_intent_label(topic)
 
     known = ", ".join(
         topic.known_skills

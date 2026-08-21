@@ -19,12 +19,19 @@ from .judges import JUDGE_PROMPT_VERSION, JudgeClient, build_and_judge_controls,
 from .nuggets import DEFAULT_VITAL_PREVALENCE, NUGGET_PROMPT_VERSION, build_nuggets_for_topic
 from .pooling import PoolingService, load_corpus_jobs
 from .schema import BenchmarkManifest, CareerQuery, CareerTopic, Nugget, RelevanceJudgment
-from .topics import DEFAULT_RANDOM_SEED, discover_topics, load_skill_hints_from_csv
+from .topics import (
+    DEFAULT_MIN_SPECIFIC_TITLE_JOBS,
+    DEFAULT_RANDOM_SEED,
+    SPECIFICITY_WILSON_Z,
+    TOPIC_SELECTION_POLICY_VERSION,
+    discover_topics,
+    load_skill_hints_from_csv,
+)
 
 BACKEND_ROOT = Path(__file__).resolve().parents[4]
-DEFAULT_OUTPUT_DIR = BACKEND_ROOT / "data" / "career_eval" / "career_rag_bench_auto_v1"
-BENCHMARK_NAME = "CareerRAGBench-Auto-V1"
-BENCHMARK_VERSION = "1.0"
+DEFAULT_OUTPUT_DIR = BACKEND_ROOT / "data" / "career_eval" / "career_rag_bench_auto_v2"
+BENCHMARK_NAME = "CareerRAGBench-Auto-V2"
+BENCHMARK_VERSION = "2.0"
 
 
 def _json_dump(path: Path, payload: object) -> None:
@@ -95,7 +102,7 @@ def build_benchmark(
     from apps.career.models import CareerJobChunk
 
     # -----------------------------------------------------
-    # CareerRAGBench-Auto-V1 freezes the ACTUAL indexed
+    # CareerRAGBench-Auto-V2 freezes the ACTUAL indexed
     # VietJobs retrieval corpus.
     #
     # Historical audit:
@@ -398,7 +405,7 @@ def build_benchmark(
             "active chunks. The exact historical "
             "filtering/dedup membership is not "
             "perfectly reconstructible from surviving "
-            "code; CareerRAGBench-Auto-V1 therefore "
+            "code; CareerRAGBench-Auto-V2 therefore "
             "defines corpus identity using the dataset "
             "SHA256 plus frozen indexed source_job_id "
             "membership and chunk/context hashes."
@@ -465,7 +472,22 @@ def build_benchmark(
     assert_audit_passes(audit_report)
 
     builder_tree_sha, git_sha, git_dirty = _source_sha()
-    prompt_sha = sha256_tree([Path(__file__).resolve().parent / "judges.py", Path(__file__).resolve().parent / "nuggets.py"])
+    prompt_sha = sha256_tree(
+        [
+            (
+                Path(__file__).resolve().parent
+                / "judges.py"
+            ),
+            (
+                Path(__file__).resolve().parent
+                / "nuggets.py"
+            ),
+            (
+                Path(__file__).resolve().parent
+                / "semantics.py"
+            ),
+        ]
+    )
     generator_model = os.environ.get("CAREER_RAG_GENERATOR_MODEL", DEFAULT_ANSWER_MODEL)
     manifest = BenchmarkManifest(
         benchmark_name=BENCHMARK_NAME,
@@ -485,6 +507,26 @@ def build_benchmark(
         dev_family_ids=tuple(dev_family_ids),
         test_family_ids=tuple(test_family_ids),
         configuration={
+            "topic_selection_policy": (
+                TOPIC_SELECTION_POLICY_VERSION
+            ),
+            "specific_title_selection": (
+                "log1p(local_support)"
+                "*wilson_lower_bound("
+                "local_support/global_support)"
+            ),
+            "specific_title_min_support": (
+                DEFAULT_MIN_SPECIFIC_TITLE_JOBS
+            ),
+            "specificity_wilson_z": (
+                SPECIFICITY_WILSON_Z
+            ),
+            "judge_prompt_version": (
+                JUDGE_PROMPT_VERSION
+            ),
+            "nugget_prompt_version": (
+                NUGGET_PROMPT_VERSION
+            ),
             "pool_depth": pool_depth,
             "max_pool": max_pool,
             "rrf_k": 60,

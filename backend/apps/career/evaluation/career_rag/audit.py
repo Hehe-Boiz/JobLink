@@ -140,4 +140,4 @@ def run_audit(
 
 def assert_audit_passes(report: dict) -> None:
     if not report.get("passed", False):
-        raise RuntimeError("CareerRAGBench-Auto-V1 quality gates failed. See reports/build_audit.json; benchmark was NOT frozen.")
+        raise RuntimeError("CareerRAGBench-Auto-V2 quality gates failed. See reports/build_audit.json; benchmark was NOT frozen.")

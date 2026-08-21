@@ -8,7 +8,7 @@ from apps.career.evaluation.career_rag.build_benchmark import DEFAULT_OUTPUT_DIR
 
 
 class Command(BaseCommand):
-    help = "Build and freeze CareerRAGBench-Auto-V1 (silver benchmark)."
+    help = "Build and freeze CareerRAGBench-Auto-V2 (silver benchmark)."
 
     def add_arguments(self, parser) -> None:
         parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
@@ -30,7 +30,7 @@ class Command(BaseCommand):
             pool_depth=options["pool_depth"],
             max_pool=options["max_pool"],
         )
-        self.stdout.write(self.style.SUCCESS(f"CareerRAGBench-Auto-V1 frozen at {result['output_dir']}"))
+        self.stdout.write(self.style.SUCCESS(f"CareerRAGBench-Auto-V2 frozen at {result['output_dir']}"))
         self.stdout.write(
             f"topics={result['topics']} queries={result['queries']} qrels={result['qrels']} "
             f"uncertain={result['uncertain_qrels']} nuggets={result['nuggets']}"
