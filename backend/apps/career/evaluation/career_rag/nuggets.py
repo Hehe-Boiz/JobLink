@@ -17,9 +17,12 @@ from .semantics import canonical_information_need
 NUGGET_PROMPT_VERSION = "career-rag-silver-nuggets-v4"
 NUGGET_IMPORTANCE_POLICY_VERSION = "career-rag-nugget-importance-v1"
 NUGGET_WEIGHT_POLICY = {"VITAL": 1.0, "OKAY": 0.5}
+PREVALENCE_UNAVAILABLE = -1.0
+PREVALENCE_POLICY_VERSION = "career-rag-nugget-prevalence-adaptive-v1"
 DEFAULT_NUGGET_BATCH_SIZE = 8
 DEFAULT_SUPPORT_JOB_BATCH_SIZE = 8
 DEFAULT_IMPORTANCE_BATCH_SIZE = 8
+IMPORTANCE_EVIDENCE_PREVIEW_JOBS = 3
 IMPORTANCE_VALUES = frozenset({"VITAL", "OKAY"})
 
 
@@ -337,23 +340,25 @@ def _importance_evidence(
     corpus_by_key: dict[str, CorpusJob],
     *,
     evidence_chars: int,
-    max_evidence_jobs: int = 3,
+    max_evidence_jobs: int = IMPORTANCE_EVIDENCE_PREVIEW_JOBS,
 ) -> str:
-    support_keys = tuple(sorted(set(item.get("support_job_keys", ()))))
-    lines = [
-        "Verified supporting job keys: "
-        + (", ".join(support_keys) if support_keys else "(none)")
-    ]
-    for job_key in support_keys[:max_evidence_jobs]:
+    if max_evidence_jobs <= 0:
+        raise ValueError("max_evidence_jobs must be positive")
+
+    # Importance is need-conditioned. The judge receives only a fixed preview
+    # of grounded evidence; it must not see support keys, support counts, or an
+    # omitted-evidence count that could act as a prevalence signal.
+    evidence_keys = tuple(
+        sorted(set(item.get("importance_evidence_keys", item.get("support_job_keys", ()))))
+    )[:max_evidence_jobs]
+    lines: list[str] = []
+    for index, job_key in enumerate(evidence_keys, start=1):
         job = corpus_by_key.get(job_key)
         if job is None:
             continue
-        lines.append(f"SUPPORTING_JOB={job_key}\n{job.raw_evidence[:evidence_chars]}")
-    if len(support_keys) > max_evidence_jobs:
-        lines.append(
-            f"Additional verified supporting jobs omitted from evidence preview: "
-            f"{len(support_keys) - max_evidence_jobs}"
-        )
+        lines.append(f"SUPPORTING_EVIDENCE_{index}\n{job.raw_evidence[:evidence_chars]}")
+    if not lines:
+        return "SUPPORTING_EVIDENCE_PREVIEW\n(no evidence preview available)"
     return "\n\n".join(lines)
 
 
@@ -382,7 +387,7 @@ def _judge_importance_batch(
         "Judge the importance of each atomic nugget for the supplied canonical "
         "career information need. VITAL means essential or highly necessary for "
         "a good answer to that need. OKAY means useful but non-essential. Do not "
-        "infer importance from document frequency or support count. Use only the "
+        "infer importance from how frequently information appears across documents. Use only the "
         "nugget text and grounded supporting evidence. Return JSON only as "
         '{"importance":{"N1":"VITAL"}}. Use exactly the supplied nugget IDs, '
         "with one value per ID and no other IDs. Values must be exactly VITAL or OKAY."
@@ -550,6 +555,146 @@ def _verify_support_matrix(
     return [sorted(keys) for keys in verified]
 
 
+def _verify_support_group_adaptive(
+    client: JudgeClient,
+    indexed_candidates: list[tuple[int, dict]],
+    strong_jobs: list[CorpusJob],
+    *,
+    min_support_jobs: int,
+    job_batch_size: int,
+    evidence_chars: int,
+    schema_retries: int,
+) -> dict[int, list[str]]:
+    """Verify a deterministic hint-equivalence group with matrix requests.
+
+    Extractor support keys only determine which strong jobs are checked first;
+    they never establish support and never remove jobs from the verification
+    universe. Candidates leave the active matrix as soon as their verified
+    support reaches the threshold.
+    """
+
+    if not indexed_candidates:
+        return {}
+
+    candidate_by_index = dict(indexed_candidates)
+    hinted_key_set = set(indexed_candidates[0][1].get("support_job_keys", ()))
+    ordered_jobs = [
+        job
+        for job in strong_jobs
+        if job.job_key in hinted_key_set
+    ] + [
+        job
+        for job in strong_jobs
+        if job.job_key not in hinted_key_set
+    ]
+
+    verified: dict[int, set[str]] = {
+        index: set()
+        for index, _ in indexed_candidates
+    }
+    active = list(indexed_candidates)
+    for start in range(0, len(ordered_jobs), job_batch_size):
+        if not active:
+            break
+        job_batch = ordered_jobs[start : start + job_batch_size]
+        batch_result = _verify_support_matrix_batch(
+            client,
+            [candidate for _, candidate in active],
+            job_batch,
+            evidence_chars=evidence_chars,
+            schema_retries=schema_retries,
+        )
+        if len(batch_result) != len(active):
+            raise RuntimeError("Adaptive nugget verifier returned an unexpected result shape")
+        remaining: list[tuple[int, dict]] = []
+        for (index, _), support_keys in zip(active, batch_result, strict=True):
+            verified[index].update(support_keys)
+            if len(verified[index]) < min_support_jobs:
+                remaining.append((index, candidate_by_index[index]))
+        active = remaining
+
+    return {index: sorted(keys) for index, keys in verified.items()}
+
+
+def _verify_support_adaptive(
+    client: JudgeClient,
+    candidates: list[dict],
+    strong_jobs: list[CorpusJob],
+    *,
+    min_support_jobs: int,
+    nugget_batch_size: int = DEFAULT_NUGGET_BATCH_SIZE,
+    job_batch_size: int = DEFAULT_SUPPORT_JOB_BATCH_SIZE,
+    evidence_chars: int = 5000,
+    schema_retries: int = 2,
+    max_in_flight: int = DEFAULT_MAX_IN_FLIGHT,
+    refill_size: int = DEFAULT_REFILL_SIZE,
+) -> list[list[str]]:
+    """Return only support keys established by adaptive verification."""
+
+    if min_support_jobs <= 0:
+        raise ValueError("min_support_jobs must be positive")
+    if nugget_batch_size <= 0:
+        raise ValueError("nugget_batch_size must be positive")
+    if job_batch_size <= 0:
+        raise ValueError("job_batch_size must be positive")
+    if schema_retries < 0:
+        raise ValueError("schema_retries must be >= 0")
+    if not candidates:
+        return []
+
+    strong_by_key = {job.job_key for job in strong_jobs}
+    groups: dict[tuple[str, ...], list[tuple[int, dict]]] = {}
+    for index, candidate in enumerate(candidates):
+        hinted = tuple(
+            job.job_key
+            for job in strong_jobs
+            if job.job_key in {
+                key
+                for key in candidate.get("support_job_keys", ())
+                if isinstance(key, str) and key in strong_by_key
+            }
+        )
+        groups.setdefault(hinted, []).append((index, candidate))
+
+    specifications: list[list[tuple[int, dict]]] = []
+    for hinted in sorted(groups):
+        members = groups[hinted]
+        specifications.extend(
+            members[start : start + nugget_batch_size]
+            for start in range(0, len(members), nugget_batch_size)
+        )
+
+    results = run_refill_window(
+        [
+            partial(
+                _verify_support_group_adaptive,
+                client,
+                specification,
+                strong_jobs,
+                min_support_jobs=min_support_jobs,
+                job_batch_size=job_batch_size,
+                evidence_chars=evidence_chars,
+                schema_retries=schema_retries,
+            )
+            for specification in specifications
+        ],
+        config=RefillWindowConfig(
+            max_in_flight=max_in_flight,
+            refill_size=refill_size,
+        ),
+        label="nugget-support-adaptive",
+    )
+    if len(results) != len(specifications):
+        raise RuntimeError("Adaptive nugget verifier returned an unexpected group count")
+    verified_by_index: list[list[str] | None] = [None] * len(candidates)
+    for group_result in results:
+        for index, support_keys in group_result.items():
+            verified_by_index[index] = support_keys
+    if any(value is None for value in verified_by_index):
+        raise RuntimeError("Adaptive nugget verifier left an unassigned candidate")
+    return [value for value in verified_by_index if value is not None]
+
+
 def build_nuggets_for_topic(
     client: JudgeClient,
     topic: CareerTopic,
@@ -565,6 +710,10 @@ def build_nuggets_for_topic(
     max_in_flight: int = DEFAULT_MAX_IN_FLIGHT,
     refill_size: int = DEFAULT_REFILL_SIZE,
 ) -> list[Nugget]:
+    if min_support_jobs <= 0:
+        raise ValueError("min_support_jobs must be positive")
+    if nugget_batch_size <= 0:
+        raise ValueError("nugget_batch_size must be positive")
     strong_keys = sorted(
         {
             qrel.job_key
@@ -584,12 +733,14 @@ def build_nuggets_for_topic(
 
     extracted = _extract_candidates(client, topic, strong_jobs, max_in_flight=max_in_flight, refill_size=refill_size)
 
-    # Extractor support_job_keys are hints/provenance only. Authoritative
-    # support is measured against every strong job for this topic.
-    verified_keys_by_item = _verify_support_matrix(
+    # Extractor support_job_keys are hints only. Verify hinted strong jobs
+    # first, then deterministic remaining strong jobs until the grounding
+    # threshold is met or the strong-job universe is exhausted.
+    verification_results = _verify_support_adaptive(
         client,
         extracted,
         strong_jobs,
+        min_support_jobs=min_support_jobs,
         nugget_batch_size=nugget_batch_size,
         job_batch_size=job_batch_size,
         schema_retries=schema_retries,
@@ -599,7 +750,7 @@ def build_nuggets_for_topic(
 
     strong_job_key_set = {job.job_key for job in strong_jobs}
     surviving_items: list[dict] = []
-    for item, verified_keys in zip(extracted, verified_keys_by_item, strict=True):
+    for item, verified_keys in zip(extracted, verification_results, strict=True):
         unique_verified_keys = tuple(sorted(set(verified_keys)))
         if not set(unique_verified_keys).issubset(strong_job_key_set):
             raise ValueError("Nugget verifier returned a job outside the strong-job universe")
@@ -612,6 +763,7 @@ def build_nuggets_for_topic(
             {
                 "text": item["text"],
                 "support_job_keys": unique_verified_keys,
+                "importance_evidence_keys": unique_verified_keys[:3],
             }
         )
 
@@ -632,9 +784,10 @@ def build_nuggets_for_topic(
         verified_keys = tuple(item["support_job_keys"])
         support_count = len(verified_keys)
 
-        prevalence = support_count / len(strong_jobs)
-        if not 0 <= prevalence <= 1:
-            raise RuntimeError("Nugget prevalence must be between 0 and 1")
+        # Adaptive verification intentionally does not compute prevalence.
+        # Keeping the sentinel constant makes nugget objects invariant to job
+        # batch boundaries and prevents partial checks from looking exact.
+        prevalence = PREVALENCE_UNAVAILABLE
         normalized = _normalize(item["text"])
         nugget_id = (
             "nug-"
@@ -657,8 +810,9 @@ def build_nuggets_for_topic(
                 support_job_keys=tuple(verified_keys),
                 support_count=support_count,
                 prevalence=prevalence,
-                # Prevalence is provenance/confidence metadata only. It is
-                # deliberately not used for importance or weighting.
+                # Adaptive verification deliberately does not report exact
+                # prevalence. This field is a documented unavailable sentinel
+                # and never controls importance/weight.
                 weight=NUGGET_WEIGHT_POLICY[importance],
                 importance=importance,
             )

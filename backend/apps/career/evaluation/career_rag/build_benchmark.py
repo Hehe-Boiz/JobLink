@@ -19,6 +19,7 @@ from .audit import (
     audit_evidence_truncation,
     assert_audit_passes,
     embedding_provenance_contract,
+    embedding_provenance_is_freeze_safe,
     run_audit,
     sha256_file,
     sha256_text,
@@ -29,6 +30,9 @@ from .nuggets import (
     NUGGET_IMPORTANCE_POLICY_VERSION,
     NUGGET_PROMPT_VERSION,
     NUGGET_WEIGHT_POLICY,
+    IMPORTANCE_EVIDENCE_PREVIEW_JOBS,
+    PREVALENCE_POLICY_VERSION,
+    PREVALENCE_UNAVAILABLE,
     build_nuggets_for_topic,
 )
 from .pooling import PoolingService, load_corpus_jobs
@@ -187,7 +191,7 @@ def build_benchmark(
     # Leakage must fail BEFORE pools / LLM judging.
     # -----------------------------------------------------
 
-    leakage_preflight = audit_derived_label_leakage()
+    leakage_preflight = audit_derived_label_leakage(source="vietjobs")
     if not leakage_preflight["passed"]:
         _json_dump(reports_dir / "preflight_leakage.json", leakage_preflight)
 
@@ -295,14 +299,16 @@ def build_benchmark(
     truncation_audit = audit_evidence_truncation(corpus_jobs, cutoff=5000)
     _json_dump(reports_dir / "preflight_evidence_truncation.json", truncation_audit)
 
+    provenance_artifact_value = os.environ.get("CAREER_RAG_EMBEDDING_PROVENANCE_PATH")
     provenance = embedding_provenance_contract(
         backend_root=BACKEND_ROOT,
         corpus_membership_sha256=corpus_membership_sha256,
         corpus_chunks_sha256=corpus_chunks_sha256,
         forbidden_derived_metadata_present=not leakage_preflight["passed"],
+        provenance_path=Path(provenance_artifact_value) if provenance_artifact_value else None,
     )
     _json_dump(reports_dir / "preflight_embedding_provenance.json", provenance)
-    if provenance["status"] != "VERIFIED_CLEAN":
+    if not embedding_provenance_is_freeze_safe(provenance):
         raise RuntimeError(
             "CareerRAGBench-Auto-V3 freeze blocked: embedding provenance is "
             f"{provenance['status']}; the historical vector input-field "
@@ -453,11 +459,15 @@ def build_benchmark(
             "judge_prompt_version": JUDGE_PROMPT_VERSION,
             "nugget_prompt_version": NUGGET_PROMPT_VERSION,
             "nugget_importance_policy_version": NUGGET_IMPORTANCE_POLICY_VERSION,
+            "importance_evidence_preview_jobs": IMPORTANCE_EVIDENCE_PREVIEW_JOBS,
             "nugget_weight_policy": NUGGET_WEIGHT_POLICY,
             "prevalence_definition": (
-                "verified strong-job support_count divided by the number of "
-                "strong jobs; provenance/statistic only, never importance or weight"
+                "not computed under adaptive support verification; every V3 nugget "
+                f"stores {PREVALENCE_UNAVAILABLE} as unavailable. Verified support "
+                "keys/count are provenance only and never importance or weight."
             ),
+            "prevalence_policy_version": PREVALENCE_POLICY_VERSION,
+            "prevalence_unavailable_sentinel": PREVALENCE_UNAVAILABLE,
             "pool_depth": pool_depth,
             "max_pool": max_pool,
             "rrf_k": 60,

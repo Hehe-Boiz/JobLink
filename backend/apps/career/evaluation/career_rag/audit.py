@@ -14,6 +14,9 @@ from apps.career.models import CareerJobChunk
 from .schema import CareerTopic, CorpusJob, Nugget, RelevanceJudgment
 
 FORBIDDEN_DERIVED_KEYS = {"technical_skills", "soft_skills", "gold_nuggets", "judge_labels", "derived_role_labels"}
+EMBEDDING_PROVENANCE_SCHEMA_VERSION = "career-rag-embedding-provenance-v1"
+EMBEDDING_INPUT_FIELD_POLICY = "raw-job-fields-only-no-forbidden-derived-fields-v1"
+EMBEDDING_INDEXING_POLICY_VERSION = "career-rag-indexing-input-contract-v1"
 QUALIFICATION_SECTION_TERMS = (
     "required",
     "requirement",
@@ -89,7 +92,7 @@ def audit_evidence_truncation(
     *,
     cutoff: int = 5000,
 ) -> dict:
-    """Report deterministic evidence-length and late-section statistics."""
+    """Report deterministic evidence-length and qualification-loss statistics."""
 
     if cutoff <= 0:
         raise ValueError("cutoff must be positive")
@@ -98,6 +101,13 @@ def audit_evidence_truncation(
     over_cutoff = 0
     late_qualification_jobs = 0
     late_section_counts: Counter[str] = Counter()
+    after_cutoff_section_count = 0
+    crossing_cutoff_section_count = 0
+    after_cutoff_section_jobs: set[str] = set()
+    crossing_cutoff_section_jobs: set[str] = set()
+    qualification_content_lost_jobs: set[str] = set()
+    qualification_content_lost_chars: list[int] = []
+    qualification_content_lost_total = 0
     qualification_pattern = re.compile(
         "|".join(re.escape(term) for term in QUALIFICATION_SECTION_TERMS),
         flags=re.IGNORECASE,
@@ -110,10 +120,33 @@ def audit_evidence_truncation(
             over_cutoff += 1
 
         late_sections: set[str] = set()
-        for match in re.finditer(r"(?im)^\[([^\]]+)\]", evidence):
+        section_matches = list(re.finditer(r"(?im)^\[([^\]]+)\]", evidence))
+        for index, match in enumerate(section_matches):
             section = " ".join(match.group(1).split())
-            if match.start() >= cutoff and qualification_pattern.search(section):
+            if not qualification_pattern.search(section):
+                continue
+
+            section_end = (
+                section_matches[index + 1].start()
+                if index + 1 < len(section_matches)
+                else len(evidence)
+            )
+            section_body_start = match.end()
+            lost_start = max(cutoff, section_body_start)
+            lost_chars = max(0, section_end - lost_start)
+
+            if match.start() >= cutoff:
                 late_sections.add(section)
+                after_cutoff_section_count += 1
+                after_cutoff_section_jobs.add(job.job_key)
+            elif section_end > cutoff:
+                crossing_cutoff_section_count += 1
+                crossing_cutoff_section_jobs.add(job.job_key)
+
+            if lost_chars:
+                qualification_content_lost_total += lost_chars
+                qualification_content_lost_chars.append(lost_chars)
+                qualification_content_lost_jobs.add(job.job_key)
         if late_sections:
             late_qualification_jobs += 1
             late_section_counts.update(late_sections)
@@ -138,10 +171,57 @@ def audit_evidence_truncation(
             else 0.0
         ),
         "late_qualification_sections": dict(sorted(late_section_counts.items())),
-        "interpretation": (
-            "A qualification section is counted as late when its bracketed "
-            "section header begins at or after the raw-evidence cutoff."
+        "qualification_section_after_cutoff_count": after_cutoff_section_count,
+        "qualification_section_after_cutoff_job_count": len(after_cutoff_section_jobs),
+        "qualification_section_crossing_cutoff_count": crossing_cutoff_section_count,
+        "qualification_section_crossing_cutoff_job_count": len(crossing_cutoff_section_jobs),
+        "qualification_content_chars_lost_total": qualification_content_lost_total,
+        "qualification_content_chars_lost": {
+            "p50": _percentile(qualification_content_lost_chars, 0.50),
+            "p90": _percentile(qualification_content_lost_chars, 0.90),
+            "p95": _percentile(qualification_content_lost_chars, 0.95),
+            "p99": _percentile(qualification_content_lost_chars, 0.99),
+            "max": max(qualification_content_lost_chars, default=0),
+        },
+        "qualification_content_lost_job_count": len(qualification_content_lost_jobs),
+        "qualification_content_lost_job_percentage": (
+            100.0 * len(qualification_content_lost_jobs) / count
+            if count
+            else 0.0
         ),
+        "interpretation": (
+            "Qualification sections are identified by their bracketed section "
+            "headers. The audit separately counts sections beginning after the "
+            "cutoff, sections whose spans cross the cutoff, and qualification "
+            "body characters after the cutoff."
+        ),
+    }
+
+
+def embedding_provenance_expected_contract(
+    *,
+    backend_root: Path,
+    corpus_membership_sha256: str,
+    corpus_chunks_sha256: str,
+) -> dict:
+    """Return the durable fields a clean V3 index manifest must contain."""
+
+    chunking_path = backend_root / "apps" / "career" / "chunking.py"
+    embedding_path = backend_root / "apps" / "career" / "embedding.py"
+    forbidden_fields = sorted(FORBIDDEN_DERIVED_KEYS)
+    return {
+        "provenance_schema_version": EMBEDDING_PROVENANCE_SCHEMA_VERSION,
+        "embedding_model": "intfloat/multilingual-e5-small",
+        "embedding_dimension": 384,
+        "chunking_source_sha256": sha256_file(chunking_path),
+        "embedding_source_sha256": sha256_file(embedding_path),
+        "input_field_policy": EMBEDDING_INPUT_FIELD_POLICY,
+        "forbidden_derived_fields": forbidden_fields,
+        "forbidden_derived_fields_excluded": True,
+        "corpus_membership_sha256": corpus_membership_sha256,
+        "corpus_chunks_sha256": corpus_chunks_sha256,
+        "chunk_context_sha256": corpus_chunks_sha256,
+        "indexing_policy_version": EMBEDDING_INDEXING_POLICY_VERSION,
     }
 
 
@@ -151,34 +231,115 @@ def embedding_provenance_contract(
     corpus_membership_sha256: str,
     corpus_chunks_sha256: str,
     forbidden_derived_metadata_present: bool,
+    provenance_path: Path | None = None,
 ) -> dict:
-    """Create the V3 embedding provenance contract without inspecting/mutating DB vectors."""
+    """Verify an explicit historical index manifest without inspecting vectors.
 
-    chunking_path = backend_root / "apps" / "career" / "chunking.py"
-    embedding_path = backend_root / "apps" / "career" / "embedding.py"
-    return {
+    Current metadata cleanliness and current source code are observations, not
+    historical proof of what was embedded. A clean status therefore requires a
+    durable artifact with matching hashes, an explicit clean status, an
+    indexing timestamp, and an explicit exclusion declaration.
+    """
+
+    expected = embedding_provenance_expected_contract(
+        backend_root=backend_root,
+        corpus_membership_sha256=corpus_membership_sha256,
+        corpus_chunks_sha256=corpus_chunks_sha256,
+    )
+    report = {
         "status": "UNVERIFIED",
-        "embedding_model": "intfloat/multilingual-e5-small",
-        "embedding_dimension": 384,
-        "chunking_source_sha256": sha256_file(chunking_path),
-        "embedding_source_sha256": sha256_file(embedding_path),
+        **expected,
+        "expected_contract": expected,
+        "provenance_artifact_path": str(provenance_path) if provenance_path else None,
+        "indexing_timestamp": None,
         "input_field_policy": (
-            "UNVERIFIED: the historical input fields used to create the frozen "
-            "numeric vectors cannot be reconstructed from the surviving artifacts. "
-            "The current chunking implementation is capable of including derived "
-            "technical_skills metadata in embedding prefixes, so a clean historical "
-            "contract cannot be inferred from source code alone."
+            "UNVERIFIED: the historical embedding input fields are not proven; "
+            f"expected clean policy would be {expected['input_field_policy']}."
         ),
+        "forbidden_derived_fields_excluded": None,
         "forbidden_derived_metadata_present": bool(forbidden_derived_metadata_present),
-        "corpus_membership_sha256": corpus_membership_sha256,
-        "corpus_chunks_sha256": corpus_chunks_sha256,
         "requires_verified_clean_for_freeze": True,
+        "missing_evidence": [],
+        "mismatched_fields": [],
     }
 
+    if provenance_path is None:
+        report["missing_evidence"] = ["provenance_artifact"]
+        report["reason"] = (
+            "No durable historical embedding provenance artifact was supplied; "
+            "current metadata and source code cannot prove the frozen vector input contract."
+        )
+        return report
 
-def audit_derived_label_leakage() -> dict:
+    try:
+        artifact = json.loads(Path(provenance_path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        report["missing_evidence"] = ["readable_provenance_artifact"]
+        report["reason"] = f"Could not read provenance artifact: {exc}"
+        return report
+
+    if not isinstance(artifact, dict):
+        report["missing_evidence"] = ["object_provenance_artifact"]
+        report["reason"] = "Provenance artifact must be a JSON object."
+        return report
+
+    artifact_status = artifact.get("status", artifact.get("provenance_status"))
+    report["indexing_timestamp"] = artifact.get("indexing_timestamp")
+    report["input_field_policy"] = artifact.get(
+        "input_field_policy",
+        report["input_field_policy"],
+    )
+    report["forbidden_derived_fields_excluded"] = artifact.get(
+        "forbidden_derived_fields_excluded",
+    )
+    included = artifact.get("derived_fields_included")
+    if included is None:
+        included = artifact.get("forbidden_derived_fields_included")
+    explicitly_leaked = (
+        artifact_status == "VERIFIED_LEAKED"
+        or artifact.get("forbidden_derived_fields_excluded") is False
+        or included is True
+        or (isinstance(included, (list, tuple, set)) and bool(included))
+    )
+    if explicitly_leaked:
+        report["status"] = "VERIFIED_LEAKED"
+        report["forbidden_derived_fields_excluded"] = False
+        report["reason"] = "The provenance artifact explicitly records forbidden derived fields in embedding input."
+        return report
+
+    required_fields = list(expected)
+    mismatched = [
+        field
+        for field in required_fields
+        if artifact.get(field) != expected[field]
+    ]
+    if mismatched:
+        report["mismatched_fields"] = mismatched
+
+    missing: list[str] = []
+    if artifact_status != "VERIFIED_CLEAN":
+        missing.append("explicit_verified_clean_status")
+    if artifact.get("indexing_timestamp") in (None, ""):
+        missing.append("indexing_timestamp")
+    if artifact.get("forbidden_derived_fields_excluded") is not True:
+        missing.append("forbidden_derived_fields_excluded=true")
+    report["missing_evidence"] = missing
+
+    if not mismatched and not missing:
+        report["status"] = "VERIFIED_CLEAN"
+        report["reason"] = "Durable clean provenance matched the V3 corpus, source, model, dimension, and policy contract."
+    else:
+        report["reason"] = "The supplied provenance artifact was incomplete or did not match the V3 contract."
+    return report
+
+
+def embedding_provenance_is_freeze_safe(contract: dict) -> bool:
+    return contract.get("status") == "VERIFIED_CLEAN"
+
+
+def audit_derived_label_leakage(*, source: str = "vietjobs") -> dict:
     offenders: list[dict] = []
-    rows = CareerJobChunk.objects.filter(active=True).values("chunk_id", "metadata")
+    rows = CareerJobChunk.objects.filter(active=True, source=source).values("chunk_id", "metadata")
     for row in rows.iterator(chunk_size=5000):
         metadata = row.get("metadata") or {}
         leaked = sorted(FORBIDDEN_DERIVED_KEYS.intersection(metadata))
@@ -271,7 +432,7 @@ def run_audit(
     controls: list[dict],
 ) -> dict:
     report = {
-        "derived_label_leakage": audit_derived_label_leakage(),
+        "derived_label_leakage": audit_derived_label_leakage(source="vietjobs"),
         "split": audit_split(topics),
         "qrels": audit_qrels(topics, qrels),
         "controls": audit_controls(controls),

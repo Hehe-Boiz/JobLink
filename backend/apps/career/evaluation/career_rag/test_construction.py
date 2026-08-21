@@ -1,14 +1,21 @@
 from __future__ import annotations
 
 import re
+import json
 import tempfile
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
+from unittest.mock import patch
 
+from . import audit as audit_module
 from .audit import (
+    audit_derived_label_leakage,
     audit_evidence_truncation,
     audit_split,
+    embedding_provenance_expected_contract,
     embedding_provenance_contract,
+    embedding_provenance_is_freeze_safe,
     sha256_tree,
 )
 from .judges import judge_candidates
@@ -16,14 +23,15 @@ from .nuggets import (
     NUGGET_IMPORTANCE_POLICY_VERSION,
     NUGGET_PROMPT_VERSION,
     NUGGET_WEIGHT_POLICY,
+    PREVALENCE_UNAVAILABLE,
     _judge_importance_batch,
     _validate_importance,
     _verify_support,
     _verify_support_matrix,
     build_nuggets_for_topic,
 )
-from .pooling import audit_pool_coverage
-from .schema import CareerTopic, CorpusJob, PooledCandidate, RelevanceJudgment
+from .pooling import audit_pool_coverage, audit_pool_coverage_offline
+from .schema import CareerQuery, CareerTopic, CorpusJob, PooledCandidate, RelevanceJudgment
 from .semantics import (
     CANONICAL_INFORMATION_FACETS,
     CANONICAL_INFORMATION_NEED_VERSION,
@@ -161,15 +169,18 @@ class NuggetConstructionTests(unittest.TestCase):
             refill_size=1,
         )
 
-    def test_extractor_underclaim_does_not_bias_prevalence(self) -> None:
-        nuggets = self._build({"J1": True, "J2": True, "J3": True, "J4": False})
+    def test_extractor_underclaim_expands_verified_support_before_threshold(self) -> None:
+        nuggets = self._build(
+            {"J1": True, "J2": True, "J3": True, "J4": False},
+            job_batch_size=1,
+        )
         self.assertEqual(len(nuggets), 1)
         nugget = nuggets[0]
-        self.assertEqual(set(nugget.support_job_keys), {"vietjobs::J1", "vietjobs::J2", "vietjobs::J3"})
-        self.assertEqual(nugget.support_count, 3)
+        self.assertEqual(set(nugget.support_job_keys), {"vietjobs::J1", "vietjobs::J2"})
+        self.assertEqual(nugget.support_count, 2)
         self.assertEqual(nugget.support_count, len(set(nugget.support_job_keys)))
         self.assertTrue(set(nugget.support_job_keys).issubset({job.job_key for job in _jobs()}))
-        self.assertEqual(nugget.prevalence, 0.75)
+        self.assertEqual(nugget.prevalence, PREVALENCE_UNAVAILABLE)
 
     def test_unsupported_nugget_is_removed_after_authoritative_verification(self) -> None:
         self.assertEqual(self._build({"J1": True, "J2": False, "J3": False, "J4": False}), [])
@@ -210,7 +221,7 @@ class NuggetConstructionTests(unittest.TestCase):
                 importance_by_candidate={"REST API": "OKAY"},
             ),
         )[0]
-        self.assertEqual(nugget.prevalence, 1.0)
+        self.assertEqual(nugget.prevalence, PREVALENCE_UNAVAILABLE)
         self.assertEqual(nugget.importance, "OKAY")
         self.assertEqual(nugget.weight, 0.5)
 
@@ -223,7 +234,7 @@ class NuggetConstructionTests(unittest.TestCase):
                 importance_by_candidate={"REST API": "VITAL"},
             ),
         )[0]
-        self.assertEqual(nugget.prevalence, 0.5)
+        self.assertEqual(nugget.prevalence, PREVALENCE_UNAVAILABLE)
         self.assertEqual(nugget.importance, "VITAL")
         self.assertEqual(nugget.weight, 1.0)
 
@@ -248,9 +259,50 @@ class NuggetConstructionTests(unittest.TestCase):
                 importance_by_candidate={"REST API": "OKAY"},
             ),
         )[0]
-        self.assertNotEqual(first.prevalence, second.prevalence)
+        self.assertEqual(first.prevalence, PREVALENCE_UNAVAILABLE)
+        self.assertEqual(second.prevalence, PREVALENCE_UNAVAILABLE)
         self.assertEqual(first.importance, second.importance)
         self.assertEqual(first.weight, second.weight)
+
+    def test_adaptive_verification_stops_after_sufficient_verified_support(self) -> None:
+        support = {"J1": True, "J2": True, "J3": True, "J4": True}
+        client = FakeJudgeClient(support)
+        nuggets = self._build(
+            support,
+            client=client,
+            min_support_jobs=2,
+            job_batch_size=1,
+        )
+        self.assertEqual(len(nuggets), 1)
+        self.assertEqual(
+            nuggets[0].support_job_keys,
+            ("vietjobs::J1", "vietjobs::J2"),
+        )
+        support_calls = [call for call in client.calls if "support matrix" in call[0]]
+        self.assertEqual(len(support_calls), 2)
+        self.assertLess(len(support_calls), 4)
+        self.assertEqual(nuggets[0].prevalence, PREVALENCE_UNAVAILABLE)
+
+    def test_only_one_verified_support_is_removed_for_minimum_two(self) -> None:
+        support = {"J1": True, "J2": False, "J3": False, "J4": False}
+        client = FakeJudgeClient(support)
+        self.assertEqual(
+            self._build(support, client=client, min_support_jobs=2, job_batch_size=1),
+            [],
+        )
+        support_calls = [call for call in client.calls if "support matrix" in call[0]]
+        self.assertEqual(len(support_calls), 4)
+
+    def test_partial_verification_never_reports_exact_prevalence(self) -> None:
+        support = {"J1": True, "J2": True, "J3": False, "J4": False}
+        nugget = self._build(
+            support,
+            client=FakeJudgeClient(support),
+            min_support_jobs=2,
+            job_batch_size=1,
+        )[0]
+        self.assertEqual(nugget.support_count, len(set(nugget.support_job_keys)))
+        self.assertEqual(nugget.prevalence, PREVALENCE_UNAVAILABLE)
 
     def test_malformed_importance_values_are_rejected(self) -> None:
         expected = ("N1", "N2")
@@ -264,6 +316,39 @@ class NuggetConstructionTests(unittest.TestCase):
         for payload in malformed:
             with self.subTest(payload=payload), self.assertRaises(ValueError):
                 _validate_importance(payload, nugget_ids=expected)
+
+    def test_importance_prompt_uses_fixed_evidence_preview_without_frequency_signal(self) -> None:
+        class CaptureImportanceClient:
+            def __init__(self) -> None:
+                self.users: list[str] = []
+
+            def json_call(self, *, system: str, user: str, retries: int = 2) -> dict:
+                self.users.append(system + "\n" + user)
+                return {"importance": {"N1": "OKAY"}}
+
+        jobs = _jobs(20)
+        corpus = {job.job_key: job for job in jobs}
+        first = {
+            "text": "REST API",
+            "support_job_keys": tuple(sorted(job.job_key for job in jobs)[:3]),
+        }
+        second = {
+            "text": "REST API",
+            "support_job_keys": tuple(job.job_key for job in jobs),
+        }
+        client = CaptureImportanceClient()
+        _judge_importance_batch(client, _topic(), [first], corpus, evidence_chars=5000)
+        _judge_importance_batch(client, _topic(), [second], corpus, evidence_chars=5000)
+
+        self.assertEqual(client.users[0], client.users[1])
+        for forbidden in (
+            "support_count",
+            "prevalence",
+            "Additional verified supporting jobs",
+        ):
+            self.assertNotIn(forbidden, client.users[0])
+        for job in jobs[3:]:
+            self.assertNotIn(job.job_key, client.users[0])
 
     def test_extractor_hints_do_not_change_authoritative_result(self) -> None:
         support = {"J1": True, "J2": True, "J3": True, "J4": False}
@@ -798,6 +883,62 @@ class OfflineDiagnosticTests(unittest.TestCase):
             self.assertEqual(detail["rrf_new_candidates"], [])
         self.assertTrue(report["reports"]["20"]["topics"]["topic-1"]["max_pool_truncates_system_unique"])
 
+    def test_pool_unique_contribution_is_unique_against_all_other_systems(self) -> None:
+        rankings = {
+            "topic-1": {
+                "direct": {
+                    "bm25": ["A", "B", "C"],
+                    "dense": ["B", "C", "D"],
+                    "title": ["C", "E"],
+                }
+            }
+        }
+        detail = audit_pool_coverage(
+            rankings,
+            depths=(5,),
+            max_pool=10,
+        )["reports"]["5"]["topics"]["topic-1"]
+        self.assertEqual(
+            {system: set(values) for system, values in detail["unique_contribution"].items()},
+            {"bm25": {"A"}, "dense": {"D"}, "title": {"E"}},
+        )
+
+    def test_offline_pool_audit_runs_local_rankings_without_llm(self) -> None:
+        class StubPooler:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, str, int]] = []
+
+            def _ranking(self, system: str, query: str, depth: int) -> list[str]:
+                self.calls.append((system, query, depth))
+                return [f"{system}-{index}" for index in range(1, depth + 1)]
+
+            def bm25(self, query: str, depth: int) -> list[str]:
+                return self._ranking("bm25", query, depth)
+
+            def dense(self, query: str, depth: int) -> list[str]:
+                return self._ranking("dense", query, depth)
+
+            def title_lexical(self, query: str, depth: int) -> list[str]:
+                return self._ranking("title", query, depth)
+
+        pooler = StubPooler()
+        topic = CareerTopic("topic-1", "family-1", "broad", "Tech", "tech")
+        query = CareerQuery("q1", "topic-1", "direct", "Tech jobs")
+        report = audit_pool_coverage_offline(
+            pooler,
+            [topic],
+            {topic.topic_id: [query]},
+            depths=(5, 10, 15, 20),
+            max_pool=3,
+        )
+        self.assertEqual(report["mode"], "real_offline")
+        self.assertEqual(report["query_count"], 1)
+        self.assertEqual(sorted(set(pooler.calls)), [
+            ("bm25", "Tech jobs", 20),
+            ("dense", "Tech jobs", 20),
+            ("title", "Tech jobs", 20),
+        ])
+
     def test_truncation_audit_is_deterministic_and_detects_late_qualifications(self) -> None:
         jobs = [
             CorpusJob(
@@ -823,14 +964,31 @@ class OfflineDiagnosticTests(unittest.TestCase):
                 employment_type=None,
                 chunks=({"section": "description", "content": "short"},),
             ),
+            CorpusJob(
+                source="vietjobs",
+                source_job_id="J3",
+                job_title="Engineer J3",
+                category_key="tech",
+                location_key=None,
+                experience_level=None,
+                employment_type=None,
+                chunks=(
+                    {"section": "description", "content": "x" * 4800},
+                    {"section": "required qualifications", "content": "Python " * 200},
+                ),
+            ),
         ]
         first = audit_evidence_truncation(jobs, cutoff=5000)
         second = audit_evidence_truncation(jobs, cutoff=5000)
         self.assertEqual(first, second)
-        self.assertEqual(first["job_count"], 2)
-        self.assertEqual(first["over_cutoff_count"], 1)
+        self.assertEqual(first["job_count"], 3)
+        self.assertEqual(first["over_cutoff_count"], 2)
         self.assertEqual(first["late_qualification_section_job_count"], 1)
         self.assertIn("required qualifications", first["late_qualification_sections"])
+        self.assertEqual(first["qualification_section_after_cutoff_job_count"], 1)
+        self.assertEqual(first["qualification_section_crossing_cutoff_job_count"], 1)
+        self.assertEqual(first["qualification_content_lost_job_count"], 2)
+        self.assertGreater(first["qualification_content_chars_lost_total"], 0)
 
     def test_embedding_provenance_is_explicitly_unverified_without_history(self) -> None:
         backend_root = Path(__file__).resolve().parents[4]
@@ -841,6 +999,118 @@ class OfflineDiagnosticTests(unittest.TestCase):
             forbidden_derived_metadata_present=False,
         )
         self.assertEqual(contract["status"], "UNVERIFIED")
+        self.assertIsNone(contract["forbidden_derived_fields_excluded"])
         self.assertEqual(len(contract["chunking_source_sha256"]), 64)
         self.assertEqual(len(contract["embedding_source_sha256"]), 64)
         self.assertTrue(contract["requires_verified_clean_for_freeze"])
+
+    def test_matching_clean_embedding_provenance_artifact_is_verified(self) -> None:
+        backend_root = Path(__file__).resolve().parents[4]
+        membership = "m" * 64
+        chunks = "c" * 64
+        artifact = embedding_provenance_expected_contract(
+            backend_root=backend_root,
+            corpus_membership_sha256=membership,
+            corpus_chunks_sha256=chunks,
+        )
+        artifact.update({"status": "VERIFIED_CLEAN", "indexing_timestamp": "2026-08-21T00:00:00Z"})
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "embedding-provenance.json"
+            path.write_text(json.dumps(artifact), encoding="utf-8")
+            contract = embedding_provenance_contract(
+                backend_root=backend_root,
+                corpus_membership_sha256=membership,
+                corpus_chunks_sha256=chunks,
+                forbidden_derived_metadata_present=False,
+                provenance_path=path,
+            )
+        self.assertEqual(contract["status"], "VERIFIED_CLEAN")
+        self.assertTrue(embedding_provenance_is_freeze_safe(contract))
+
+    def test_explicitly_leaked_embedding_provenance_is_not_freeze_safe(self) -> None:
+        backend_root = Path(__file__).resolve().parents[4]
+        artifact = embedding_provenance_expected_contract(
+            backend_root=backend_root,
+            corpus_membership_sha256="m" * 64,
+            corpus_chunks_sha256="c" * 64,
+        )
+        artifact.update({
+            "status": "VERIFIED_LEAKED",
+            "indexing_timestamp": "2026-08-21T00:00:00Z",
+            "derived_fields_included": ["technical_skills"],
+        })
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "embedding-provenance.json"
+            path.write_text(json.dumps(artifact), encoding="utf-8")
+            contract = embedding_provenance_contract(
+                backend_root=backend_root,
+                corpus_membership_sha256="m" * 64,
+                corpus_chunks_sha256="c" * 64,
+                forbidden_derived_metadata_present=False,
+                provenance_path=path,
+            )
+        self.assertEqual(contract["status"], "VERIFIED_LEAKED")
+        self.assertFalse(embedding_provenance_is_freeze_safe(contract))
+
+    def test_mismatched_embedding_provenance_is_unverified_and_blocks_freeze(self) -> None:
+        backend_root = Path(__file__).resolve().parents[4]
+        artifact = embedding_provenance_expected_contract(
+            backend_root=backend_root,
+            corpus_membership_sha256="m" * 64,
+            corpus_chunks_sha256="c" * 64,
+        )
+        artifact.update({
+            "status": "VERIFIED_CLEAN",
+            "indexing_timestamp": "2026-08-21T00:00:00Z",
+            "embedding_model": "wrong-model",
+        })
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "embedding-provenance.json"
+            path.write_text(json.dumps(artifact), encoding="utf-8")
+            contract = embedding_provenance_contract(
+                backend_root=backend_root,
+                corpus_membership_sha256="m" * 64,
+                corpus_chunks_sha256="c" * 64,
+                forbidden_derived_metadata_present=False,
+                provenance_path=path,
+            )
+        self.assertEqual(contract["status"], "UNVERIFIED")
+        self.assertFalse(embedding_provenance_is_freeze_safe(contract))
+
+    def test_vietjobs_leakage_audit_ignores_unrelated_sources(self) -> None:
+        class FakeQuery:
+            def __init__(self, rows: list[dict]) -> None:
+                self.rows = rows
+
+            def values(self, *fields: str) -> "FakeQuery":
+                return self
+
+            def iterator(self, *, chunk_size: int):
+                return iter(self.rows)
+
+        class FakeManager:
+            def __init__(self) -> None:
+                self.filters: dict[str, object] = {}
+                self.rows = [
+                    {"chunk_id": "viet-clean", "source": "vietjobs", "active": True, "metadata": {}},
+                    {
+                        "chunk_id": "other-leaked",
+                        "source": "other-source",
+                        "active": True,
+                        "metadata": {"technical_skills": ["Python"]},
+                    },
+                ]
+
+            def filter(self, **filters: object) -> FakeQuery:
+                self.filters = filters
+                return FakeQuery([
+                    row
+                    for row in self.rows
+                    if all(row.get(key) == value for key, value in filters.items())
+                ])
+
+        manager = FakeManager()
+        with patch.object(audit_module, "CareerJobChunk", SimpleNamespace(objects=manager)):
+            report = audit_derived_label_leakage(source="vietjobs")
+        self.assertTrue(report["passed"])
+        self.assertEqual(manager.filters, {"active": True, "source": "vietjobs"})

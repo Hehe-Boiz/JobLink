@@ -3,13 +3,14 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from dataclasses import replace
+from typing import Iterable
 
 from rank_bm25 import BM25Okapi
 
 from apps.career.models import CareerJobChunk
 from apps.career.retrieval import CareerRetriever
 
-from .schema import CareerQuery, CorpusJob, PooledCandidate
+from .schema import CareerQuery, CareerTopic, CorpusJob, PooledCandidate
 
 RRF_K = 60
 INDEPENDENT_POOL_SYSTEMS = ("bm25", "dense", "title")
@@ -35,7 +36,16 @@ def _pool_coverage_scope(
     }
     direct_union = set().union(*system_sets.values())
     unique_contribution = {
-        system: sorted(values - (direct_union - values))
+        system: sorted(
+            values
+            - set().union(
+                *(
+                    system_sets[other]
+                    for other in INDEPENDENT_POOL_SYSTEMS
+                    if other != system
+                )
+            )
+        )
         for system, values in system_sets.items()
     }
     pairwise_overlap = {
@@ -82,10 +92,16 @@ def _pool_coverage_scope(
         },
         "rrf_new_candidates": sorted(rrf_new_candidates),
         "aggregate_rrf_candidate_count": len(aggregate_order),
+        "candidate_count_before_max_pool": len(aggregate_order),
         "resulting_candidate_count": len(selected),
+        "candidate_count_after_max_pool": len(selected),
         "max_pool_dropped_count": len(dropped),
         "max_pool_drops_system_unique": {
             system: sorted(set(keys) & dropped)
+            for system, keys in unique_contribution.items()
+        },
+        "max_pool_drops_system_unique_counts": {
+            system: len(set(keys) & dropped)
             for system, keys in unique_contribution.items()
         },
         "max_pool_truncates_system_unique": any(
@@ -144,6 +160,58 @@ def audit_pool_coverage(
         "pooling_policy_changed": False,
         "reports": depth_reports,
     }
+
+
+def audit_pool_coverage_offline(
+    pooler: "PoolingService",
+    topics: Iterable[CareerTopic],
+    queries_by_topic: dict[str, list[CareerQuery]],
+    *,
+    depths: tuple[int, ...] = (5, 10, 15, 20),
+    max_pool: int = 80,
+) -> dict:
+    """Run the pool audit over local retriever rankings only.
+
+    The caller supplies an already-constructed ``PoolingService`` so this
+    helper can use existing local vectors and BM25 indexes without creating an
+    index or contacting an LLM/API. RRF and max-pool behavior remain diagnostic
+    only; this function does not change production pooling semantics.
+    """
+
+    if not depths or any(depth <= 0 for depth in depths):
+        raise ValueError("depths must contain only positive values")
+    if max_pool <= 0:
+        raise ValueError("max_pool must be positive")
+
+    max_depth = max(depths)
+    rankings_by_topic: dict[str, dict[str, dict[str, list[str]]]] = {}
+    query_count = 0
+    for topic in sorted(topics, key=lambda item: item.topic_id):
+        variant_rankings: dict[str, dict[str, list[str]]] = {}
+        for query in queries_by_topic.get(topic.topic_id, []):
+            query_count += 1
+            variant_rankings[query.variant] = {
+                "bm25": pooler.bm25(query.text, max_depth),
+                "dense": pooler.dense(query.text, max_depth),
+                "title": pooler.title_lexical(query.text, max_depth),
+            }
+        rankings_by_topic[topic.topic_id] = variant_rankings
+
+    report = audit_pool_coverage(
+        rankings_by_topic,
+        depths=depths,
+        max_pool=max_pool,
+    )
+    report.update(
+        {
+            "mode": "real_offline",
+            "topic_count": len(rankings_by_topic),
+            "query_count": query_count,
+            "retrieval_systems_run": list(INDEPENDENT_POOL_SYSTEMS),
+            "external_llm_calls": 0,
+        }
+    )
+    return report
 
 
 def load_corpus_jobs(*, source: str = "vietjobs") -> list[CorpusJob]:
