@@ -4,13 +4,19 @@ import re
 
 from .schema import CareerTopic
 
+CANONICAL_INFORMATION_NEED_VERSION = "career-rag-canonical-information-need-v1"
+CANONICAL_INFORMATION_FACETS = (
+    "skills/tools, responsibilities/capabilities, "
+    "experience/qualifications, and other employer requirements"
+)
+
 
 def display_taxonomy_label(
     value: str,
 ) -> str:
-    text = re.sub(r"[_\\-]+", " ", value).strip()
+    text = re.sub(r"[_-]+", " ", value).strip()
 
-    return re.sub(r"\\s+", " ", text)
+    return re.sub(r"\s+", " ", text)
 
 
 def topic_intent_label(topic: CareerTopic) -> str:
@@ -35,14 +41,26 @@ def topic_intent_label(topic: CareerTopic) -> str:
 
 def topic_description(topic: CareerTopic) -> str:
     """
-    Canonical structured semantic intent
-    used by LLM-based benchmark components.
+    Backward-compatible name for the canonical information need.
     """
 
-    if topic.scope == "specific":
-        domain = display_taxonomy_label(topic.category_key)
+    return canonical_information_need(topic)
 
-        return (f"specific occupation/specialization: {topic.label}; career domain: {domain}"
+
+def canonical_information_need(topic: CareerTopic) -> str:
+    """Return the deterministic information need shared by construction stages."""
+
+    domain = display_taxonomy_label(topic.category_key)
+
+    if topic.scope == "specific":
+        return (
+            f"From real job postings for the occupation {topic.label} "
+            f"within the career domain {domain}, identify the "
+            f"{CANONICAL_INFORMATION_FACETS} that help explain what employers expect."
         )
 
-    return (f"broad career field/domain: {topic.label}")
+    broad_field = topic.label or domain
+    return (
+        f"From real job postings in the {broad_field} career field, identify the "
+        f"{CANONICAL_INFORMATION_FACETS} that help explain what employers expect."
+    )

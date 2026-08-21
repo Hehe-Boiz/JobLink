@@ -25,7 +25,8 @@ DEFAULT_MIN_SPECIFIC_TITLE_JOBS = 8
 
 HARD_MIN_SPECIFIC_TITLE_JOBS = 8
 SPECIFICITY_WILSON_Z = 1.96
-TOPIC_SELECTION_POLICY_VERSION = "all-supported-nongeneric-wilson-specificity-v2"
+TOPIC_SELECTION_POLICY_VERSION = "all-supported-nongeneric-wilson-specificity-v3"
+BASE_QUERY_VARIANTS = ("direct", "conversational", "noisy")
 
 GENERIC_CATEGORY_TOKENS = {
     "khac",
@@ -37,24 +38,24 @@ GENERIC_CATEGORY_TOKENS = {
 
 
 DIRECT_TEMPLATES = (
-    "{label} cần những kỹ năng gì?",
-    "Muốn theo {label} thì nên học và chuẩn bị những gì?",
+    "{label} cần những kỹ năng/công cụ, trách nhiệm/năng lực và yêu cầu kinh nghiệm/bằng cấp nào?",
+    "Để theo {label}, nhà tuyển dụng thường yêu cầu kỹ năng/công cụ, trách nhiệm/năng lực và kinh nghiệm/bằng cấp gì?",
 )
 
 CONVERSATIONAL_TEMPLATES = (
     (
-        "Mình muốn làm {label}, các JD thường cần "
-        "những kỹ năng và yêu cầu nào?"
+        "Mình muốn làm {label}; các JD thường cần "
+        "kỹ năng/công cụ, trách nhiệm/năng lực và kinh nghiệm/bằng cấp nào?"
     ),
     (
         "Nếu muốn đi theo {label} thì nên tập trung "
-        "vào những năng lực nào?"
+        "vào kỹ năng/công cụ, trách nhiệm/năng lực và yêu cầu kinh nghiệm/bằng cấp nào?"
     ),
 )
 
 NOISY_TEMPLATES = (
-    "lam {label_ascii} can biet skill gi",
-    "muon theo {label_ascii} thi can hoc stack gi",
+    "jd {label_ascii} can skill tool, trach nhiem nang luc, kinh nghiem bang cap gi",
+    "lam {label_ascii} can biet skill cong cu, viec phai lam va yeu cau kinh nghiem gi",
 )
 
 PERSONALIZED_TEMPLATES = (
@@ -480,8 +481,24 @@ def discover_topics(
     if len(topics) != family_count * 2:
         raise RuntimeError(f"Expected {family_count * 2} topics, constructed {len(topics)}.")
 
-    if len(queries) != family_count * 2 * 4:
-        raise RuntimeError(f"Expected {family_count * 2 * 4} queries, constructed {len(queries)}.")
+    if len(queries) != family_count * 2 * len(BASE_QUERY_VARIANTS):
+        raise RuntimeError(
+            f"Expected {family_count * 2 * len(BASE_QUERY_VARIANTS)} queries, "
+            f"constructed {len(queries)}."
+        )
+
+    queries_by_topic = defaultdict(list)
+    for query in queries:
+        queries_by_topic[query.topic_id].append(query)
+    for topic in topics:
+        topic_queries = queries_by_topic[topic.topic_id]
+        variants = tuple(query.variant for query in topic_queries)
+        if len(topic_queries) != len(BASE_QUERY_VARIANTS) or set(variants) != set(BASE_QUERY_VARIANTS):
+            raise RuntimeError(
+                f"Base query variant invariant failed for {topic.topic_id}: {variants!r}"
+            )
+        if any(query.topic_id != topic.topic_id for query in topic_queries):
+            raise RuntimeError(f"Query topic mismatch for {topic.topic_id}.")
 
     if len(dev_family_ids) + len(test_family_ids) != family_count:
         raise RuntimeError("Family split count invariant failed.")
@@ -545,24 +562,13 @@ def generate_query_variants(
 ) -> list[CareerQuery]:
     rng = random.Random(f"{random_seed}:{topic.topic_id}")
     label = topic_intent_label(topic)
-    known = ", ".join(topic.known_skills)
     texts = [
         rng.choice(DIRECT_TEMPLATES).format(label=label),
         rng.choice(CONVERSATIONAL_TEMPLATES).format(label=label),
         rng.choice(NOISY_TEMPLATES).format(label_ascii=_ascii(label)),
-        (
-            rng.choice(PERSONALIZED_TEMPLATES).format(label=label, known=known,)
-            if known
-            else GENERIC_PERSONALIZED.format(label=label)
-        ),
     ]
 
-    variants = (
-        "direct",
-        "conversational",
-        "noisy",
-        "personalized",
-    )
+    variants = BASE_QUERY_VARIANTS
 
     return [
         CareerQuery(
@@ -570,7 +576,7 @@ def generate_query_variants(
             topic_id=topic.topic_id,
             variant=variant,
             text=text,
-            known_skills=topic.known_skills if variant == "personalized" else (),
+            known_skills=(),
         )
         for (index,(variant, text)) in enumerate(zip(variants, texts, strict=True), start=1)
     ]

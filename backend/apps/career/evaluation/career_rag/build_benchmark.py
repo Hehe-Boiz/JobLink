@@ -14,17 +14,40 @@ from django.db import connection
 from apps.career.answering import DEFAULT_ANSWER_MODEL
 from apps.career.sources.vietjobs import VietJobsSource
 
-from .audit import audit_derived_label_leakage, assert_audit_passes, run_audit, sha256_file, sha256_text, sha256_tree
+from .audit import (
+    audit_derived_label_leakage,
+    audit_evidence_truncation,
+    assert_audit_passes,
+    embedding_provenance_contract,
+    run_audit,
+    sha256_file,
+    sha256_text,
+    sha256_tree,
+)
 from .judges import JUDGE_PROMPT_VERSION, JudgeClient, build_and_judge_controls, judge_candidates
-from .nuggets import DEFAULT_VITAL_PREVALENCE, NUGGET_PROMPT_VERSION, build_nuggets_for_topic
+from .nuggets import (
+    NUGGET_IMPORTANCE_POLICY_VERSION,
+    NUGGET_PROMPT_VERSION,
+    NUGGET_WEIGHT_POLICY,
+    build_nuggets_for_topic,
+)
 from .pooling import PoolingService, load_corpus_jobs
 from .schema import BenchmarkManifest, CareerQuery, CareerTopic, Nugget, RelevanceJudgment
-from .topics import DEFAULT_MIN_SPECIFIC_TITLE_JOBS, DEFAULT_RANDOM_SEED, SPECIFICITY_WILSON_Z, TOPIC_SELECTION_POLICY_VERSION, discover_topics, load_skill_hints_from_csv
+from .semantics import CANONICAL_INFORMATION_NEED_VERSION
+from .topics import (
+    BASE_QUERY_VARIANTS,
+    DEFAULT_MIN_SPECIFIC_TITLE_JOBS,
+    DEFAULT_RANDOM_SEED,
+    SPECIFICITY_WILSON_Z,
+    TOPIC_SELECTION_POLICY_VERSION,
+    discover_topics,
+    load_skill_hints_from_csv,
+)
 
 BACKEND_ROOT = Path(__file__).resolve().parents[4]
-DEFAULT_OUTPUT_DIR = BACKEND_ROOT / "data" / "career_eval" / "career_rag_bench_auto_v2"
-BENCHMARK_NAME = "CareerRAGBench-Auto-V2"
-BENCHMARK_VERSION = "2.0"
+DEFAULT_OUTPUT_DIR = BACKEND_ROOT / "data" / "career_eval" / "career_rag_bench_auto_v3"
+BENCHMARK_NAME = "CareerRAGBench-Auto-V3"
+BENCHMARK_VERSION = "3.0"
 
 
 def _json_dump(path: Path, payload: object) -> None:
@@ -92,7 +115,7 @@ def build_benchmark(
     from apps.career.models import CareerJobChunk
 
     # -----------------------------------------------------
-    # CareerRAGBench-Auto-V2 freezes the ACTUAL indexed
+    # CareerRAGBench-Auto-V3 freezes the ACTUAL indexed
     # VietJobs retrieval corpus.
     #
     # Historical audit:
@@ -269,6 +292,23 @@ def build_benchmark(
     print("===================================")
     print()
 
+    truncation_audit = audit_evidence_truncation(corpus_jobs, cutoff=5000)
+    _json_dump(reports_dir / "preflight_evidence_truncation.json", truncation_audit)
+
+    provenance = embedding_provenance_contract(
+        backend_root=BACKEND_ROOT,
+        corpus_membership_sha256=corpus_membership_sha256,
+        corpus_chunks_sha256=corpus_chunks_sha256,
+        forbidden_derived_metadata_present=not leakage_preflight["passed"],
+    )
+    _json_dump(reports_dir / "preflight_embedding_provenance.json", provenance)
+    if provenance["status"] != "VERIFIED_CLEAN":
+        raise RuntimeError(
+            "CareerRAGBench-Auto-V3 freeze blocked: embedding provenance is "
+            f"{provenance['status']}; the historical vector input-field "
+            "contract cannot be proven clean from existing artifacts."
+        )
+
     category_hints, title_hints = load_skill_hints_from_csv(csv_path)
     topics, queries, dev_family_ids, test_family_ids = discover_topics(corpus_jobs, random_seed=seed, category_skill_hints=category_hints, title_skill_hints=title_hints,)
     queries_by_topic: dict[str, list[CareerQuery]] = defaultdict(list)
@@ -296,7 +336,7 @@ def build_benchmark(
             "active chunks. The exact historical "
             "filtering/dedup membership is not "
             "perfectly reconstructible from surviving "
-            "code; CareerRAGBench-Auto-V2 therefore "
+            "code; CareerRAGBench-Auto-V3 therefore "
             "defines corpus identity using the dataset "
             "SHA256 plus frozen indexed source_job_id "
             "membership and chunk/context hashes."
@@ -309,6 +349,8 @@ def build_benchmark(
             "forced_split_overlap_tokens": 40,
             "chunking_source_sha256": sha256_file(BACKEND_ROOT / "apps" / "career" / "chunking.py"),
         },
+        "embedding_provenance": provenance,
+        "evidence_truncation_audit": truncation_audit,
         "index_configuration": _index_configuration(),
         "forbidden_derived_metadata_keys": ["technical_skills", "soft_skills", "gold_nuggets", "judge_labels", "derived_role_labels"],
     }
@@ -406,14 +448,21 @@ def build_benchmark(
             ),
             "specific_title_min_support": DEFAULT_MIN_SPECIFIC_TITLE_JOBS,
             "specificity_wilson_z": SPECIFICITY_WILSON_Z,
+            "canonical_information_need_version": CANONICAL_INFORMATION_NEED_VERSION,
+            "base_query_variants": list(BASE_QUERY_VARIANTS),
             "judge_prompt_version": JUDGE_PROMPT_VERSION,
             "nugget_prompt_version": NUGGET_PROMPT_VERSION,
+            "nugget_importance_policy_version": NUGGET_IMPORTANCE_POLICY_VERSION,
+            "nugget_weight_policy": NUGGET_WEIGHT_POLICY,
+            "prevalence_definition": (
+                "verified strong-job support_count divided by the number of "
+                "strong jobs; provenance/statistic only, never importance or weight"
+            ),
             "pool_depth": pool_depth,
             "max_pool": max_pool,
             "rrf_k": 60,
             "uncertain_rule": "max(judge_grades)-min(judge_grades)>=2",
             "min_strong_relevant_per_topic": 5,
-            "vital_prevalence_threshold": DEFAULT_VITAL_PREVALENCE,
             "git_head": git_sha,
             "git_dirty_at_freeze": git_dirty,
         },

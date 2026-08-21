@@ -12,10 +12,138 @@ from apps.career.retrieval import CareerRetriever
 from .schema import CareerQuery, CorpusJob, PooledCandidate
 
 RRF_K = 60
+INDEPENDENT_POOL_SYSTEMS = ("bm25", "dense", "title")
 
 
 def _tokens(text: str) -> list[str]:
     return re.findall(r"\w+", text.casefold(), flags=re.UNICODE)
+
+
+def _pool_coverage_scope(
+    variant_rankings: dict[str, dict[str, list[str]]],
+    *,
+    depth: int,
+    max_pool: int,
+) -> dict:
+    system_sets = {
+        system: {
+            key
+            for rankings in variant_rankings.values()
+            for key in rankings.get(system, [])[:depth]
+        }
+        for system in INDEPENDENT_POOL_SYSTEMS
+    }
+    direct_union = set().union(*system_sets.values())
+    unique_contribution = {
+        system: sorted(values - (direct_union - values))
+        for system, values in system_sets.items()
+    }
+    pairwise_overlap = {
+        f"{left}&{right}": len(system_sets[left] & system_sets[right])
+        for index, left in enumerate(INDEPENDENT_POOL_SYSTEMS)
+        for right in INDEPENDENT_POOL_SYSTEMS[index + 1 :]
+    }
+
+    aggregate_scores: dict[str, float] = defaultdict(float)
+    rrf_new_candidates: set[str] = set()
+    for rankings in variant_rankings.values():
+        bm25 = rankings.get("bm25", [])[:depth]
+        dense = rankings.get("dense", [])[:depth]
+        rrf = PoolingService.rrf([bm25, dense], depth)
+        rrf_new_candidates.update(set(rrf) - (set(bm25) | set(dense)))
+        for _, ranking in (
+            ("bm25", bm25),
+            ("dense", dense),
+            ("title", rankings.get("title", [])[:depth]),
+            ("rrf", rrf),
+        ):
+            for rank, key in enumerate(ranking, start=1):
+                aggregate_scores[key] += 1.0 / (RRF_K + rank)
+
+    aggregate_order = sorted(
+        aggregate_scores,
+        key=lambda key: (-aggregate_scores[key], key),
+    )
+    selected = set(aggregate_order[:max_pool])
+    dropped = set(aggregate_order[max_pool:])
+    return {
+        "depth": depth,
+        "max_pool": max_pool,
+        "direct_union_size": len(direct_union),
+        "direct_system_counts": {
+            system: len(system_sets[system])
+            for system in INDEPENDENT_POOL_SYSTEMS
+        },
+        "pairwise_overlap_counts": pairwise_overlap,
+        "unique_contribution": unique_contribution,
+        "unique_contribution_counts": {
+            system: len(keys)
+            for system, keys in unique_contribution.items()
+        },
+        "rrf_new_candidates": sorted(rrf_new_candidates),
+        "aggregate_rrf_candidate_count": len(aggregate_order),
+        "resulting_candidate_count": len(selected),
+        "max_pool_dropped_count": len(dropped),
+        "max_pool_drops_system_unique": {
+            system: sorted(set(keys) & dropped)
+            for system, keys in unique_contribution.items()
+        },
+        "max_pool_truncates_system_unique": any(
+            set(keys) & dropped
+            for keys in unique_contribution.values()
+        ),
+    }
+
+
+def audit_pool_coverage(
+    rankings_by_topic: dict[str, dict[str, dict[str, list[str]]]],
+    *,
+    depths: tuple[int, ...] = (5, 10, 15, 20),
+    max_pool: int = 80,
+) -> dict:
+    """Audit independent-pool coverage without invoking retrieval or an LLM.
+
+    ``rankings_by_topic`` is intentionally a diagnostic input: topic -> query
+    variant -> independent-system rankings. The helper mirrors current RRF
+    candidate accounting but never changes production pooling semantics.
+    """
+
+    if not depths or any(depth <= 0 for depth in depths):
+        raise ValueError("depths must contain only positive values")
+    if max_pool <= 0:
+        raise ValueError("max_pool must be positive")
+
+    depth_reports: dict[str, dict] = {}
+    for depth in depths:
+        topic_reports = {
+            topic_id: _pool_coverage_scope(
+                variant_rankings,
+                depth=depth,
+                max_pool=max_pool,
+            )
+            for topic_id, variant_rankings in sorted(rankings_by_topic.items())
+        }
+
+        aggregate_variants: dict[str, dict[str, list[str]]] = {}
+        for topic_id, variant_rankings in sorted(rankings_by_topic.items()):
+            for variant, rankings in sorted(variant_rankings.items()):
+                aggregate_variants[f"{topic_id}:{variant}"] = rankings
+
+        depth_reports[str(depth)] = {
+            "topics": topic_reports,
+            "aggregate": _pool_coverage_scope(
+                aggregate_variants,
+                depth=depth,
+                max_pool=max_pool,
+            ),
+        }
+    return {
+        "depths": list(depths),
+        "max_pool": max_pool,
+        "independent_systems": list(INDEPENDENT_POOL_SYSTEMS),
+        "pooling_policy_changed": False,
+        "reports": depth_reports,
+    }
 
 
 def load_corpus_jobs(*, source: str = "vietjobs") -> list[CorpusJob]:

@@ -2,16 +2,29 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
+import re
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Iterable
 
 from apps.career.models import CareerJobChunk
 
-from .schema import CareerTopic, Nugget, RelevanceJudgment
+from .schema import CareerTopic, CorpusJob, Nugget, RelevanceJudgment
 
 FORBIDDEN_DERIVED_KEYS = {"technical_skills", "soft_skills", "gold_nuggets", "judge_labels", "derived_role_labels"}
+QUALIFICATION_SECTION_TERMS = (
+    "required",
+    "requirement",
+    "qualification",
+    "preferred",
+    "nice to have",
+    "must have",
+    "yêu cầu",
+    "bằng cấp",
+    "ưu tiên",
+)
 
 
 def sha256_file(path: Path) -> str:
@@ -56,6 +69,111 @@ def sha256_tree(paths: Iterable[Path]) -> str:
         digest.update(path_bytes)
         digest.update(content_digest.digest())
     return digest.hexdigest()
+
+
+def _percentile(values: list[int], fraction: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    position = (len(ordered) - 1) * fraction
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return float(ordered[lower])
+    weight = position - lower
+    return ordered[lower] + (ordered[upper] - ordered[lower]) * weight
+
+
+def audit_evidence_truncation(
+    jobs: Iterable[CorpusJob],
+    *,
+    cutoff: int = 5000,
+) -> dict:
+    """Report deterministic evidence-length and late-section statistics."""
+
+    if cutoff <= 0:
+        raise ValueError("cutoff must be positive")
+
+    lengths: list[int] = []
+    over_cutoff = 0
+    late_qualification_jobs = 0
+    late_section_counts: Counter[str] = Counter()
+    qualification_pattern = re.compile(
+        "|".join(re.escape(term) for term in QUALIFICATION_SECTION_TERMS),
+        flags=re.IGNORECASE,
+    )
+
+    for job in jobs:
+        evidence = job.raw_evidence
+        lengths.append(len(evidence))
+        if len(evidence) > cutoff:
+            over_cutoff += 1
+
+        late_sections: set[str] = set()
+        for match in re.finditer(r"(?im)^\[([^\]]+)\]", evidence):
+            section = " ".join(match.group(1).split())
+            if match.start() >= cutoff and qualification_pattern.search(section):
+                late_sections.add(section)
+        if late_sections:
+            late_qualification_jobs += 1
+            late_section_counts.update(late_sections)
+
+    count = len(lengths)
+    return {
+        "cutoff_chars": cutoff,
+        "job_count": count,
+        "raw_evidence_chars": {
+            "p50": _percentile(lengths, 0.50),
+            "p90": _percentile(lengths, 0.90),
+            "p95": _percentile(lengths, 0.95),
+            "p99": _percentile(lengths, 0.99),
+            "max": max(lengths, default=0),
+        },
+        "over_cutoff_count": over_cutoff,
+        "over_cutoff_percentage": (100.0 * over_cutoff / count) if count else 0.0,
+        "late_qualification_section_job_count": late_qualification_jobs,
+        "late_qualification_section_percentage": (
+            100.0 * late_qualification_jobs / count
+            if count
+            else 0.0
+        ),
+        "late_qualification_sections": dict(sorted(late_section_counts.items())),
+        "interpretation": (
+            "A qualification section is counted as late when its bracketed "
+            "section header begins at or after the raw-evidence cutoff."
+        ),
+    }
+
+
+def embedding_provenance_contract(
+    *,
+    backend_root: Path,
+    corpus_membership_sha256: str,
+    corpus_chunks_sha256: str,
+    forbidden_derived_metadata_present: bool,
+) -> dict:
+    """Create the V3 embedding provenance contract without inspecting/mutating DB vectors."""
+
+    chunking_path = backend_root / "apps" / "career" / "chunking.py"
+    embedding_path = backend_root / "apps" / "career" / "embedding.py"
+    return {
+        "status": "UNVERIFIED",
+        "embedding_model": "intfloat/multilingual-e5-small",
+        "embedding_dimension": 384,
+        "chunking_source_sha256": sha256_file(chunking_path),
+        "embedding_source_sha256": sha256_file(embedding_path),
+        "input_field_policy": (
+            "UNVERIFIED: the historical input fields used to create the frozen "
+            "numeric vectors cannot be reconstructed from the surviving artifacts. "
+            "The current chunking implementation is capable of including derived "
+            "technical_skills metadata in embedding prefixes, so a clean historical "
+            "contract cannot be inferred from source code alone."
+        ),
+        "forbidden_derived_metadata_present": bool(forbidden_derived_metadata_present),
+        "corpus_membership_sha256": corpus_membership_sha256,
+        "corpus_chunks_sha256": corpus_chunks_sha256,
+        "requires_verified_clean_for_freeze": True,
+    }
 
 
 def audit_derived_label_leakage() -> dict:
@@ -165,4 +283,4 @@ def run_audit(
 
 def assert_audit_passes(report: dict) -> None:
     if not report.get("passed", False):
-        raise RuntimeError("CareerRAGBench-Auto-V2 quality gates failed. See reports/build_audit.json; benchmark was NOT frozen.")
+        raise RuntimeError("CareerRAGBench-Auto-V3 quality gates failed. See reports/build_audit.json; benchmark was NOT frozen.")

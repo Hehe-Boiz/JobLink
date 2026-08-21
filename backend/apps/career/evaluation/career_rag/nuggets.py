@@ -12,12 +12,15 @@ from .concurrency import (
 )
 from .judges import JudgeClient
 from .schema import CareerTopic, CorpusJob, Nugget, RelevanceJudgment
-from .semantics import topic_description
+from .semantics import canonical_information_need
 
-NUGGET_PROMPT_VERSION = "career-rag-silver-nuggets-v3"
-DEFAULT_VITAL_PREVALENCE = 0.35
+NUGGET_PROMPT_VERSION = "career-rag-silver-nuggets-v4"
+NUGGET_IMPORTANCE_POLICY_VERSION = "career-rag-nugget-importance-v1"
+NUGGET_WEIGHT_POLICY = {"VITAL": 1.0, "OKAY": 0.5}
 DEFAULT_NUGGET_BATCH_SIZE = 8
 DEFAULT_SUPPORT_JOB_BATCH_SIZE = 8
+DEFAULT_IMPORTANCE_BATCH_SIZE = 8
+IMPORTANCE_VALUES = frozenset({"VITAL", "OKAY"})
 
 
 def _normalize(text: str) -> str:
@@ -101,7 +104,7 @@ def _extract_candidates(
             ),
             user=(
                 f"Information need: "
-                f"{topic_description(topic)}\n\n"
+                f"{canonical_information_need(topic)}\n\n"
                 + "\n\n---\n\n".join(
                     blocks
                 )
@@ -258,7 +261,8 @@ def _verify_support_matrix_batch(
         user_prompt = base_user_prompt
         if attempt:
             user_prompt += (
-                "\n\nIMPORTANT CORRECTION: The previous response failed strict "
+                f"\n\nSCHEMA_RETRY_ATTEMPT={attempt}\n"
+                "IMPORTANT CORRECTION: The previous response failed strict "
                 "schema validation. Return JSON only with exactly one top-level "
                 "key named 'support'. The support object must contain all and "
                 f"only these nugget IDs: {expected_nuggets}. Every nugget row "
@@ -268,12 +272,13 @@ def _verify_support_matrix_batch(
                 "or add any row or cell."
             )
 
+        data = client.json_call(
+            system=system_prompt,
+            user=user_prompt,
+            retries=0,
+        )
+
         try:
-            data = client.json_call(
-                system=system_prompt,
-                user=user_prompt,
-                retries=0,
-            )
             matrix = _validate_support_matrix(
                 data,
                 nugget_ids=nugget_ids,
@@ -299,6 +304,182 @@ def _verify_support_matrix_batch(
         ]
         for nugget_id in nugget_ids
     ]
+
+
+def _validate_importance(
+    data: object,
+    *,
+    nugget_ids: tuple[str, ...],
+) -> dict[str, str]:
+    if not isinstance(data, dict) or set(data) != {"importance"}:
+        raise ValueError("Nugget importance judge returned invalid top-level JSON")
+
+    raw_importance = data["importance"]
+    if not isinstance(raw_importance, dict) or set(raw_importance) != set(nugget_ids):
+        raise ValueError(
+            "Nugget importance judge returned an incomplete or unexpected nugget mapping"
+        )
+
+    importance: dict[str, str] = {}
+    for nugget_id in nugget_ids:
+        value = raw_importance[nugget_id]
+        if type(value) is not str or value not in IMPORTANCE_VALUES:
+            raise ValueError(
+                f"Nugget importance value for {nugget_id} must be exactly "
+                "'VITAL' or 'OKAY'"
+            )
+        importance[nugget_id] = value
+    return importance
+
+
+def _importance_evidence(
+    item: dict,
+    corpus_by_key: dict[str, CorpusJob],
+    *,
+    evidence_chars: int,
+    max_evidence_jobs: int = 3,
+) -> str:
+    support_keys = tuple(sorted(set(item.get("support_job_keys", ()))))
+    lines = [
+        "Verified supporting job keys: "
+        + (", ".join(support_keys) if support_keys else "(none)")
+    ]
+    for job_key in support_keys[:max_evidence_jobs]:
+        job = corpus_by_key.get(job_key)
+        if job is None:
+            continue
+        lines.append(f"SUPPORTING_JOB={job_key}\n{job.raw_evidence[:evidence_chars]}")
+    if len(support_keys) > max_evidence_jobs:
+        lines.append(
+            f"Additional verified supporting jobs omitted from evidence preview: "
+            f"{len(support_keys) - max_evidence_jobs}"
+        )
+    return "\n\n".join(lines)
+
+
+def _judge_importance_batch(
+    client: JudgeClient,
+    topic: CareerTopic,
+    items: list[dict],
+    corpus_by_key: dict[str, CorpusJob],
+    *,
+    evidence_chars: int,
+    schema_retries: int = 2,
+) -> list[str]:
+    if schema_retries < 0:
+        raise ValueError("schema_retries must be >= 0")
+
+    nugget_ids = tuple(f"N{index}" for index in range(1, len(items) + 1))
+    blocks = [
+        (
+            f"{nugget_id}\n"
+            f"Nugget text: {item['text']}\n"
+            f"{_importance_evidence(item, corpus_by_key, evidence_chars=evidence_chars)}"
+        )
+        for nugget_id, item in zip(nugget_ids, items, strict=True)
+    ]
+    system_prompt = (
+        "Judge the importance of each atomic nugget for the supplied canonical "
+        "career information need. VITAL means essential or highly necessary for "
+        "a good answer to that need. OKAY means useful but non-essential. Do not "
+        "infer importance from document frequency or support count. Use only the "
+        "nugget text and grounded supporting evidence. Return JSON only as "
+        '{"importance":{"N1":"VITAL"}}. Use exactly the supplied nugget IDs, '
+        "with one value per ID and no other IDs. Values must be exactly VITAL or OKAY."
+    )
+    base_user_prompt = (
+        f"Canonical information need: {canonical_information_need(topic)}\n\n"
+        "Candidate nuggets and verified supporting evidence:\n\n"
+        + "\n\n---\n\n".join(blocks)
+    )
+    expected_text = ", ".join(nugget_ids)
+    validated: dict[str, str] | None = None
+    last_error: Exception | None = None
+
+    for attempt in range(schema_retries + 1):
+        user_prompt = base_user_prompt
+        if attempt:
+            user_prompt += (
+                f"\n\nSCHEMA_RETRY_ATTEMPT={attempt}\n"
+                "IMPORTANT CORRECTION: The previous response failed strict schema "
+                "validation. Return JSON only with exactly one top-level key named "
+                "'importance'. The importance object must contain all and only "
+                f"these nugget IDs: {expected_text}. Every value must be exactly "
+                "the JSON string \"VITAL\" or \"OKAY\"; do not omit, add, or "
+                "rename any ID."
+            )
+        payload = client.json_call(
+            system=system_prompt,
+            user=user_prompt,
+            retries=0,
+        )
+
+        try:
+            validated = _validate_importance(payload, nugget_ids=nugget_ids)
+            break
+        except Exception as exc:
+            last_error = exc
+
+    if validated is None:
+        raise RuntimeError(
+            "Nugget importance judge failed strict schema validation after "
+            f"{schema_retries} retries; nugget_ids={list(nugget_ids)!r}; "
+            f"error={last_error}"
+        ) from last_error
+
+    return [validated[nugget_id] for nugget_id in nugget_ids]
+
+
+def _judge_importance(
+    client: JudgeClient,
+    topic: CareerTopic,
+    items: list[dict],
+    corpus_by_key: dict[str, CorpusJob],
+    *,
+    batch_size: int = DEFAULT_IMPORTANCE_BATCH_SIZE,
+    evidence_chars: int = 5000,
+    schema_retries: int = 2,
+    max_in_flight: int = DEFAULT_MAX_IN_FLIGHT,
+    refill_size: int = DEFAULT_REFILL_SIZE,
+) -> list[str]:
+    if batch_size <= 0:
+        raise ValueError("importance batch_size must be positive")
+    if schema_retries < 0:
+        raise ValueError("schema_retries must be >= 0")
+    if not items:
+        return []
+
+    specifications = [
+        (start, items[start : start + batch_size])
+        for start in range(0, len(items), batch_size)
+    ]
+    results = run_refill_window(
+        [
+            partial(
+                _judge_importance_batch,
+                client,
+                topic,
+                batch,
+                corpus_by_key,
+                evidence_chars=evidence_chars,
+                schema_retries=schema_retries,
+            )
+            for _, batch in specifications
+        ],
+        config=RefillWindowConfig(
+            max_in_flight=max_in_flight,
+            refill_size=refill_size,
+        ),
+        label=f"nugget-importance:{topic.topic_id}",
+    )
+    importance: list[str | None] = [None] * len(items)
+    for (start, batch), batch_result in zip(specifications, results, strict=True):
+        if len(batch_result) != len(batch):
+            raise RuntimeError("Nugget importance judge returned an unexpected result shape")
+        importance[start : start + len(batch)] = batch_result
+    if any(value is None for value in importance):
+        raise RuntimeError("Nugget importance reconstruction left an unassigned nugget")
+    return [value for value in importance if value is not None]
 
 
 def _verify_support_matrix(
@@ -376,9 +557,10 @@ def build_nuggets_for_topic(
     corpus_by_key: dict[str, CorpusJob],
     *,
     min_support_jobs: int = 2,
-    vital_prevalence: float = DEFAULT_VITAL_PREVALENCE,
     nugget_batch_size: int = DEFAULT_NUGGET_BATCH_SIZE,
     job_batch_size: int = DEFAULT_SUPPORT_JOB_BATCH_SIZE,
+    importance_batch_size: int = DEFAULT_IMPORTANCE_BATCH_SIZE,
+    importance_evidence_chars: int = 5000,
     schema_retries: int = 2,
     max_in_flight: int = DEFAULT_MAX_IN_FLIGHT,
     refill_size: int = DEFAULT_REFILL_SIZE,
@@ -402,8 +584,8 @@ def build_nuggets_for_topic(
 
     extracted = _extract_candidates(client, topic, strong_jobs, max_in_flight=max_in_flight, refill_size=refill_size)
 
-    # Extractor support_job_keys are hints/provenance only.  Authoritative
-    # prevalence is measured against every strong job for this topic.
+    # Extractor support_job_keys are hints/provenance only. Authoritative
+    # support is measured against every strong job for this topic.
     verified_keys_by_item = _verify_support_matrix(
         client,
         extracted,
@@ -415,15 +597,40 @@ def build_nuggets_for_topic(
         refill_size=refill_size,
     )
 
-    nuggets: list[Nugget] = []
     strong_job_key_set = {job.job_key for job in strong_jobs}
+    surviving_items: list[dict] = []
     for item, verified_keys in zip(extracted, verified_keys_by_item, strict=True):
-        if not set(verified_keys).issubset(strong_job_key_set):
+        unique_verified_keys = tuple(sorted(set(verified_keys)))
+        if not set(unique_verified_keys).issubset(strong_job_key_set):
             raise ValueError("Nugget verifier returned a job outside the strong-job universe")
 
-        support_count = len(set(verified_keys))
+        support_count = len(unique_verified_keys)
         if support_count < min_support_jobs:
             continue
+
+        surviving_items.append(
+            {
+                "text": item["text"],
+                "support_job_keys": unique_verified_keys,
+            }
+        )
+
+    importance_values = _judge_importance(
+        client,
+        topic,
+        surviving_items,
+        corpus_by_key,
+        batch_size=importance_batch_size,
+        evidence_chars=importance_evidence_chars,
+        schema_retries=schema_retries,
+        max_in_flight=max_in_flight,
+        refill_size=refill_size,
+    )
+
+    nuggets: list[Nugget] = []
+    for item, importance in zip(surviving_items, importance_values, strict=True):
+        verified_keys = tuple(item["support_job_keys"])
+        support_count = len(verified_keys)
 
         prevalence = support_count / len(strong_jobs)
         if not 0 <= prevalence <= 1:
@@ -450,13 +657,10 @@ def build_nuggets_for_topic(
                 support_job_keys=tuple(verified_keys),
                 support_count=support_count,
                 prevalence=prevalence,
-                weight=prevalence,
-                importance=(
-                    "VITAL"
-                    if prevalence
-                    >= vital_prevalence
-                    else "OKAY"
-                ),
+                # Prevalence is provenance/confidence metadata only. It is
+                # deliberately not used for importance or weighting.
+                weight=NUGGET_WEIGHT_POLICY[importance],
+                importance=importance,
             )
         )
 

@@ -5,15 +5,31 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from .audit import sha256_tree
+from .audit import (
+    audit_evidence_truncation,
+    audit_split,
+    embedding_provenance_contract,
+    sha256_tree,
+)
+from .judges import judge_candidates
 from .nuggets import (
-    DEFAULT_VITAL_PREVALENCE,
+    NUGGET_IMPORTANCE_POLICY_VERSION,
     NUGGET_PROMPT_VERSION,
+    NUGGET_WEIGHT_POLICY,
+    _judge_importance_batch,
+    _validate_importance,
     _verify_support,
     _verify_support_matrix,
     build_nuggets_for_topic,
 )
-from .schema import CareerTopic, CorpusJob, RelevanceJudgment
+from .pooling import audit_pool_coverage
+from .schema import CareerTopic, CorpusJob, PooledCandidate, RelevanceJudgment
+from .semantics import (
+    CANONICAL_INFORMATION_FACETS,
+    CANONICAL_INFORMATION_NEED_VERSION,
+    canonical_information_need,
+)
+from .topics import BASE_QUERY_VARIANTS, discover_topics, generate_query_variants
 
 
 class FakeJudgeClient:
@@ -24,11 +40,13 @@ class FakeJudgeClient:
         candidate_texts: tuple[str, ...] = ("REST API",),
         extractor_support_keys: tuple[str, ...] = ("vietjobs::J1",),
         support_by_candidate: dict[str, dict[str, bool]] | None = None,
+        importance_by_candidate: dict[str, str] | None = None,
     ) -> None:
         self.support = support
         self.candidate_texts = candidate_texts
         self.extractor_support_keys = extractor_support_keys
         self.support_by_candidate = support_by_candidate or {}
+        self.importance_by_candidate = importance_by_candidate or {}
         self.calls: list[tuple[str, str, int]] = []
 
     def json_call(self, *, system: str, user: str, retries: int = 2) -> dict:
@@ -42,6 +60,18 @@ class FakeJudgeClient:
                     }
                     for text in self.candidate_texts
                 ]
+            }
+
+        if "Judge the importance" in system:
+            nugget_rows = re.findall(
+                r"(?m)^(N\d+)\nNugget text: (.+)$",
+                user,
+            )
+            return {
+                "importance": {
+                    nugget_id: self.importance_by_candidate.get(candidate_text, "VITAL")
+                    for nugget_id, candidate_text in nugget_rows
+                }
             }
 
         job_pairs = re.findall(
@@ -101,8 +131,10 @@ def _qrels(count: int = 4) -> list[RelevanceJudgment]:
 
 
 class NuggetConstructionTests(unittest.TestCase):
-    def test_nugget_protocol_version_is_v3(self) -> None:
-        self.assertEqual(NUGGET_PROMPT_VERSION, "career-rag-silver-nuggets-v3")
+    def test_nugget_protocol_and_importance_policy_versions_are_frozen(self) -> None:
+        self.assertEqual(NUGGET_PROMPT_VERSION, "career-rag-silver-nuggets-v4")
+        self.assertEqual(NUGGET_IMPORTANCE_POLICY_VERSION, "career-rag-nugget-importance-v1")
+        self.assertEqual(NUGGET_WEIGHT_POLICY, {"VITAL": 1.0, "OKAY": 0.5})
 
     def _build(
         self,
@@ -113,6 +145,7 @@ class NuggetConstructionTests(unittest.TestCase):
         client: FakeJudgeClient | None = None,
         nugget_batch_size: int = 8,
         job_batch_size: int = 8,
+        importance_batch_size: int = 8,
     ):
         jobs = _jobs(job_count)
         return build_nuggets_for_topic(
@@ -123,6 +156,7 @@ class NuggetConstructionTests(unittest.TestCase):
             min_support_jobs=min_support_jobs,
             nugget_batch_size=nugget_batch_size,
             job_batch_size=job_batch_size,
+            importance_batch_size=importance_batch_size,
             max_in_flight=1,
             refill_size=1,
         )
@@ -168,22 +202,68 @@ class NuggetConstructionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             _verify_support(InvalidShapeClient({}), "REST API", _jobs()[:1])
 
-    def test_prevalence_boundary_keeps_default_importance_threshold(self) -> None:
-        vital = self._build(
-            {f"J{i}": i <= 7 for i in range(1, 21)},
-            min_support_jobs=1,
-            job_count=20,
+    def test_high_prevalence_nugget_can_be_okay(self) -> None:
+        nugget = self._build(
+            {f"J{i}": True for i in range(1, 5)},
+            client=FakeJudgeClient(
+                {f"J{i}": True for i in range(1, 5)},
+                importance_by_candidate={"REST API": "OKAY"},
+            ),
         )[0]
-        okay = self._build(
-            {f"J{i}": i <= 6 for i in range(1, 21)},
-            min_support_jobs=1,
-            job_count=20,
+        self.assertEqual(nugget.prevalence, 1.0)
+        self.assertEqual(nugget.importance, "OKAY")
+        self.assertEqual(nugget.weight, 0.5)
+
+    def test_low_prevalence_nugget_can_be_vital(self) -> None:
+        support = {f"J{i}": i <= 2 for i in range(1, 5)}
+        nugget = self._build(
+            support,
+            client=FakeJudgeClient(
+                support,
+                importance_by_candidate={"REST API": "VITAL"},
+            ),
         )[0]
-        self.assertEqual(DEFAULT_VITAL_PREVALENCE, 0.35)
-        self.assertEqual(vital.prevalence, 0.35)
-        self.assertEqual(vital.importance, "VITAL")
-        self.assertEqual(okay.prevalence, 0.3)
-        self.assertEqual(okay.importance, "OKAY")
+        self.assertEqual(nugget.prevalence, 0.5)
+        self.assertEqual(nugget.importance, "VITAL")
+        self.assertEqual(nugget.weight, 1.0)
+
+    def test_prevalence_change_does_not_change_importance_or_weight(self) -> None:
+        first_support = {f"J{i}": i <= 2 for i in range(1, 4)}
+        second_support = {f"J{i}": i <= 3 for i in range(1, 4)}
+        first = self._build(
+            first_support,
+            job_count=3,
+            min_support_jobs=1,
+            client=FakeJudgeClient(
+                first_support,
+                importance_by_candidate={"REST API": "OKAY"},
+            ),
+        )[0]
+        second = self._build(
+            second_support,
+            job_count=3,
+            min_support_jobs=1,
+            client=FakeJudgeClient(
+                second_support,
+                importance_by_candidate={"REST API": "OKAY"},
+            ),
+        )[0]
+        self.assertNotEqual(first.prevalence, second.prevalence)
+        self.assertEqual(first.importance, second.importance)
+        self.assertEqual(first.weight, second.weight)
+
+    def test_malformed_importance_values_are_rejected(self) -> None:
+        expected = ("N1", "N2")
+        malformed = [
+            {"importance": {"N1": "VITAL"}},
+            {"importance": {"N1": "VITAL", "N2": "OKAY", "N3": "VITAL"}},
+            {"importance": {"N1": "true", "N2": "OKAY"}},
+            {"importance": {"N1": 1, "N2": None}},
+            {"importance": []},
+        ]
+        for payload in malformed:
+            with self.subTest(payload=payload), self.assertRaises(ValueError):
+                _validate_importance(payload, nugget_ids=expected)
 
     def test_extractor_hints_do_not_change_authoritative_result(self) -> None:
         support = {"J1": True, "J2": True, "J3": True, "J4": False}
@@ -269,6 +349,18 @@ class NuggetMatrixValidationTests(unittest.TestCase):
                     }
                 }
             )
+
+    def test_matrix_numeric_and_null_booleans_are_rejected(self) -> None:
+        for value in (1, 0, None):
+            with self.subTest(value=value), self.assertRaises(RuntimeError):
+                self._verify(
+                    {
+                        "support": {
+                            "N1": {"J1": value, "J2": False},
+                            "N2": {"J1": False, "J2": False},
+                        }
+                    }
+                )
 
     def test_different_batch_sizes_are_semantically_identical(self) -> None:
         support_by_candidate = {
@@ -365,6 +457,18 @@ class CacheLikeSequencedMatrixClient(SequencedMatrixClient):
         return payload
 
 
+class SequencedImportanceClient:
+    def __init__(self, payloads: list[object]) -> None:
+        self.payloads = list(payloads)
+        self.calls: list[tuple[str, str, int]] = []
+
+    def json_call(self, *, system: str, user: str, retries: int = 2) -> object:
+        self.calls.append((system, user, retries))
+        if not self.payloads:
+            raise AssertionError("fake importance client exhausted its payloads")
+        return self.payloads.pop(0)
+
+
 class NuggetMatrixRetryTests(unittest.TestCase):
     def _verify(self, client: object) -> list[list[str]]:
         return _verify_support_matrix(
@@ -384,14 +488,19 @@ class NuggetMatrixRetryTests(unittest.TestCase):
         return {"support": {"N1": {"J1": True}}}
 
     def test_schema_retry_recovers_after_first_malformed_response(self) -> None:
-        client = SequencedMatrixClient([self._malformed_payload(), self._valid_payload()])
+        client = SequencedMatrixClient(
+            [self._malformed_payload(), self._malformed_payload(), self._valid_payload()]
+        )
         self.assertEqual(self._verify(client), [["vietjobs::J1"]])
-        self.assertEqual(len(client.calls), 2)
-        self.assertEqual([call[2] for call in client.calls], [0, 0])
-        self.assertNotEqual(client.calls[0][1], client.calls[1][1])
-        self.assertIn("all and only these nugget IDs: N1", client.calls[1][1])
-        self.assertIn("all and only these job IDs: J1, J2", client.calls[1][1])
-        self.assertIn("literal JSON true or false", client.calls[1][1])
+        self.assertEqual(len(client.calls), 3)
+        self.assertEqual([call[2] for call in client.calls], [0, 0, 0])
+        prompts = [call[1] for call in client.calls]
+        self.assertEqual(len(set(prompts)), 3)
+        self.assertIn("SCHEMA_RETRY_ATTEMPT=1", prompts[1])
+        self.assertIn("SCHEMA_RETRY_ATTEMPT=2", prompts[2])
+        self.assertIn("all and only these nugget IDs: N1", prompts[1])
+        self.assertIn("all and only these job IDs: J1, J2", prompts[1])
+        self.assertIn("literal JSON true or false", prompts[1])
 
     def test_schema_retry_budget_is_exact_when_every_response_is_malformed(self) -> None:
         client = SequencedMatrixClient(
@@ -401,13 +510,39 @@ class NuggetMatrixRetryTests(unittest.TestCase):
             self._verify(client)
         self.assertEqual(len(client.calls), 3)
         self.assertEqual([call[2] for call in client.calls], [0, 0, 0])
+        self.assertEqual(len({call[1] for call in client.calls}), 3)
 
     def test_cached_malformed_response_cannot_block_corrective_prompt(self) -> None:
-        client = CacheLikeSequencedMatrixClient([self._malformed_payload(), self._valid_payload()])
+        client = CacheLikeSequencedMatrixClient(
+            [self._malformed_payload(), self._malformed_payload(), self._valid_payload()]
+        )
         self.assertEqual(self._verify(client), [["vietjobs::J1"]])
-        self.assertEqual(len(client.calls), 2)
-        self.assertNotEqual(client.calls[0][1], client.calls[1][1])
-        self.assertEqual(len(client.cache), 2)
+        self.assertEqual(len(client.calls), 3)
+        self.assertEqual(len(client.cache), 3)
+        self.assertEqual(len(set(call[1] for call in client.calls)), 3)
+        self.assertEqual(client.payloads, [])
+
+    def test_importance_schema_retries_are_strict_and_distinct(self) -> None:
+        client = SequencedImportanceClient(
+            [
+                {"importance": {}},
+                {"importance": {}},
+                {"importance": {"N1": "OKAY"}},
+            ]
+        )
+        result = _judge_importance_batch(
+            client,
+            _topic(),
+            [{"text": "REST API", "support_job_keys": ("vietjobs::J1",)}],
+            {job.job_key: job for job in _jobs(1)},
+            evidence_chars=5000,
+        )
+        self.assertEqual(result, ["OKAY"])
+        self.assertEqual(len(client.calls), 3)
+        self.assertEqual([call[2] for call in client.calls], [0, 0, 0])
+        self.assertEqual(len({call[1] for call in client.calls}), 3)
+        self.assertIn("SCHEMA_RETRY_ATTEMPT=1", client.calls[1][1])
+        self.assertIn("SCHEMA_RETRY_ATTEMPT=2", client.calls[2][1])
 
 
 class TreeHashTests(unittest.TestCase):
@@ -473,3 +608,239 @@ class TreeHashTests(unittest.TestCase):
             tree_a = sha256_tree([first_root / "a", first_root / "bc"])
             tree_b = sha256_tree([second_root / "a", second_root / "c"])
             self.assertNotEqual(tree_a, tree_b)
+
+
+class CandidateJudgeSchemaRetryClient:
+    def __init__(self, payloads: list[object]) -> None:
+        self.payloads = list(payloads)
+        self.cache: dict[tuple[str, str], object] = {}
+        self.calls: list[tuple[str, str, int]] = []
+
+    def json_call(self, *, system: str, user: str, retries: int = 2) -> object:
+        self.calls.append((system, user, retries))
+        cache_key = (system, user)
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+        if not self.payloads:
+            raise AssertionError("fake candidate judge exhausted its payloads")
+        payload = self.payloads.pop(0)
+        self.cache[cache_key] = payload
+        return payload
+
+
+class CandidateJudgeSchemaRetryTests(unittest.TestCase):
+    @staticmethod
+    def _candidate() -> PooledCandidate:
+        return PooledCandidate(
+            topic_id="topic-1",
+            source="vietjobs",
+            source_job_id="J1",
+            job_title="Engineer J1",
+            category_key="tech",
+            location_key=None,
+        )
+
+    def test_candidate_judge_retries_use_distinct_cache_keys(self) -> None:
+        malformed = {"grades": {}}
+        valid = {"grades": {"C1": 2}}
+        client = CandidateJudgeSchemaRetryClient(
+            [malformed, malformed, valid, valid, valid]
+        )
+        job = _jobs(1)[0]
+        result = judge_candidates(
+            client,
+            _topic(),
+            [self._candidate()],
+            {job.job_key: job},
+            max_in_flight=1,
+            refill_size=1,
+        )
+        self.assertEqual(result[0].grade, 2)
+        self.assertEqual(len(client.calls), 5)
+        self.assertEqual([call[2] for call in client.calls], [0] * 5)
+        first_view_prompts = [call[1] for call in client.calls[:3]]
+        self.assertEqual(len(set(first_view_prompts)), 3)
+        self.assertIn("SCHEMA_RETRY_ATTEMPT=1", first_view_prompts[1])
+        self.assertIn("SCHEMA_RETRY_ATTEMPT=2", first_view_prompts[2])
+        self.assertEqual(len(client.cache), 5)
+
+    def test_candidate_judge_schema_retry_budget_is_exact(self) -> None:
+        client = CandidateJudgeSchemaRetryClient([{"grades": {}}] * 3)
+        job = _jobs(1)[0]
+        with self.assertRaisesRegex(RuntimeError, "strict schema"):
+            judge_candidates(
+                client,
+                _topic(),
+                [self._candidate()],
+                {job.job_key: job},
+                max_in_flight=1,
+                refill_size=1,
+            )
+        self.assertEqual(len(client.calls), 3)
+        self.assertEqual(len(client.cache), 3)
+
+
+class TopicSemanticsTests(unittest.TestCase):
+    def test_base_topic_emits_exactly_three_shared_need_variants(self) -> None:
+        topic = CareerTopic(
+            "topic-1",
+            "family-1",
+            "broad",
+            "Software Engineering",
+            "tech",
+            known_skills=("Python",),
+        )
+        queries = generate_query_variants(topic)
+        self.assertEqual(len(queries), 3)
+        self.assertEqual({query.variant for query in queries}, set(BASE_QUERY_VARIANTS))
+        self.assertNotIn("personalized", {query.variant for query in queries})
+        self.assertEqual({query.topic_id for query in queries}, {topic.topic_id})
+        self.assertTrue(all(query.known_skills == () for query in queries))
+        self.assertTrue(all("skill" in query.text.casefold() or "kỹ năng" in query.text.casefold() for query in queries))
+        self.assertTrue(all("bổ sung" not in query.text for query in queries))
+
+    def test_canonical_information_need_is_deterministic_and_facet_conditioned(self) -> None:
+        broad = CareerTopic("broad", "family-1", "broad", "Software Engineering", "tech")
+        specific = CareerTopic(
+            "specific",
+            "family-1",
+            "specific",
+            "Backend Developer",
+            "tech",
+        )
+        broad_need = canonical_information_need(broad)
+        specific_need = canonical_information_need(specific)
+        self.assertEqual(broad_need, canonical_information_need(broad))
+        self.assertEqual(
+            CANONICAL_INFORMATION_NEED_VERSION,
+            "career-rag-canonical-information-need-v1",
+        )
+        for facet in CANONICAL_INFORMATION_FACETS.split(", "):
+            self.assertIn(facet.split(" and ")[0], broad_need)
+        self.assertIn("Backend Developer", specific_need)
+        self.assertIn("tech", specific_need)
+        self.assertIn("what employers expect", specific_need)
+
+    def test_family_split_audit_remains_disjoint(self) -> None:
+        topics = [
+            CareerTopic("dev", "family-dev", "broad", "Dev", "tech", split="dev"),
+            CareerTopic("test", "family-test", "broad", "Test", "tech", split="test"),
+        ]
+        report = audit_split(topics)
+        self.assertTrue(report["passed"])
+        self.assertEqual(report["overlap"], [])
+
+    def test_discover_topics_keeps_three_queries_and_disjoint_families(self) -> None:
+        jobs = [
+            CorpusJob(
+                source="vietjobs",
+                source_job_id=f"{category}-{index}",
+                job_title=f"{category} Engineer",
+                category_key=category,
+                location_key=None,
+                experience_level=None,
+                employment_type=None,
+                chunks=(),
+            )
+            for category in ("tech_a", "tech_b")
+            for index in range(1, 9)
+        ]
+        topics, queries, dev_families, test_families = discover_topics(
+            jobs,
+            min_family_jobs=1,
+            min_specific_title_jobs=8,
+        )
+        self.assertEqual(len(queries), len(topics) * 3)
+        self.assertEqual(set(dev_families) & set(test_families), set())
+        by_topic = {}
+        for query in queries:
+            by_topic.setdefault(query.topic_id, []).append(query)
+        self.assertTrue(all(len(by_topic[topic.topic_id]) == 3 for topic in topics))
+        self.assertTrue(all(set(query.variant for query in by_topic[topic.topic_id]) == set(BASE_QUERY_VARIANTS) for topic in topics))
+
+
+class OfflineDiagnosticTests(unittest.TestCase):
+    @staticmethod
+    def _rankings() -> dict[str, dict[str, dict[str, list[str]]]]:
+        return {
+            "topic-1": {
+                "direct": {
+                    "bm25": [f"B{i}" for i in range(1, 26)],
+                    "dense": [f"D{i}" for i in range(1, 26)],
+                    "title": [f"T{i}" for i in range(1, 26)],
+                },
+                "conversational": {
+                    "bm25": ["B1", "B2", "B26", "B27"],
+                    "dense": ["D1", "D2", "D26", "D27"],
+                    "title": ["T1", "T2", "T26", "T27"],
+                },
+                "noisy": {
+                    "bm25": ["B1", "B3", "B28"],
+                    "dense": ["D1", "D3", "D28"],
+                    "title": ["T1", "T3", "T28"],
+                },
+            }
+        }
+
+    def test_pool_coverage_diagnostic_reports_all_required_depths(self) -> None:
+        report = audit_pool_coverage(
+            self._rankings(),
+            depths=(5, 10, 15, 20),
+            max_pool=3,
+        )
+        self.assertEqual(report["depths"], [5, 10, 15, 20])
+        for depth in (5, 10, 15, 20):
+            detail = report["reports"][str(depth)]["topics"]["topic-1"]
+            self.assertIn("direct_union_size", detail)
+            self.assertIn("unique_contribution_counts", detail)
+            self.assertIn("resulting_candidate_count", detail)
+            self.assertIn("max_pool_dropped_count", detail)
+            self.assertEqual(detail["rrf_new_candidates"], [])
+        self.assertTrue(report["reports"]["20"]["topics"]["topic-1"]["max_pool_truncates_system_unique"])
+
+    def test_truncation_audit_is_deterministic_and_detects_late_qualifications(self) -> None:
+        jobs = [
+            CorpusJob(
+                source="vietjobs",
+                source_job_id="J1",
+                job_title="Engineer J1",
+                category_key="tech",
+                location_key=None,
+                experience_level=None,
+                employment_type=None,
+                chunks=(
+                    {"section": "description", "content": "x" * 5100},
+                    {"section": "required qualifications", "content": "Python"},
+                ),
+            ),
+            CorpusJob(
+                source="vietjobs",
+                source_job_id="J2",
+                job_title="Engineer J2",
+                category_key="tech",
+                location_key=None,
+                experience_level=None,
+                employment_type=None,
+                chunks=({"section": "description", "content": "short"},),
+            ),
+        ]
+        first = audit_evidence_truncation(jobs, cutoff=5000)
+        second = audit_evidence_truncation(jobs, cutoff=5000)
+        self.assertEqual(first, second)
+        self.assertEqual(first["job_count"], 2)
+        self.assertEqual(first["over_cutoff_count"], 1)
+        self.assertEqual(first["late_qualification_section_job_count"], 1)
+        self.assertIn("required qualifications", first["late_qualification_sections"])
+
+    def test_embedding_provenance_is_explicitly_unverified_without_history(self) -> None:
+        backend_root = Path(__file__).resolve().parents[4]
+        contract = embedding_provenance_contract(
+            backend_root=backend_root,
+            corpus_membership_sha256="m" * 64,
+            corpus_chunks_sha256="c" * 64,
+            forbidden_derived_metadata_present=False,
+        )
+        self.assertEqual(contract["status"], "UNVERIFIED")
+        self.assertEqual(len(contract["chunking_source_sha256"]), 64)
+        self.assertEqual(len(contract["embedding_source_sha256"]), 64)
+        self.assertTrue(contract["requires_verified_clean_for_freeze"])

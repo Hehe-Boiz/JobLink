@@ -19,11 +19,11 @@ from openai import OpenAI
 from apps.career.normalization import normalize_key
 
 from .schema import CareerTopic, CorpusJob, PooledCandidate, RelevanceJudgment
-from .semantics import topic_description
+from .semantics import canonical_information_need
 
 from .concurrency import DEFAULT_MAX_IN_FLIGHT, DEFAULT_REFILL_SIZE, RefillWindowConfig, run_refill_window
 
-JUDGE_PROMPT_VERSION = "career-rag-silver-qrels-v2"
+JUDGE_PROMPT_VERSION = "career-rag-silver-qrels-v3"
 JUDGE_VIEWS = (
     "query-centric: Does this JD directly help answer the user's career information need?",
     "evidence-centric: Does this JD contain requirements, skills, or responsibilities useful for this information need?",
@@ -123,7 +123,7 @@ class JudgeClient:
                 "CAREER_RAG_LLM_CACHE_DIR",
                 (
                     "data/career_eval/"
-                    "career_rag_bench_auto_v2/"
+                    "career_rag_bench_auto_v3/"
                     "checkpoints/llm_calls"
                 ),
             )
@@ -564,7 +564,7 @@ def judge_candidates(
         base_user_prompt = (
             f"Topic ID: {topic.topic_id}\n"
             f"Information need: "
-            f"{information_need or topic_description(topic)}\n"
+            f"{information_need or canonical_information_need(topic)}\n"
             f"Judge view: {view}\n"
             f"Candidate count: {len(expected_ids)}\n"
             f"Required candidate IDs: "
@@ -584,7 +584,8 @@ def judge_candidates(
             user_prompt = base_user_prompt
             if attempt:
                 user_prompt += (
-                    "\n\nIMPORTANT: "
+                    f"\n\nSCHEMA_RETRY_ATTEMPT={attempt}\n"
+                    "IMPORTANT: "
                     "The previous response failed "
                     "schema validation. "
                     "Return ALL and ONLY these "
@@ -594,9 +595,9 @@ def judge_candidates(
                     "Do not include explanation."
                 )
 
-            try:
-                payload = client.json_call(system=system_prompt, user=user_prompt, retries=0)
+            payload = client.json_call(system=system_prompt, user=user_prompt, retries=0)
 
+            try:
                 if set(payload) != {
                     "grades"
                 }:
