@@ -16,6 +16,7 @@ from .clean_index import CleanBenchmarkDenseRanker, configured_clean_index_dir
 from .evidence import DEFAULT_EVIDENCE_CHAR_BUDGET, pack_job_evidence
 from .evaluation_integrity import assert_evaluation_integrity, consume_test_lock
 from .evaluation_protocol import (
+    GENERATION_TEMPERATURE,
     assert_test_evaluation_protocol,
     rag_runtime_settings,
 )
@@ -62,9 +63,15 @@ def _as_retrieved(job: CorpusJob, score: float = 1.0) -> CareerRetrievedJob:
     )
 
 
-def _no_rag_answer(client: OpenAI, model: str, query: str) -> str:
+def _no_rag_answer(
+    client: OpenAI,
+    model: str,
+    query: str,
+    *,
+    temperature: int = GENERATION_TEMPERATURE,
+) -> str:
     response = client.chat.completions.create(
-        model=model, temperature=0,
+        model=model, temperature=temperature,
         messages=[
             {"role": "system", "content": "Answer the Vietnamese career question concisely. Do not claim access to JobLink evidence or citations."},
             {"role": "user", "content": query},
@@ -222,14 +229,20 @@ def _evaluate_answer(
     claim_count = validated["claim_count"]
     cited = validated["cited_claim_count"]
     citation_required = validated["citation_required_claim_count"]
+    has_context = bool(context_keys)
     return {
         "matched_nugget_ids": sorted(matched),
         "weighted_nugget_coverage": weighted_nugget_coverage(matched, nuggets),
-        "faithfulness": (validated["supported_claim_count"] / claim_count) if claim_count else 1.0,
-        "unsupported_claim_rate": (validated["unsupported_claim_count"] / claim_count) if claim_count else 0.0,
-        "citation_coverage": (cited / citation_required) if citation_required else 1.0,
-        "citation_support_rate": (validated["citation_supported_count"] / cited) if cited else 1.0,
-        "context_utilization": (len(validated["context_used_job_keys"]) / len(context_keys)) if context_keys else 0.0,
+        "faithfulness": ((validated["supported_claim_count"] / claim_count) if claim_count else 1.0) if has_context else None,
+        "unsupported_claim_rate": ((validated["unsupported_claim_count"] / claim_count) if claim_count else 0.0) if has_context else None,
+        "citation_coverage": ((cited / citation_required) if citation_required else 1.0) if has_context else None,
+        "citation_support_rate": ((validated["citation_supported_count"] / cited) if cited else 1.0) if has_context else None,
+        "context_utilization": (len(validated["context_used_job_keys"]) / len(context_keys)) if has_context else None,
+        "grounding_status": (
+            "APPLICABLE_RETRIEVED_CONTEXT"
+            if has_context
+            else "NOT_APPLICABLE_NO_RETRIEVED_CONTEXT"
+        ),
         "claim_count": claim_count,
         "supported_claim_count": validated["supported_claim_count"],
         "unsupported_claim_count": validated["unsupported_claim_count"],
@@ -237,6 +250,44 @@ def _evaluate_answer(
         "cited_claim_count": cited,
         "citation_supported_count": validated["citation_supported_count"],
         "context_used_job_keys": validated["context_used_job_keys"],
+    }
+
+
+def _rag_metric_summary(
+    by_topic: dict[str, list[dict]],
+    metric: str,
+    topic_family_ids: dict[str, str],
+    *,
+    bootstrap_samples: int,
+    bootstrap_seed: int,
+    bootstrap_alpha: float,
+) -> dict:
+    topic_values: dict[str, float] = {}
+    for topic_id, rows in by_topic.items():
+        available = [float(row[metric]) for row in rows if row[metric] is not None]
+        if available:
+            topic_values[topic_id] = mean(available)
+    if not topic_values:
+        return {
+            "mean": None,
+            "ci": None,
+            "alpha": bootstrap_alpha,
+            "bootstrap_unit": "family",
+            "status": "NOT_APPLICABLE",
+        }
+    ci = family_cluster_bootstrap_ci(
+        topic_values,
+        topic_family_ids,
+        samples=bootstrap_samples,
+        seed=bootstrap_seed,
+        alpha=bootstrap_alpha,
+    )
+    return {
+        "mean": mean(topic_values.values()),
+        "ci": list(ci),
+        "alpha": bootstrap_alpha,
+        "bootstrap_unit": "family",
+        "status": "AVAILABLE",
     }
 
 
@@ -252,6 +303,7 @@ def run_rag_eval(
     bootstrap_samples: int = 2000,
     bootstrap_seed: int = 20260819,
     bootstrap_alpha: float = 0.05,
+    generation_temperature: int = GENERATION_TEMPERATURE,
     clean_index_dir: Path | None = None,
 ) -> dict:
     output_dir = Path(output_dir)
@@ -261,6 +313,14 @@ def run_rag_eval(
         raise ValueError("retriever_system must be dense or hybrid")
     if top_k <= 0:
         raise ValueError("top_k must be positive")
+    if (
+        split != "test"
+        and (
+            type(generation_temperature) is not int
+            or generation_temperature != GENERATION_TEMPERATURE
+        )
+    ):
+        raise ValueError("generation_temperature must be the frozen benchmark value 0")
 
     integrity = assert_evaluation_integrity(output_dir, clean_index_dir=clean_index_dir)
     if split == "test":
@@ -272,6 +332,7 @@ def run_rag_eval(
                 top_k=top_k,
                 generator_model=generator_model,
                 judge_model=judge_model,
+                generation_temperature=generation_temperature,
                 bootstrap_seed=bootstrap_seed,
                 bootstrap_samples=bootstrap_samples,
                 bootstrap_alpha=bootstrap_alpha,
@@ -303,7 +364,10 @@ def run_rag_eval(
     sidecar_dir = Path(clean_index_dir or configured_clean_index_dir())
     clean_ranker = CleanBenchmarkDenseRanker(sidecar_dir)
     pooler = PoolingService(corpus, dense_ranker=clean_ranker)
-    answer_service = CareerAnswerService(model_name=generator_model)
+    answer_service = CareerAnswerService(
+        model_name=generator_model,
+        temperature=generation_temperature,
+    )
     api_key = getattr(settings, "CKEY_API_KEY", "")
     if not api_key:
         raise RuntimeError("CKEY_API_KEY is required")
@@ -329,7 +393,15 @@ def run_rag_eval(
         gold_jobs = [_as_retrieved(corpus_by_key[key]) for row in gold_rows
                      if (key := f"{row['source']}::{row['source_job_id']}") in corpus_by_key]
         generated = {
-            "no_rag": (_no_rag_answer(no_rag_client, generator_model, query["text"]), []),
+            "no_rag": (
+                _no_rag_answer(
+                    no_rag_client,
+                    generator_model,
+                    query["text"],
+                    temperature=generation_temperature,
+                ),
+                [],
+            ),
             "clean_rag": (answer_service.answer(query["text"], clean_jobs).answer, clean_jobs),
             "gold_context_rag": (answer_service.answer(query["text"], gold_jobs).answer, gold_jobs),
         }
@@ -340,6 +412,7 @@ def run_rag_eval(
     report = {
         "split": split, "generator_model": generator_model, "judge_model": judge_model,
         "retriever_system": retriever_system, "bootstrap_unit": "family", "bootstrap_seed": bootstrap_seed,
+        "generation_temperature": generation_temperature,
         "bootstrap_samples": bootstrap_samples, "bootstrap_alpha": bootstrap_alpha,
         "family_count": len(set(topic_family_ids.values())),
         "clean_index_dir": str(sidecar_dir), "integrity": integrity,
@@ -357,20 +430,14 @@ def run_rag_eval(
             by_topic[row["topic_id"]].append(row)
         macro, robustness_report = {}, {}
         for metric in metric_names:
-            topic_values = {topic_id: mean(float(row[metric]) for row in rows) for topic_id, rows in by_topic.items()}
-            ci = family_cluster_bootstrap_ci(
-                topic_values,
+            macro[metric] = _rag_metric_summary(
+                by_topic,
+                metric,
                 topic_family_ids,
-                samples=bootstrap_samples,
-                seed=bootstrap_seed,
-                alpha=bootstrap_alpha,
+                bootstrap_samples=bootstrap_samples,
+                bootstrap_seed=bootstrap_seed,
+                bootstrap_alpha=bootstrap_alpha,
             )
-            macro[metric] = {
-                "mean": mean(topic_values.values()) if topic_values else 0.0,
-                "ci": list(ci),
-                "alpha": bootstrap_alpha,
-                "bootstrap_unit": "family",
-            }
             if metric == "weighted_nugget_coverage":
                 robustness_report[metric] = {topic_id: robustness([float(row[metric]) for row in rows]) for topic_id, rows in by_topic.items()}
         report["systems"][system] = {"macro": macro, "robustness": robustness_report, "queries": rows_by_system[system]}

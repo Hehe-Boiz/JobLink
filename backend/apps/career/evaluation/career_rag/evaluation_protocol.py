@@ -18,10 +18,11 @@ from .audit import (
 from .evidence import EVIDENCE_PACKING_POLICY_VERSION
 from .metrics import UNCERTAIN_CONDENSING_POLICY_VERSION
 
-EVALUATION_PROTOCOL_SCHEMA_VERSION = "career-rag-evaluation-protocol-v1"
+EVALUATION_PROTOCOL_SCHEMA_VERSION = "career-rag-evaluation-protocol-v2"
 RETRIEVAL_EVALUATION_PROTOCOL_VERSION = "career-rag-retrieval-eval-v1"
-RAG_EVALUATION_PROTOCOL_VERSION = "career-rag-rag-eval-v1"
+RAG_EVALUATION_PROTOCOL_VERSION = "career-rag-rag-eval-v2"
 RAG_JUDGE_PROTOCOL_VERSION = "career-rag-answer-judge-strict-v1"
+GENERATION_TEMPERATURE = 0
 PAIRED_SIGN_FLIP_POLICY_VERSION = "paired-family-sign-flip-exact-or-seeded-mc-v1"
 BOOTSTRAP_UNIT = "family"
 RETRIEVAL_SYSTEMS = ("bm25", "clean_dense", "title", "hybrid")
@@ -93,6 +94,7 @@ RAG_KEYS = frozenset({
     "top_k",
     "generator_model_requested",
     "judge_model_requested",
+    "generation_temperature",
     "answer_prompt_version",
     "rag_judge_protocol_version",
     "evidence_packing_policy_version",
@@ -169,6 +171,7 @@ def rag_runtime_settings(
     top_k: int,
     generator_model: str,
     judge_model: str,
+    generation_temperature: int,
     bootstrap_seed: int,
     bootstrap_samples: int,
     bootstrap_alpha: float,
@@ -180,6 +183,7 @@ def rag_runtime_settings(
             "top_k": top_k,
             "generator_model_requested": generator_model,
             "judge_model_requested": judge_model,
+            "generation_temperature": generation_temperature,
             "answer_prompt_version": ANSWER_PROMPT_VERSION,
             "rag_judge_protocol_version": RAG_JUDGE_PROTOCOL_VERSION,
             "evidence_packing_policy_version": EVIDENCE_PACKING_POLICY_VERSION,
@@ -201,6 +205,7 @@ def _validate_freeze_arguments(
     rag_top_k: int,
     generator_model: str,
     judge_model: str,
+    generation_temperature: int,
     bootstrap_seed: int,
     bootstrap_samples: int,
     alpha: float,
@@ -213,6 +218,8 @@ def _validate_freeze_arguments(
         raise ValueError("rag_top_k must be positive")
     if not generator_model or not judge_model:
         raise ValueError("generator_model and judge_model are required")
+    if type(generation_temperature) is not int or generation_temperature != GENERATION_TEMPERATURE:
+        raise ValueError("generation_temperature must be the frozen benchmark value 0")
     if type(bootstrap_seed) is not int:
         raise ValueError("bootstrap_seed must be an integer")
     if type(bootstrap_samples) is not int or bootstrap_samples <= 0:
@@ -229,6 +236,7 @@ def freeze_evaluation_protocol(
     rag_top_k: int = 5,
     generator_model: str,
     judge_model: str,
+    generation_temperature: int = GENERATION_TEMPERATURE,
     bootstrap_seed: int = 20260819,
     bootstrap_samples: int = 2000,
     alpha: float = 0.05,
@@ -241,6 +249,7 @@ def freeze_evaluation_protocol(
         rag_top_k=rag_top_k,
         generator_model=generator_model,
         judge_model=judge_model,
+        generation_temperature=generation_temperature,
         bootstrap_seed=bootstrap_seed,
         bootstrap_samples=bootstrap_samples,
         alpha=alpha,
@@ -265,6 +274,7 @@ def freeze_evaluation_protocol(
         top_k=rag_top_k,
         generator_model=generator_model,
         judge_model=judge_model,
+        generation_temperature=generation_temperature,
         bootstrap_seed=bootstrap_seed,
         bootstrap_samples=bootstrap_samples,
         bootstrap_alpha=alpha,
@@ -353,6 +363,8 @@ def _validate_protocol_types(payload: dict) -> None:
         or not rag["generator_model_requested"]
         or not isinstance(rag["judge_model_requested"], str)
         or not rag["judge_model_requested"]
+        or type(rag["generation_temperature"]) is not int
+        or rag["generation_temperature"] != GENERATION_TEMPERATURE
         or rag["answer_prompt_version"] != ANSWER_PROMPT_VERSION
         or rag["rag_judge_protocol_version"] != RAG_JUDGE_PROTOCOL_VERSION
         or rag["evidence_packing_policy_version"] != EVIDENCE_PACKING_POLICY_VERSION

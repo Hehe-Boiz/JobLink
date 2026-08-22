@@ -47,6 +47,12 @@ DEPENDENCY_DISTRIBUTIONS = {
     "torch_version": "torch",
     "rank_bm25_version": "rank-bm25",
 }
+QUERY_ENCODER_DEPENDENCY_FIELDS = (
+    "numpy_version",
+    "sentence_transformers_version",
+    "transformers_version",
+    "torch_version",
+)
 
 
 def configured_clean_index_dir() -> Path:
@@ -171,9 +177,15 @@ def _resolved_local_model_revision(embedder: CareerEmbeddingService) -> tuple[st
     return None, "UNVERIFIED"
 
 
-def _runtime_provenance(embedder: CareerEmbeddingService) -> dict:
+def _runtime_provenance(
+    embedder: CareerEmbeddingService,
+    *,
+    dependency_fields: Iterable[str] | None = None,
+) -> dict:
     versions: dict[str, str] = {}
-    for field, distribution in DEPENDENCY_DISTRIBUTIONS.items():
+    selected_fields = tuple(dependency_fields or DEPENDENCY_DISTRIBUTIONS)
+    for field in selected_fields:
+        distribution = DEPENDENCY_DISTRIBUTIONS[field]
         try:
             versions[field] = importlib.metadata.version(distribution)
         except importlib.metadata.PackageNotFoundError as exc:
@@ -186,6 +198,45 @@ def _runtime_provenance(embedder: CareerEmbeddingService) -> dict:
         **versions,
         "embedding_model_revision": revision,
         "embedding_model_revision_status": revision_status,
+    }
+
+
+def _assert_runtime_query_encoder_compatible(
+    embedder: CareerEmbeddingService,
+    frozen_provenance: dict,
+) -> dict:
+    """Fail if the live query encoder differs from the document encoder contract."""
+
+    current = _runtime_provenance(
+        embedder,
+        dependency_fields=QUERY_ENCODER_DEPENDENCY_FIELDS,
+    )
+    for field in QUERY_ENCODER_DEPENDENCY_FIELDS:
+        if current[field] != frozen_provenance.get(field):
+            raise RuntimeError(
+                "Clean benchmark query encoder dependency does not match sidecar "
+                f"provenance: {field}"
+            )
+
+    frozen_status = frozen_provenance.get("embedding_model_revision_status")
+    frozen_revision = frozen_provenance.get("embedding_model_revision")
+    if frozen_status == "VERIFIED_FROM_LOCAL_MODEL_CONFIG":
+        if (
+            current["embedding_model_revision_status"]
+            != "VERIFIED_FROM_LOCAL_MODEL_CONFIG"
+            or current["embedding_model_revision"] != frozen_revision
+        ):
+            raise RuntimeError(
+                "Clean benchmark query encoder model revision does not match sidecar provenance"
+            )
+
+    # Preserve the frozen status when a cached model cannot expose a durable
+    # revision. Matching package/model/dimension contracts do not upgrade an
+    # UNVERIFIED revision into a verified claim.
+    return {
+        **current,
+        "embedding_model_revision": frozen_revision,
+        "embedding_model_revision_status": frozen_status,
     }
 
 
@@ -584,6 +635,10 @@ class CleanBenchmarkDenseRanker:
                 raise RuntimeError("Clean benchmark dense ranker requires the cached approved embedding model") from exc
         if self.embedder.model_name != CLEAN_EMBEDDING_MODEL or self.embedder.dimension != CLEAN_EMBEDDING_DIMENSION:
             raise RuntimeError("Clean benchmark dense ranker embedder does not match sidecar contract")
+        self.query_encoder_provenance = _assert_runtime_query_encoder_compatible(
+            self.embedder,
+            self.provenance,
+        )
 
     def rank_job_keys(self, query: str, depth: int) -> list[str]:
         if depth <= 0:

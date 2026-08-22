@@ -29,9 +29,15 @@ class CareerAnswer:
 
 
 class CareerAnswerService:
-    def __init__(self, model_name: str = DEFAULT_ANSWER_MODEL, client: OpenAI | None = None) -> None:
+    def __init__(
+        self,
+        model_name: str = DEFAULT_ANSWER_MODEL,
+        client: OpenAI | None = None,
+        temperature: float | None = None,
+    ) -> None:
         self._model_name = model_name
         self._client = client
+        self._temperature = temperature
 
     @property
     def prompt_version(self) -> str:
@@ -56,9 +62,9 @@ class CareerAnswerService:
         context = self._build_context(jobs)
         client = self._get_client()
 
-        response = client.chat.completions.create(
-            model=self._model_name,
-            messages=[
+        request = {
+            "model": self._model_name,
+            "messages": [
                 {
                     "role": "system",
                     "content": self._system_prompt(),
@@ -73,6 +79,11 @@ class CareerAnswerService:
                     ),
                 },
             ],
+        }
+        if self._temperature is not None:
+            request["temperature"] = self._temperature
+        response = client.chat.completions.create(
+            **request,
         )
 
         content = response.choices[0].message.content

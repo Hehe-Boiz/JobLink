@@ -66,4 +66,7 @@ class Command(BaseCommand):
         for system, data in report["systems"].items():
             coverage = data["macro"]["weighted_nugget_coverage"]["mean"]
             faith = data["macro"]["faithfulness"]["mean"]
-            self.stdout.write(f"{system}: weighted_nugget_coverage={coverage:.4f} faithfulness={faith:.4f}")
+            faith_text = "N/A" if faith is None else f"{faith:.4f}"
+            self.stdout.write(
+                f"{system}: weighted_nugget_coverage={coverage:.4f} faithfulness={faith_text}"
+            )

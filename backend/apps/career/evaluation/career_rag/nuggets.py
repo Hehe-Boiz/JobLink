@@ -462,28 +462,19 @@ def _verify_support_group_adaptive(
     evidence_chars: int,
     schema_retries: int,
 ) -> dict[int, list[str]]:
-    """Verify a deterministic hint-equivalence group with matrix requests.
+    """Verify candidates in the canonical strong-job order with matrix requests.
 
-    Extractor support keys only determine which strong jobs are checked first;
-    they never establish support and never remove jobs from the verification
-    universe. Candidates leave the active matrix as soon as their verified
-    support reaches the threshold.
+    Extractor support keys are non-authoritative bookkeeping only. They cannot
+    change the logical verification order or the adaptive stopping result.
+    Candidates leave the active matrix as soon as their verified support reaches
+    the threshold.
     """
 
     if not indexed_candidates:
         return {}
 
     candidate_by_index = dict(indexed_candidates)
-    hinted_key_set = set(indexed_candidates[0][1].get("support_job_keys", ()))
-    ordered_jobs = [
-        job
-        for job in strong_jobs
-        if job.job_key in hinted_key_set
-    ] + [
-        job
-        for job in strong_jobs
-        if job.job_key not in hinted_key_set
-    ]
+    ordered_jobs = list(strong_jobs)
 
     verified: dict[int, set[str]] = {
         index: set()
@@ -549,27 +540,11 @@ def _verify_support_adaptive(
     if not candidates:
         return []
 
-    strong_by_key = {job.job_key for job in strong_jobs}
-    groups: dict[tuple[str, ...], list[tuple[int, dict]]] = {}
-    for index, candidate in enumerate(candidates):
-        hinted = tuple(
-            job.job_key
-            for job in strong_jobs
-            if job.job_key in {
-                key
-                for key in candidate.get("support_job_keys", ())
-                if isinstance(key, str) and key in strong_by_key
-            }
-        )
-        groups.setdefault(hinted, []).append((index, candidate))
-
-    specifications: list[list[tuple[int, dict]]] = []
-    for hinted in sorted(groups):
-        members = groups[hinted]
-        specifications.extend(
-            members[start : start + nugget_batch_size]
-            for start in range(0, len(members), nugget_batch_size)
-        )
+    indexed_candidates = list(enumerate(candidates))
+    specifications = [
+        indexed_candidates[start : start + nugget_batch_size]
+        for start in range(0, len(indexed_candidates), nugget_batch_size)
+    ]
 
     results = run_refill_window(
         [
@@ -640,9 +615,9 @@ def build_nuggets_for_topic(
 
     extracted = _extract_candidates(client, topic, strong_jobs, max_in_flight=max_in_flight, refill_size=refill_size)
 
-    # Extractor support_job_keys are hints only. Verify hinted strong jobs
-    # first, then deterministic remaining strong jobs until the grounding
-    # threshold is met or the strong-job universe is exhausted.
+    # Extractor support_job_keys are non-authoritative hints only. Verification
+    # follows the canonical strong-job order until the grounding threshold is
+    # met or the strong-job universe is exhausted.
     verification_results = _verify_support_adaptive(
         client,
         extracted,

@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 from django.test import override_settings
+from apps.career.answering import CareerAnswerService
 
 from . import audit as audit_module
 from . import clean_index as clean_index_module
@@ -58,6 +59,7 @@ from .evaluation_protocol import (
     RETRIEVAL_KEYS,
     STATISTICS_KEYS,
     TOP_LEVEL_KEYS,
+    GENERATION_TEMPERATURE,
     assert_test_evaluation_protocol,
     freeze_evaluation_protocol,
     load_and_verify_evaluation_protocol,
@@ -457,18 +459,37 @@ class NuggetConstructionTests(unittest.TestCase):
 
     def test_extractor_hints_do_not_change_authoritative_result(self) -> None:
         support = {"J1": True, "J2": True, "J3": True, "J4": False}
-        underclaimed = self._build(
-            support,
-            client=FakeJudgeClient(support, extractor_support_keys=("vietjobs::J1",)),
+        hints = (
+            (),
+            ("vietjobs::J1",),
+            ("vietjobs::J3",),
+            tuple(f"vietjobs::J{i}" for i in range(1, 5)),
         )
-        overclaimed = self._build(
-            support,
-            client=FakeJudgeClient(
+        results = []
+        importance_prompts = []
+        for extractor_hints in hints:
+            client = FakeJudgeClient(
                 support,
-                extractor_support_keys=tuple(f"vietjobs::J{i}" for i in range(1, 5)),
-            ),
-        )
-        self.assertEqual(underclaimed, overclaimed)
+                extractor_support_keys=extractor_hints,
+            )
+            nuggets = self._build(
+                support,
+                client=client,
+                min_support_jobs=2,
+                job_batch_size=4,
+            )
+            results.append(nuggets)
+            importance_prompts.append(
+                [user for system, user, _ in client.calls if "Judge the importance" in system]
+            )
+
+        self.assertEqual(results, [results[0]] * len(hints))
+        self.assertEqual(importance_prompts, [importance_prompts[0]] * len(hints))
+        nugget = results[0][0]
+        self.assertEqual(nugget.support_job_keys, ("vietjobs::J1", "vietjobs::J2"))
+        self.assertEqual(nugget.support_count, 2)
+        self.assertEqual(nugget.importance, "VITAL")
+        self.assertEqual(nugget.weight, 1.0)
 
 
 class StaticMatrixClient:
@@ -1711,6 +1732,102 @@ class CleanInputAndPoolRegressionTests(unittest.TestCase):
             "VERIFIED_FROM_LOCAL_MODEL_CONFIG",
         )
 
+    def test_runtime_query_encoder_must_match_frozen_dependencies_and_revision(self) -> None:
+        frozen = {
+            "numpy_version": "2.5.2",
+            "sentence_transformers_version": "5.7.0",
+            "transformers_version": "5.15.0",
+            "torch_version": "2.13.0",
+            "embedding_model_revision": "a" * 40,
+            "embedding_model_revision_status": "VERIFIED_FROM_LOCAL_MODEL_CONFIG",
+        }
+        current = {**frozen, "python_version": "3.12.13"}
+        embedder = SimpleNamespace()
+        with patch.object(clean_index_module, "_runtime_provenance", return_value=current):
+            observed = clean_index_module._assert_runtime_query_encoder_compatible(
+                embedder,
+                frozen,
+            )
+        self.assertEqual(observed["embedding_model_revision"], "a" * 40)
+
+        for field in clean_index_module.QUERY_ENCODER_DEPENDENCY_FIELDS:
+            mismatch = {**current, field: "different"}
+            with self.subTest(field=field), \
+                    patch.object(clean_index_module, "_runtime_provenance", return_value=mismatch), \
+                    self.assertRaisesRegex(RuntimeError, field):
+                clean_index_module._assert_runtime_query_encoder_compatible(
+                    embedder,
+                    frozen,
+                )
+
+        revision_mismatch = {
+            **current,
+            "embedding_model_revision": "b" * 40,
+        }
+        with patch.object(
+            clean_index_module,
+            "_runtime_provenance",
+            return_value=revision_mismatch,
+        ), self.assertRaisesRegex(RuntimeError, "model revision"):
+            clean_index_module._assert_runtime_query_encoder_compatible(
+                embedder,
+                frozen,
+            )
+
+    def test_unverified_frozen_revision_remains_unverified_at_runtime(self) -> None:
+        frozen = {
+            "numpy_version": "2.5.2",
+            "sentence_transformers_version": "5.7.0",
+            "transformers_version": "5.15.0",
+            "torch_version": "2.13.0",
+            "embedding_model_revision": None,
+            "embedding_model_revision_status": "UNVERIFIED",
+        }
+        current = {
+            **frozen,
+            "python_version": "3.12.13",
+            "embedding_model_revision": "a" * 40,
+            "embedding_model_revision_status": "VERIFIED_FROM_LOCAL_MODEL_CONFIG",
+        }
+        with patch.object(clean_index_module, "_runtime_provenance", return_value=current):
+            observed = clean_index_module._assert_runtime_query_encoder_compatible(
+                SimpleNamespace(),
+                frozen,
+            )
+        self.assertIsNone(observed["embedding_model_revision"])
+        self.assertEqual(observed["embedding_model_revision_status"], "UNVERIFIED")
+
+    def test_dense_ranker_checks_runtime_query_encoder_contract_on_init(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_clean_sidecar(root)
+            provenance = json.loads(
+                (root / "embedding_provenance.json").read_text(encoding="utf-8")
+            )
+            embedder = SimpleNamespace(
+                model_name=CLEAN_EMBEDDING_MODEL,
+                dimension=CLEAN_EMBEDDING_DIMENSION,
+            )
+            with patch.object(
+                clean_index_module,
+                "verify_clean_embedding_index",
+                return_value={
+                    "passed": True,
+                    "blockers": [],
+                    "provenance": provenance,
+                },
+            ), patch.object(
+                clean_index_module,
+                "CareerEmbeddingService",
+                return_value=embedder,
+            ), patch.object(
+                clean_index_module,
+                "_assert_runtime_query_encoder_compatible",
+                side_effect=RuntimeError("runtime encoder drift"),
+            ) as compatible, self.assertRaisesRegex(RuntimeError, "runtime encoder drift"):
+                CleanBenchmarkDenseRanker(root)
+            compatible.assert_called_once_with(embedder, provenance)
+
     def test_clean_verifier_rejects_inconsistent_model_revision_provenance(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -2102,6 +2219,7 @@ class EvaluationProtocolFreezeTests(unittest.TestCase):
             "top_k": 5,
             "generator_model": "generator-v1",
             "judge_model": "judge-v1",
+            "generation_temperature": GENERATION_TEMPERATURE,
             "bootstrap_seed": 123,
             "bootstrap_samples": 500,
             "bootstrap_alpha": 0.05,
@@ -2170,6 +2288,7 @@ class EvaluationProtocolFreezeTests(unittest.TestCase):
                 {"judge_model": "judge-v2"},
                 {"retriever_system": "hybrid"},
                 {"top_k": 6},
+                {"generation_temperature": 1},
                 {"bootstrap_seed": 124},
                 {"bootstrap_samples": 501},
                 {"bootstrap_alpha": 0.10},
@@ -2227,6 +2346,7 @@ class EvaluationProtocolFreezeTests(unittest.TestCase):
                 "judge_model": "judge-v1",
                 "retriever_system": "dense",
                 "top_k": 5,
+                "generation_temperature": GENERATION_TEMPERATURE,
                 "bootstrap_seed": 123,
                 "bootstrap_samples": 500,
                 "bootstrap_alpha": 0.05,
@@ -2236,6 +2356,7 @@ class EvaluationProtocolFreezeTests(unittest.TestCase):
                 {"judge_model": "wrong-judge"},
                 {"retriever_system": "hybrid"},
                 {"top_k": 6},
+                {"generation_temperature": 1},
                 {"bootstrap_seed": 124},
                 {"bootstrap_samples": 501},
                 {"bootstrap_alpha": 0.10},
@@ -2455,6 +2576,124 @@ class RagJudgeSchemaRegressionTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "after 2 retries"):
             _evaluate_answer(exhausted, query="q", answer="a", nuggets=[nugget], context_jobs=[job])
         self.assertEqual(len(exhausted.calls), 3)
+
+    def test_no_rag_grounding_is_not_applicable_and_never_aggregates_as_zero(self) -> None:
+        class FakeJudge:
+            def json_call(self, *, system: str, user: str, retries: int = 2) -> dict:
+                return {
+                    "matched_nugget_ids": ["N1"],
+                    "claim_count": 5,
+                    "supported_claim_count": 0,
+                    "unsupported_claim_count": 5,
+                    "citation_required_claim_count": 0,
+                    "cited_claim_count": 0,
+                    "citation_supported_count": 0,
+                    "context_used_job_keys": [],
+                }
+
+        nugget = Nugget(
+            "topic",
+            "N1",
+            "Python",
+            "python",
+            ("vietjobs::J1",),
+            1,
+            -1.0,
+            1.0,
+            "VITAL",
+        )
+        result = _evaluate_answer(
+            FakeJudge(),
+            query="q",
+            answer="five claims",
+            nuggets=[nugget],
+            context_jobs=[],
+        )
+        self.assertEqual(result["weighted_nugget_coverage"], 1.0)
+        self.assertEqual(result["claim_count"], 5)
+        self.assertEqual(
+            result["grounding_status"],
+            "NOT_APPLICABLE_NO_RETRIEVED_CONTEXT",
+        )
+        for metric in (
+            "faithfulness",
+            "unsupported_claim_rate",
+            "citation_coverage",
+            "citation_support_rate",
+            "context_utilization",
+        ):
+            self.assertIsNone(result[metric])
+            summary = rag_eval_module._rag_metric_summary(
+                {"topic": [result]},
+                metric,
+                {"topic": "family"},
+                bootstrap_samples=10,
+                bootstrap_seed=7,
+                bootstrap_alpha=0.05,
+            )
+            self.assertIsNone(summary["mean"])
+            self.assertIsNone(summary["ci"])
+            self.assertEqual(summary["status"], "NOT_APPLICABLE")
+
+    def test_context_rag_grounding_metrics_remain_numeric(self) -> None:
+        class FakeJudge:
+            def json_call(self, *, system: str, user: str, retries: int = 2) -> dict:
+                return RagJudgeSchemaRegressionTests._valid_payload()
+
+        nugget = Nugget(
+            "topic",
+            "N1",
+            "Python",
+            "python",
+            ("vietjobs::J1",),
+            1,
+            -1.0,
+            1.0,
+            "VITAL",
+        )
+        result = _evaluate_answer(
+            FakeJudge(),
+            query="q",
+            answer="grounded claims",
+            nuggets=[nugget],
+            context_jobs=[_as_retrieved(_jobs(1)[0])],
+        )
+        self.assertEqual(result["grounding_status"], "APPLICABLE_RETRIEVED_CONTEXT")
+        self.assertAlmostEqual(result["faithfulness"], 2 / 3)
+        self.assertAlmostEqual(result["unsupported_claim_rate"], 1 / 3)
+        self.assertEqual(result["citation_coverage"], 1.0)
+        self.assertEqual(result["citation_support_rate"], 0.5)
+        self.assertEqual(result["context_utilization"], 1.0)
+
+    def test_all_benchmark_generation_paths_send_zero_temperature_and_default_service_does_not(self) -> None:
+        calls: list[dict] = []
+
+        def create(**kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content="answer"))]
+            )
+
+        client = SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+        )
+        rag_eval_module._no_rag_answer(client, "generator", "query")
+        benchmark_service = CareerAnswerService(
+            model_name="generator",
+            client=client,
+            temperature=GENERATION_TEMPERATURE,
+        )
+        job = _as_retrieved(_jobs(1)[0])
+        benchmark_service.answer("clean query", [job])
+        benchmark_service.answer("gold query", [job])
+        self.assertEqual([call.get("temperature") for call in calls], [0, 0, 0])
+
+        calls.clear()
+        CareerAnswerService(model_name="production", client=client).answer(
+            "production query",
+            [job],
+        )
+        self.assertNotIn("temperature", calls[0])
 
     def test_rag_context_uses_section_aware_evidence_packing(self) -> None:
         job = CorpusJob(
