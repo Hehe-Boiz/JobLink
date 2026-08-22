@@ -8,8 +8,11 @@ matrix, not a claim about the historical production vectors.
 """
 
 import hashlib
+import importlib.metadata
 import json
 import os
+import platform
+import re
 import secrets
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -28,7 +31,7 @@ DEFAULT_CLEAN_INDEX_DIR = BACKEND_ROOT / "data" / "career_eval" / "career_rag_cl
 CLEAN_EMBEDDING_INPUT_POLICY_VERSION = "career-rag-clean-sidecar-input-v1"
 CLEAN_EMBEDDING_INPUT_FIELD_POLICY = "raw-job-fields-only-no-forbidden-derived-fields-v1"
 CLEAN_INDEX_TYPE = "career-rag-benchmark-sidecar-npy-v1"
-CLEAN_INDEX_PROVENANCE_SCHEMA_VERSION = "career-rag-clean-index-provenance-v1"
+CLEAN_INDEX_PROVENANCE_SCHEMA_VERSION = "career-rag-clean-index-provenance-v2"
 CLEAN_INDEXING_POLICY_VERSION = "career-rag-clean-sidecar-build-v1"
 CLEAN_EMBEDDING_MODEL = "intfloat/multilingual-e5-small"
 CLEAN_EMBEDDING_DIMENSION = 384
@@ -37,6 +40,13 @@ V3_SNAPSHOT_ACTIVE_CHUNK_COUNT = 152_379
 VECTORS_FILENAME = "vectors.npy"
 CHUNK_MAP_FILENAME = "chunk_map.jsonl"
 PROVENANCE_FILENAME = "embedding_provenance.json"
+DEPENDENCY_DISTRIBUTIONS = {
+    "numpy_version": "numpy",
+    "sentence_transformers_version": "sentence-transformers",
+    "transformers_version": "transformers",
+    "torch_version": "torch",
+    "rank_bm25_version": "rank-bm25",
+}
 
 
 def configured_clean_index_dir() -> Path:
@@ -140,6 +150,45 @@ def _source_hashes() -> dict[str, str]:
     }
 
 
+def _resolved_local_model_revision(embedder: CareerEmbeddingService) -> tuple[str | None, str]:
+    """Read a cached Hugging Face commit SHA without network resolution."""
+
+    model = getattr(embedder, "model", None)
+    candidates: list[object] = []
+    try:
+        first_module = model._first_module()
+    except (AttributeError, TypeError):
+        first_module = None
+    if first_module is not None:
+        auto_model = getattr(first_module, "auto_model", None)
+        candidates.append(getattr(getattr(auto_model, "config", None), "_commit_hash", None))
+        tokenizer = getattr(first_module, "tokenizer", None)
+        candidates.append(getattr(tokenizer, "init_kwargs", {}).get("_commit_hash"))
+    candidates.append(getattr(getattr(model, "config", None), "_commit_hash", None))
+    for value in candidates:
+        if isinstance(value, str) and re.fullmatch(r"[0-9a-fA-F]{40,64}", value):
+            return value.lower(), "VERIFIED_FROM_LOCAL_MODEL_CONFIG"
+    return None, "UNVERIFIED"
+
+
+def _runtime_provenance(embedder: CareerEmbeddingService) -> dict:
+    versions: dict[str, str] = {}
+    for field, distribution in DEPENDENCY_DISTRIBUTIONS.items():
+        try:
+            versions[field] = importlib.metadata.version(distribution)
+        except importlib.metadata.PackageNotFoundError as exc:
+            raise RuntimeError(
+                f"Cannot record clean-index dependency provenance: {distribution} is unavailable"
+            ) from exc
+    revision, revision_status = _resolved_local_model_revision(embedder)
+    return {
+        "python_version": platform.python_version(),
+        **versions,
+        "embedding_model_revision": revision,
+        "embedding_model_revision_status": revision_status,
+    }
+
+
 @contextmanager
 def _offline_huggingface():
     keys = ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE")
@@ -213,6 +262,7 @@ def build_clean_embedding_index(
                 ) from exc
             if embedder.model_name != CLEAN_EMBEDDING_MODEL or embedder.dimension != CLEAN_EMBEDDING_DIMENSION:
                 raise RuntimeError("Clean sidecar embedder model/dimension does not match the frozen V3 contract")
+            runtime_provenance = _runtime_provenance(embedder)
 
             vectors_path = candidate / VECTORS_FILENAME
             vectors = np.lib.format.open_memmap(
@@ -287,6 +337,7 @@ def build_clean_embedding_index(
             "forbidden_derived_fields_excluded": True,
             "derived_fields_included": [],
             "indexing_policy_version": CLEAN_INDEXING_POLICY_VERSION,
+            **runtime_provenance,
             **identity_before,
             "vectors_filename": VECTORS_FILENAME,
             "vectors_sha256": sha256_file(vectors_path),
@@ -369,6 +420,26 @@ def verify_clean_embedding_index(index_dir: Path = DEFAULT_CLEAN_INDEX_DIR) -> d
     checks["raw_only_input_policy"] = fields_ok
     if not fields_ok:
         blockers.append("clean index does not prove forbidden derived fields were excluded")
+    dependency_fields_ok = all(
+        isinstance(provenance.get(field), str) and bool(provenance[field])
+        for field in ("python_version", *DEPENDENCY_DISTRIBUTIONS)
+    )
+    revision = provenance.get("embedding_model_revision")
+    revision_status = provenance.get("embedding_model_revision_status")
+    revision_ok = (
+        revision is None
+        and revision_status == "UNVERIFIED"
+    ) or (
+        isinstance(revision, str)
+        and re.fullmatch(r"[0-9a-f]{40,64}", revision) is not None
+        and revision_status == "VERIFIED_FROM_LOCAL_MODEL_CONFIG"
+    )
+    checks["dependency_provenance"] = dependency_fields_ok
+    checks["embedding_model_revision"] = revision_ok
+    if not dependency_fields_ok:
+        blockers.append("clean index dependency version provenance is incomplete")
+    if not revision_ok:
+        blockers.append("clean index embedding model revision provenance is inconsistent")
     timestamp = provenance.get("indexing_timestamp")
     try:
         parsed_timestamp = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))

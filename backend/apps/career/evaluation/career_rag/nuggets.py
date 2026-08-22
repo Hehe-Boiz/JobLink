@@ -505,7 +505,17 @@ def _verify_support_group_adaptive(
             raise RuntimeError("Adaptive nugget verifier returned an unexpected result shape")
         remaining: list[tuple[int, dict]] = []
         for (index, _), support_keys in zip(active, batch_result, strict=True):
-            verified[index].update(support_keys)
+            # A matrix request may contain jobs beyond this candidate's logical
+            # adaptive stopping point.  Consume cells in the deterministic job
+            # order and ignore later positives once the threshold is reached,
+            # so transport batch size cannot change stored support semantics.
+            supported_in_batch = set(support_keys)
+            for job in job_batch:
+                if (
+                    len(verified[index]) < min_support_jobs
+                    and job.job_key in supported_in_batch
+                ):
+                    verified[index].add(job.job_key)
             if len(verified[index]) < min_support_jobs:
                 remaining.append((index, candidate_by_index[index]))
         active = remaining

@@ -22,6 +22,10 @@ class Command(BaseCommand):
         parser.add_argument("--retriever", choices=("dense", "hybrid"), default="dense")
         parser.add_argument("--judge-model", default=None)
         parser.add_argument("--generator-model", default=None)
+        parser.add_argument("--top-k", type=int, default=None)
+        parser.add_argument("--bootstrap-seed", type=int, default=20260819)
+        parser.add_argument("--bootstrap-samples", type=int, default=2000)
+        parser.add_argument("--alpha", type=float, default=0.05)
 
     def handle(self, *args, **options) -> None:
         output_dir = Path(options["output_dir"])
@@ -30,6 +34,10 @@ class Command(BaseCommand):
                 split=options["split"],
                 output_dir=output_dir,
                 allow_test=options["allow_test"],
+                top_k=10 if options["top_k"] is None else options["top_k"],
+                bootstrap_seed=options["bootstrap_seed"],
+                bootstrap_samples=options["bootstrap_samples"],
+                bootstrap_alpha=options["alpha"],
             )
             self.stdout.write(self.style.SUCCESS(f"Retrieval {options['split']} evaluation complete."))
             for system, data in report["systems"].items():
@@ -49,6 +57,10 @@ class Command(BaseCommand):
             judge_model=judge_model,
             retriever_system=options["retriever"],
             allow_test=options["allow_test"],
+            top_k=5 if options["top_k"] is None else options["top_k"],
+            bootstrap_seed=options["bootstrap_seed"],
+            bootstrap_samples=options["bootstrap_samples"],
+            bootstrap_alpha=options["alpha"],
         )
         self.stdout.write(self.style.SUCCESS(f"RAG {options['split']} evaluation complete."))
         for system, data in report["systems"].items():

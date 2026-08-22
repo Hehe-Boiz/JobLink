@@ -14,7 +14,7 @@ from .schema import CareerQuery, CareerTopic, CorpusJob
 
 
 DEFAULT_RANDOM_SEED = 20260819
-# Preferred only.
+# Hard eligibility floor for every selected broad career family.
 DEFAULT_MIN_FAMILY_JOBS = 100
 
 # Preferred specific-title support.
@@ -245,17 +245,6 @@ def discover_topics(
         "generic_categories_excluded="
         f"{len(generic_excluded)}."
     )
-
-    if broad_support_floor < min_family_jobs:
-        print(
-            "Topic selection note: "
-            "preferred broad-family support "
-            f">={min_family_jobs} is not "
-            f"attainable for all "
-            f"{family_count} families; "
-            "observed selected-family floor="
-            f"{broad_support_floor}."
-        )
 
     shuffled = list(selected_categories)
     random.Random(random_seed).shuffle(shuffled)

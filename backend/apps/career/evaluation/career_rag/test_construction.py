@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import re
 import json
+import os
 import tempfile
 import unittest
 import hashlib
 import numpy as np
+from collections import Counter
 from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
@@ -14,6 +16,9 @@ from django.test import override_settings
 from . import audit as audit_module
 from . import clean_index as clean_index_module
 from . import evaluation_integrity as integrity_module
+from . import evaluation_protocol as protocol_module
+from . import judges as judges_module
+from . import run_rag_eval as rag_eval_module
 from . import run_retrieval_eval as retrieval_eval_module
 from . import build_benchmark as build_benchmark_module
 from .audit import (
@@ -38,10 +43,26 @@ from .clean_index import (
     CLEAN_EMBEDDING_INPUT_POLICY_VERSION,
     CLEAN_EMBEDDING_MODEL,
     CLEAN_INDEX_TYPE,
+    CLEAN_INDEX_PROVENANCE_SCHEMA_VERSION,
     CleanBenchmarkDenseRanker,
     build_clean_embedding_index,
     clean_embedding_input,
     verify_clean_embedding_index,
+)
+from .evaluation_protocol import (
+    BENCHMARK_KEYS,
+    IMPLEMENTATION_KEYS,
+    PROTOCOL_HASH_RELATIVE_PATH,
+    PROTOCOL_RELATIVE_PATH,
+    RAG_KEYS,
+    RETRIEVAL_KEYS,
+    STATISTICS_KEYS,
+    TOP_LEVEL_KEYS,
+    assert_test_evaluation_protocol,
+    freeze_evaluation_protocol,
+    load_and_verify_evaluation_protocol,
+    rag_runtime_settings,
+    retrieval_runtime_settings,
 )
 from .evidence import (
     DEFAULT_EVIDENCE_CHAR_BUDGET,
@@ -93,7 +114,12 @@ from .semantics import (
     CANONICAL_INFORMATION_NEED_VERSION,
     canonical_information_need,
 )
-from .topics import BASE_QUERY_VARIANTS, discover_topics, generate_query_variants
+from .topics import (
+    BASE_QUERY_VARIANTS,
+    _select_categories,
+    discover_topics,
+    generate_query_variants,
+)
 
 
 class FakeJudgeClient:
@@ -214,6 +240,8 @@ class NuggetConstructionTests(unittest.TestCase):
         nugget_batch_size: int = 8,
         job_batch_size: int = 8,
         importance_batch_size: int = 8,
+        max_in_flight: int = 1,
+        refill_size: int = 1,
     ):
         jobs = _jobs(job_count)
         return build_nuggets_for_topic(
@@ -225,8 +253,8 @@ class NuggetConstructionTests(unittest.TestCase):
             nugget_batch_size=nugget_batch_size,
             job_batch_size=job_batch_size,
             importance_batch_size=importance_batch_size,
-            max_in_flight=1,
-            refill_size=1,
+            max_in_flight=max_in_flight,
+            refill_size=refill_size,
         )
 
     def test_extractor_underclaim_expands_verified_support_before_threshold(self) -> None:
@@ -314,6 +342,51 @@ class NuggetConstructionTests(unittest.TestCase):
         self.assertEqual(len(support_calls), 2)
         self.assertLess(len(support_calls), 4)
         self.assertEqual(nuggets[0].prevalence, PREVALENCE_UNAVAILABLE)
+
+    def test_adaptive_support_is_invariant_to_job_batch_size(self) -> None:
+        support = {"J1": True, "J2": True, "J3": True, "J4": False}
+        observed = []
+        for job_batch_size in (1, 2, 4):
+            nuggets = self._build(
+                support,
+                min_support_jobs=2,
+                job_batch_size=job_batch_size,
+            )
+            observed.append(nuggets[0].support_job_keys)
+        self.assertEqual(
+            observed,
+            [("vietjobs::J1", "vietjobs::J2")] * 3,
+        )
+
+    def test_adaptive_support_is_invariant_to_all_transport_batching(self) -> None:
+        support_by_candidate = {
+            "REST API": {"J1": True, "J2": True, "J3": True, "J4": False},
+            "Python": {"J1": False, "J2": True, "J3": True, "J4": True},
+        }
+        configurations = (
+            {"nugget_batch_size": 1, "job_batch_size": 1, "max_in_flight": 1, "refill_size": 1},
+            {"nugget_batch_size": 1, "job_batch_size": 2, "max_in_flight": 2, "refill_size": 2},
+            {"nugget_batch_size": 2, "job_batch_size": 4, "max_in_flight": 2, "refill_size": 2},
+        )
+        observed = []
+        for configuration in configurations:
+            client = FakeJudgeClient(
+                {},
+                candidate_texts=("REST API", "Python"),
+                support_by_candidate=support_by_candidate,
+            )
+            nuggets = self._build(
+                {},
+                client=client,
+                min_support_jobs=2,
+                **configuration,
+            )
+            observed.append({nugget.text: nugget.support_job_keys for nugget in nuggets})
+        expected = {
+            "REST API": ("vietjobs::J1", "vietjobs::J2"),
+            "Python": ("vietjobs::J2", "vietjobs::J3"),
+        }
+        self.assertEqual(observed, [expected, expected, expected])
 
     def test_only_one_verified_support_is_removed_for_minimum_two(self) -> None:
         support = {"J1": True, "J2": False, "J3": False, "J4": False}
@@ -890,6 +963,60 @@ class FreezeIntegrityTests(unittest.TestCase):
             judge_client.assert_not_called()
 
 
+class LlmCacheAtomicBuildTests(unittest.TestCase):
+    @staticmethod
+    def _client() -> JudgeClient:
+        client = object.__new__(JudgeClient)
+        client.model_name = "offline-cache-test"
+        return client
+
+    def test_default_cache_never_creates_final_benchmark_and_survives_retry(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            final = root / "career_rag_bench_auto_v3"
+            cache_root = root / "career_rag_llm_cache_v3"
+            candidate = _create_building_directory(final)
+            (candidate / "candidate.txt").write_text("complete", encoding="utf-8")
+            client = self._client()
+            with patch.object(judges_module, "DEFAULT_LLM_CACHE_DIR", cache_root), \
+                    patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("CAREER_RAG_LLM_CACHE_DIR", None)
+                cache_path = client._cache_path(system="system", user="user")
+                client._save_cache(system="system", user="user", payload={"ok": True})
+
+            self.assertIsNotNone(cache_path)
+            self.assertTrue(cache_path.is_file())
+            self.assertTrue(cache_path.is_relative_to(cache_root))
+            self.assertFalse(final.exists())
+
+            # A failed candidate can disappear without deleting paid-call cache.
+            for child in candidate.iterdir():
+                child.unlink()
+            candidate.rmdir()
+            self.assertTrue(cache_path.is_file())
+
+            retry_candidate = _create_building_directory(final)
+            (retry_candidate / "candidate.txt").write_text("complete", encoding="utf-8")
+            _finalize_candidate(retry_candidate, final)
+            self.assertTrue(final.is_dir())
+            self.assertTrue(cache_path.is_file())
+
+    def test_explicit_llm_cache_directory_override_is_honored(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            override = Path(directory) / "explicit-cache"
+            client = self._client()
+            with patch.dict(
+                os.environ,
+                {"CAREER_RAG_LLM_CACHE_DIR": str(override)},
+                clear=False,
+            ):
+                path = client._cache_path(system="system", user="user")
+                client._save_cache(system="system", user="user", payload={"ok": True})
+            self.assertIsNotNone(path)
+            self.assertTrue(path.is_file())
+            self.assertTrue(path.is_relative_to(override))
+
+
 class CandidateJudgeSchemaRetryClient:
     def __init__(self, payloads: list[object]) -> None:
         self.payloads = list(payloads)
@@ -991,6 +1118,25 @@ class CandidateJudgeSchemaRetryTests(unittest.TestCase):
 
 
 class TopicSemanticsTests(unittest.TestCase):
+    def test_min_family_jobs_is_a_hard_eligibility_floor(self) -> None:
+        title_jobs = {"tech": Counter({"backend engineer": 100})}
+        with self.assertRaisesRegex(RuntimeError, "No career family"):
+            _select_categories(
+                Counter({"tech": 99}),
+                title_jobs,
+                min_family_jobs=100,
+                preferred_specific_support=8,
+                hard_min_specific_support=8,
+            )
+        selected, _, _ = _select_categories(
+            Counter({"tech": 100}),
+            title_jobs,
+            min_family_jobs=100,
+            preferred_specific_support=8,
+            hard_min_specific_support=8,
+        )
+        self.assertEqual(selected, ["tech"])
+
     def test_base_topic_emits_exactly_three_shared_need_variants(self) -> None:
         topic = CareerTopic(
             "topic-1",
@@ -1390,7 +1536,7 @@ class CleanInputAndPoolRegressionTests(unittest.TestCase):
             "chunk_context_sha256": "b" * 64,
         }
         provenance = {
-            "status": "VERIFIED_CLEAN", "provenance_schema_version": "career-rag-clean-index-provenance-v1",
+            "status": "VERIFIED_CLEAN", "provenance_schema_version": CLEAN_INDEX_PROVENANCE_SCHEMA_VERSION,
             "indexing_timestamp": "2026-08-22T00:00:00+00:00", "index_type": CLEAN_INDEX_TYPE,
             "embedding_model": CLEAN_EMBEDDING_MODEL, "embedding_dimension": CLEAN_EMBEDDING_DIMENSION,
             "input_field_policy": "raw-job-fields-only-no-forbidden-derived-fields-v1",
@@ -1398,6 +1544,10 @@ class CleanInputAndPoolRegressionTests(unittest.TestCase):
             "forbidden_derived_fields": ["derived_role_labels", "gold_nuggets", "judge_labels", "soft_skills", "technical_skills"],
             "forbidden_derived_fields_excluded": True, "derived_fields_included": [],
             "indexing_policy_version": "career-rag-clean-sidecar-build-v1", **identity,
+            "python_version": "3.12.13", "numpy_version": "2.5.2",
+            "sentence_transformers_version": "5.7.0", "transformers_version": "5.15.0",
+            "torch_version": "2.13.0", "rank_bm25_version": "0.2.2",
+            "embedding_model_revision": None, "embedding_model_revision_status": "UNVERIFIED",
             "vectors_filename": "vectors.npy", "vectors_sha256": hashlib.sha256((root / "vectors.npy").read_bytes()).hexdigest(),
             "vectors_dtype": "float32", "vectors_shape": [2, 384], "chunk_map_filename": "chunk_map.jsonl",
             "chunk_map_sha256": hashlib.sha256(map_path.read_bytes()).hexdigest(),
@@ -1493,6 +1643,13 @@ class CleanInputAndPoolRegressionTests(unittest.TestCase):
                 patch.object(clean_index_module, "current_clean_corpus_identity", return_value=identity), \
                 patch.object(clean_index_module, "_chunk_rows", return_value=FakeRows()), \
                 patch.object(clean_index_module, "_source_hashes", return_value=source_hashes), \
+                patch.object(clean_index_module, "_runtime_provenance", return_value={
+                    "python_version": "3.12.13", "numpy_version": "2.5.2",
+                    "sentence_transformers_version": "5.7.0", "transformers_version": "5.15.0",
+                    "torch_version": "2.13.0", "rank_bm25_version": "0.2.2",
+                    "embedding_model_revision": None,
+                    "embedding_model_revision_status": "UNVERIFIED",
+                }), \
                 patch.object(clean_index_module, "CareerEmbeddingService", return_value=embedder):
             output = Path(directory) / "index"
             result = build_clean_embedding_index(
@@ -1507,9 +1664,64 @@ class CleanInputAndPoolRegressionTests(unittest.TestCase):
             self.assertEqual([row["row_index"] for row in mapping], [0, 1])
             self.assertEqual([row["chunk_id"] for row in mapping], ["c1", "c2"])
             self.assertEqual(provenance["status"], "VERIFIED_CLEAN")
+            self.assertEqual(provenance["sentence_transformers_version"], "5.7.0")
+            self.assertIsNone(provenance["embedding_model_revision"])
+            self.assertEqual(provenance["embedding_model_revision_status"], "UNVERIFIED")
             self.assertEqual(provenance["vectors_sha256"], hashlib.sha256((output / "vectors.npy").read_bytes()).hexdigest())
             with self.assertRaisesRegex(RuntimeError, "Refusing to overwrite"):
                 build_clean_embedding_index(output_dir=output)
+
+    def test_clean_runtime_provenance_records_versions_and_never_guesses_revision(self) -> None:
+        versions = {
+            "numpy": "2.5.2",
+            "sentence-transformers": "5.7.0",
+            "transformers": "5.15.0",
+            "torch": "2.13.0",
+            "rank-bm25": "0.2.2",
+        }
+        no_revision = SimpleNamespace(model=SimpleNamespace())
+        with patch.object(
+            clean_index_module.importlib.metadata,
+            "version",
+            side_effect=lambda distribution: versions[distribution],
+        ), patch.object(clean_index_module.platform, "python_version", return_value="3.12.13"):
+            provenance = clean_index_module._runtime_provenance(no_revision)
+        self.assertEqual(provenance["python_version"], "3.12.13")
+        self.assertEqual(provenance["rank_bm25_version"], "0.2.2")
+        self.assertIsNone(provenance["embedding_model_revision"])
+        self.assertEqual(provenance["embedding_model_revision_status"], "UNVERIFIED")
+
+        commit = "a" * 40
+        first_module = SimpleNamespace(
+            auto_model=SimpleNamespace(config=SimpleNamespace(_commit_hash=commit)),
+            tokenizer=SimpleNamespace(init_kwargs={}),
+        )
+        local_model = SimpleNamespace(_first_module=lambda: first_module)
+        with patch.object(
+            clean_index_module.importlib.metadata,
+            "version",
+            side_effect=lambda distribution: versions[distribution],
+        ):
+            verified = clean_index_module._runtime_provenance(
+                SimpleNamespace(model=local_model)
+            )
+        self.assertEqual(verified["embedding_model_revision"], commit)
+        self.assertEqual(
+            verified["embedding_model_revision_status"],
+            "VERIFIED_FROM_LOCAL_MODEL_CONFIG",
+        )
+
+    def test_clean_verifier_rejects_inconsistent_model_revision_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            identity = self._write_clean_sidecar(root)
+            provenance_path = root / "embedding_provenance.json"
+            provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+            provenance["embedding_model_revision_status"] = "VERIFIED_FROM_LOCAL_MODEL_CONFIG"
+            provenance_path.write_text(json.dumps(provenance), encoding="utf-8")
+            result = self._verify_fixture(root, identity)
+        self.assertFalse(result["passed"])
+        self.assertTrue(any("revision provenance" in blocker for blocker in result["blockers"]))
 
     def test_clean_sidecar_detects_vector_map_nan_dimension_and_corpus_tampering(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1835,6 +2047,257 @@ class QrelAndBootstrapRegressionTests(unittest.TestCase):
         self.assertEqual(first["assignments"], 4)
         self.assertEqual(first["paired_sign_flip_p_value"], 0.5)
         self.assertEqual(first["mean_family_delta"], 1.0)
+
+
+class EvaluationProtocolFreezeTests(unittest.TestCase):
+    @staticmethod
+    def _manifest(root: Path, *, marker: str = "a") -> Path:
+        root.mkdir(parents=True, exist_ok=True)
+        path = root / "benchmark_manifest.json"
+        path.write_text(
+            json.dumps({
+                "benchmark_name": "CareerRAGBench-Auto-V3",
+                "benchmark_version": "3.0",
+                "marker": marker,
+            }, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        return path
+
+    @staticmethod
+    def _freeze(root: Path) -> dict:
+        EvaluationProtocolFreezeTests._manifest(root)
+        with patch.object(
+            protocol_module,
+            "verify_frozen_benchmark",
+            return_value={"passed": True, "blockers": []},
+        ):
+            return freeze_evaluation_protocol(
+                root,
+                retrieval_top_k=10,
+                rag_retriever_system="dense",
+                rag_top_k=5,
+                generator_model="generator-v1",
+                judge_model="judge-v1",
+                bootstrap_seed=123,
+                bootstrap_samples=500,
+                alpha=0.05,
+            )
+
+    @staticmethod
+    def _retrieval_runtime(**updates) -> dict:
+        arguments = {
+            "top_k": 10,
+            "bootstrap_seed": 123,
+            "bootstrap_samples": 500,
+            "bootstrap_alpha": 0.05,
+        }
+        arguments.update(updates)
+        return retrieval_runtime_settings(**arguments)
+
+    @staticmethod
+    def _rag_runtime(**updates) -> dict:
+        arguments = {
+            "retriever_system": "dense",
+            "top_k": 5,
+            "generator_model": "generator-v1",
+            "judge_model": "judge-v1",
+            "bootstrap_seed": 123,
+            "bootstrap_samples": 500,
+            "bootstrap_alpha": 0.05,
+        }
+        arguments.update(updates)
+        return rag_runtime_settings(**arguments)
+
+    def test_protocol_has_exact_schema_is_bound_and_cannot_be_overwritten(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            payload = self._freeze(root)
+            self.assertEqual(set(payload), TOP_LEVEL_KEYS)
+            self.assertEqual(set(payload["benchmark"]), BENCHMARK_KEYS)
+            self.assertEqual(set(payload["retrieval"]), RETRIEVAL_KEYS)
+            self.assertEqual(set(payload["rag"]), RAG_KEYS)
+            self.assertEqual(set(payload["statistics"]), STATISTICS_KEYS)
+            self.assertEqual(set(payload["implementation"]), IMPLEMENTATION_KEYS)
+            self.assertTrue({
+                "apps/career/evaluation/career_rag/metrics.py",
+                "apps/career/evaluation/career_rag/run_retrieval_eval.py",
+                "apps/career/evaluation/career_rag/clean_index.py",
+                "apps/career/evaluation/career_rag/pooling.py",
+                "apps/career/evaluation/career_rag/evaluation_integrity.py",
+            }.issubset(payload["implementation"]["retrieval_source_files"]))
+            self.assertTrue({
+                "apps/career/evaluation/career_rag/run_rag_eval.py",
+                "apps/career/evaluation/career_rag/metrics.py",
+                "apps/career/evaluation/career_rag/evidence.py",
+                "apps/career/evaluation/career_rag/judges.py",
+                "apps/career/answering.py",
+            }.issubset(payload["implementation"]["rag_source_files"]))
+            self.assertEqual(
+                payload["benchmark"]["benchmark_manifest_sha256"],
+                hashlib.sha256((root / "benchmark_manifest.json").read_bytes()).hexdigest(),
+            )
+            self.assertTrue((root / PROTOCOL_RELATIVE_PATH).is_file())
+            self.assertTrue((root / PROTOCOL_HASH_RELATIVE_PATH).is_file())
+            self.assertEqual(load_and_verify_evaluation_protocol(root), payload)
+            with patch.object(
+                protocol_module,
+                "verify_frozen_benchmark",
+                return_value={"passed": True, "blockers": []},
+            ), self.assertRaisesRegex(RuntimeError, "Refusing to overwrite"):
+                freeze_evaluation_protocol(
+                    root,
+                    generator_model="generator-v1",
+                    judge_model="judge-v1",
+                )
+
+    def test_matching_runtime_is_accepted_and_every_frozen_setting_mismatch_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._freeze(root)
+            assert_test_evaluation_protocol(
+                root,
+                evaluator="RETRIEVAL",
+                runtime_settings=self._retrieval_runtime(),
+            )
+            assert_test_evaluation_protocol(
+                root,
+                evaluator="RAG",
+                runtime_settings=self._rag_runtime(),
+            )
+            rag_mismatches = (
+                {"generator_model": "generator-v2"},
+                {"judge_model": "judge-v2"},
+                {"retriever_system": "hybrid"},
+                {"top_k": 6},
+                {"bootstrap_seed": 124},
+                {"bootstrap_samples": 501},
+                {"bootstrap_alpha": 0.10},
+            )
+            for updates in rag_mismatches:
+                with self.subTest(updates=updates), self.assertRaisesRegex(
+                    RuntimeError, "do not match"
+                ):
+                    assert_test_evaluation_protocol(
+                        root,
+                        evaluator="RAG",
+                        runtime_settings=self._rag_runtime(**updates),
+                    )
+            with self.assertRaisesRegex(RuntimeError, "do not match"):
+                assert_test_evaluation_protocol(
+                    root,
+                    evaluator="RETRIEVAL",
+                    runtime_settings=self._retrieval_runtime(top_k=11),
+                )
+
+    def test_tampered_protocol_other_benchmark_and_changed_sources_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._freeze(root)
+            with (root / PROTOCOL_RELATIVE_PATH).open("ab") as handle:
+                handle.write(b" ")
+            with self.assertRaisesRegex(RuntimeError, "SHA256 mismatch"):
+                load_and_verify_evaluation_protocol(root)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._freeze(root)
+            self._manifest(root, marker="another-benchmark-manifest")
+            with self.assertRaisesRegex(RuntimeError, "another benchmark manifest"):
+                load_and_verify_evaluation_protocol(root)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            payload = self._freeze(root)
+            changed = dict(payload["implementation"])
+            changed["retrieval_source_sha256"] = "0" * 64
+            with patch.object(
+                protocol_module,
+                "semantic_source_identity",
+                return_value=changed,
+            ), self.assertRaisesRegex(RuntimeError, "source identity changed"):
+                load_and_verify_evaluation_protocol(root)
+
+    def test_test_protocol_mismatch_is_rejected_before_lock_consumption(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._freeze(root)
+            base = {
+                "generator_model": "generator-v1",
+                "judge_model": "judge-v1",
+                "retriever_system": "dense",
+                "top_k": 5,
+                "bootstrap_seed": 123,
+                "bootstrap_samples": 500,
+                "bootstrap_alpha": 0.05,
+            }
+            for updates in (
+                {"generator_model": "wrong-generator"},
+                {"judge_model": "wrong-judge"},
+                {"retriever_system": "hybrid"},
+                {"top_k": 6},
+                {"bootstrap_seed": 124},
+                {"bootstrap_samples": 501},
+                {"bootstrap_alpha": 0.10},
+            ):
+                settings = {**base, **updates}
+                with self.subTest(updates=updates), \
+                        patch.object(rag_eval_module, "assert_evaluation_integrity", return_value={}), \
+                        patch.object(rag_eval_module, "consume_test_lock") as consume, \
+                        self.assertRaisesRegex(RuntimeError, "do not match"):
+                    rag_eval_module.run_rag_eval(
+                        split="test",
+                        output_dir=root,
+                        allow_test=True,
+                        **settings,
+                    )
+                consume.assert_not_called()
+            self.assertFalse(
+                (root / "reports" / "TEST_RAG_ALREADY_RUN.lock").exists()
+            )
+
+            with patch.object(rag_eval_module, "assert_evaluation_integrity", return_value={}), \
+                    patch.object(
+                        rag_eval_module,
+                        "consume_test_lock",
+                        side_effect=RuntimeError("reached lock stage"),
+                    ) as consume, \
+                    self.assertRaisesRegex(RuntimeError, "reached lock stage"):
+                rag_eval_module.run_rag_eval(
+                    split="test",
+                    output_dir=root,
+                    allow_test=True,
+                    **base,
+                )
+            consume.assert_called_once()
+
+    def test_dev_evaluation_does_not_require_protocol_or_consume_test_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch.object(
+                retrieval_eval_module,
+                "assert_evaluation_integrity",
+                side_effect=RuntimeError("stop after DEV integrity entry"),
+            ), patch.object(retrieval_eval_module, "consume_test_lock") as consume:
+                with self.assertRaisesRegex(RuntimeError, "DEV integrity"):
+                    retrieval_eval_module.run_retrieval_eval(
+                        split="dev", output_dir=root
+                    )
+            consume.assert_not_called()
+            self.assertFalse((root / PROTOCOL_RELATIVE_PATH).exists())
+
+    def test_missing_test_protocol_fails_before_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch.object(retrieval_eval_module, "assert_evaluation_integrity", return_value={}), \
+                    patch.object(retrieval_eval_module, "consume_test_lock") as consume, \
+                    self.assertRaisesRegex(RuntimeError, "missing or invalid"):
+                retrieval_eval_module.run_retrieval_eval(
+                    split="test",
+                    output_dir=root,
+                    allow_test=True,
+                )
+            consume.assert_not_called()
 
 
 class EvaluatorTestLockRegressionTests(unittest.TestCase):

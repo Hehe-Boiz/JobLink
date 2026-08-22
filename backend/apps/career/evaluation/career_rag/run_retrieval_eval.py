@@ -7,6 +7,11 @@ from pathlib import Path
 from .build_benchmark import DEFAULT_OUTPUT_DIR
 from .clean_index import CleanBenchmarkDenseRanker, configured_clean_index_dir
 from .evaluation_integrity import assert_evaluation_integrity, consume_test_lock
+from .evaluation_protocol import (
+    PAIRED_SIGN_FLIP_POLICY_VERSION,
+    assert_test_evaluation_protocol,
+    retrieval_runtime_settings,
+)
 from .metrics import (
     UNCERTAIN_CONDENSING_POLICY_VERSION,
     condense_uncertain_ranking,
@@ -96,7 +101,19 @@ def run_retrieval_eval(
     # Must precede model creation and one-shot TEST consumption.
     integrity = assert_evaluation_integrity(output_dir, clean_index_dir=clean_index_dir)
     if split == "test":
+        test_protocol = assert_test_evaluation_protocol(
+            output_dir,
+            evaluator="RETRIEVAL",
+            runtime_settings=retrieval_runtime_settings(
+                top_k=top_k,
+                bootstrap_seed=bootstrap_seed,
+                bootstrap_samples=bootstrap_samples,
+                bootstrap_alpha=bootstrap_alpha,
+            ),
+        )
         consume_test_lock(output_dir, evaluator="RETRIEVAL", allow_test=allow_test)
+    else:
+        test_protocol = None
 
     topics = {row["topic_id"]: row for row in _read_jsonl(output_dir / "topics.jsonl") if row["split"] == split}
     topic_family_ids = {topic_id: row["family_id"] for topic_id, row in topics.items()}
@@ -170,6 +187,8 @@ def run_retrieval_eval(
         "bootstrap_unit": "family", "bootstrap_seed": bootstrap_seed,
         "bootstrap_samples": bootstrap_samples, "clean_index_dir": str(sidecar_dir),
         "bootstrap_alpha": bootstrap_alpha,
+        "sign_flip_policy_version": PAIRED_SIGN_FLIP_POLICY_VERSION,
+        "frozen_test_protocol": test_protocol,
         "family_count": len(set(topic_family_ids.values())),
         "integrity": integrity,
         "qrel_ground_truth_status": "SILVER_LLM_GENERATED_NOT_HUMAN_GOLD",

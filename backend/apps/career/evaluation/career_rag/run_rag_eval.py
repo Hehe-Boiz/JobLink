@@ -15,6 +15,10 @@ from .build_benchmark import DEFAULT_OUTPUT_DIR
 from .clean_index import CleanBenchmarkDenseRanker, configured_clean_index_dir
 from .evidence import DEFAULT_EVIDENCE_CHAR_BUDGET, pack_job_evidence
 from .evaluation_integrity import assert_evaluation_integrity, consume_test_lock
+from .evaluation_protocol import (
+    assert_test_evaluation_protocol,
+    rag_runtime_settings,
+)
 from .judges import JudgeClient
 from .metrics import family_cluster_bootstrap_ci, robustness, weighted_nugget_coverage
 from .pooling import PoolingService, load_corpus_jobs
@@ -260,7 +264,22 @@ def run_rag_eval(
 
     integrity = assert_evaluation_integrity(output_dir, clean_index_dir=clean_index_dir)
     if split == "test":
+        test_protocol = assert_test_evaluation_protocol(
+            output_dir,
+            evaluator="RAG",
+            runtime_settings=rag_runtime_settings(
+                retriever_system=retriever_system,
+                top_k=top_k,
+                generator_model=generator_model,
+                judge_model=judge_model,
+                bootstrap_seed=bootstrap_seed,
+                bootstrap_samples=bootstrap_samples,
+                bootstrap_alpha=bootstrap_alpha,
+            ),
+        )
         consume_test_lock(output_dir, evaluator="RAG", allow_test=allow_test)
+    else:
+        test_protocol = None
 
     topic_rows = {row["topic_id"]: row for row in _read_jsonl(output_dir / "topics.jsonl") if row["split"] == split}
     topic_family_ids = {topic_id: row["family_id"] for topic_id, row in topic_rows.items()}
@@ -324,6 +343,7 @@ def run_rag_eval(
         "bootstrap_samples": bootstrap_samples, "bootstrap_alpha": bootstrap_alpha,
         "family_count": len(set(topic_family_ids.values())),
         "clean_index_dir": str(sidecar_dir), "integrity": integrity,
+        "frozen_test_protocol": test_protocol,
         "comparison_interpretation": "system-level; no_rag and context-RAG prompts are not a causal retrieval-only ablation",
         "model_identity": _model_identity(generator_model, judge_model),
         "qrel_ground_truth_status": "SILVER_LLM_GENERATED_NOT_HUMAN_GOLD",

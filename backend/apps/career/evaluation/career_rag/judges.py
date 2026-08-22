@@ -25,6 +25,10 @@ from .evidence import pack_job_evidence
 from .concurrency import DEFAULT_MAX_IN_FLIGHT, DEFAULT_REFILL_SIZE, RefillWindowConfig, run_refill_window
 
 JUDGE_PROMPT_VERSION = "career-rag-silver-qrels-v3"
+BACKEND_ROOT = Path(__file__).resolve().parents[4]
+DEFAULT_LLM_CACHE_DIR = (
+    BACKEND_ROOT / "data" / "career_eval" / "career_rag_llm_cache_v3"
+)
 JUDGE_VIEWS = (
     "query-centric: Does this JD directly help answer the user's career information need?",
     "evidence-centric: Does this JD contain requirements, skills, or responsibilities useful for this information need?",
@@ -119,16 +123,10 @@ class JudgeClient:
         if os.environ.get("CAREER_RAG_DISABLE_LLM_CACHE", "0") == "1":
             return None
 
-        root = Path(
-            os.environ.get(
-                "CAREER_RAG_LLM_CACHE_DIR",
-                (
-                    "data/career_eval/"
-                    "career_rag_bench_auto_v3/"
-                    "checkpoints/llm_calls"
-                ),
-            )
-        )
+        configured = os.environ.get("CAREER_RAG_LLM_CACHE_DIR")
+        root = Path(configured) if configured else DEFAULT_LLM_CACHE_DIR
+        if configured and not root.is_absolute():
+            root = BACKEND_ROOT / root
 
         key = self._cache_key(system=system, user=user)
 
