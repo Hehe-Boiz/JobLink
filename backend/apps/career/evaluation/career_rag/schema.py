@@ -142,7 +142,7 @@ class BenchmarkManifest:
     judge_model: str
     judge_prompt_sha256: str
     builder_source_sha256: str
-    judge_model_same_as_generator: bool
+    exact_model_id_equal: bool
     dev_family_ids: tuple[str, ...]
     test_family_ids: tuple[str, ...]
     configuration: dict[str, Any] = field(default_factory=dict)

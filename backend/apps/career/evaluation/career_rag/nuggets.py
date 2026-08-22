@@ -144,49 +144,6 @@ def _extract_candidates(
 
     return _dedup_candidates(items)
 
-def _verify_support(
-    client: JudgeClient,
-    nugget_text: str,
-    jobs: list[CorpusJob],
-    *,
-    batch_size: int = 8,
-    evidence_chars: int = 5000,
-) -> list[str]:
-    supported: list[str] = []
-    for start in range(0, len(jobs), batch_size):
-        batch = jobs[start : start + batch_size]
-        mapping = {f"J{index}": job for index, job in enumerate(batch, start=1)}
-        blocks = [
-            f"{jid}\n{pack_job_evidence(job, char_budget=evidence_chars)}"
-            for jid, job in mapping.items()
-        ]
-        data = client.json_call(
-            system=(
-                "Verify whether each raw JD explicitly or clearly semantically supports the candidate career nugget. "
-                "Be conservative. Return JSON only as {\"support\": {\"J1\": true, ...}}."
-            ),
-            user=f"Candidate nugget: {nugget_text}\n\n" + "\n\n---\n\n".join(blocks),
-        )
-        if not isinstance(data, dict) or set(data) != {"support"}:
-            raise ValueError("Nugget verifier returned invalid top-level JSON")
-
-        raw = data["support"]
-        if not isinstance(raw, dict) or set(raw) != set(mapping):
-            raise ValueError(
-                "Nugget verifier returned an incomplete or unexpected support mapping"
-            )
-
-        for jid, job in mapping.items():
-            value = raw[jid]
-            if type(value) is not bool:
-                raise ValueError(
-                    f"Nugget verifier support value for {jid} must be a JSON boolean"
-                )
-            if value:
-                supported.append(job.job_key)
-    return supported
-
-
 def _validate_support_matrix(
     data: object,
     *,
@@ -493,74 +450,6 @@ def _judge_importance(
     if any(value is None for value in importance):
         raise RuntimeError("Nugget importance reconstruction left an unassigned nugget")
     return [value for value in importance if value is not None]
-
-
-def _verify_support_matrix(
-    client: JudgeClient,
-    candidates: list[dict],
-    jobs: list[CorpusJob],
-    *,
-    nugget_batch_size: int = DEFAULT_NUGGET_BATCH_SIZE,
-    job_batch_size: int = DEFAULT_SUPPORT_JOB_BATCH_SIZE,
-    evidence_chars: int = 5000,
-    schema_retries: int = 2,
-    max_in_flight: int = DEFAULT_MAX_IN_FLIGHT,
-    refill_size: int = DEFAULT_REFILL_SIZE,
-) -> list[list[str]]:
-    if nugget_batch_size <= 0:
-        raise ValueError("nugget_batch_size must be positive")
-    if job_batch_size <= 0:
-        raise ValueError("job_batch_size must be positive")
-    if schema_retries < 0:
-        raise ValueError("schema_retries must be >= 0")
-
-    verified: list[set[str]] = [set() for _ in candidates]
-    if not candidates or not jobs:
-        return [sorted(keys) for keys in verified]
-
-    candidate_batches = [
-        (start, candidates[start : start + nugget_batch_size])
-        for start in range(0, len(candidates), nugget_batch_size)
-    ]
-    job_batches = [
-        jobs[start : start + job_batch_size]
-        for start in range(0, len(jobs), job_batch_size)
-    ]
-    specifications = [
-        (candidate_start, candidate_batch, job_batch)
-        for candidate_start, candidate_batch in candidate_batches
-        for job_batch in job_batches
-    ]
-    results = run_refill_window(
-        [
-            partial(
-                _verify_support_matrix_batch,
-                client,
-                candidate_batch,
-                job_batch,
-                evidence_chars=evidence_chars,
-                schema_retries=schema_retries,
-            )
-            for _, candidate_batch, job_batch in specifications
-        ],
-        config=RefillWindowConfig(
-            max_in_flight=max_in_flight,
-            refill_size=refill_size,
-        ),
-        label="nugget-support-matrix",
-    )
-
-    for (candidate_start, candidate_batch, _), batch_results in zip(
-        specifications,
-        results,
-        strict=True,
-    ):
-        if len(batch_results) != len(candidate_batch):
-            raise RuntimeError("Nugget matrix verifier returned an unexpected result shape")
-        for offset, support_keys in enumerate(batch_results):
-            verified[candidate_start + offset].update(support_keys)
-
-    return [sorted(keys) for keys in verified]
 
 
 def _verify_support_group_adaptive(

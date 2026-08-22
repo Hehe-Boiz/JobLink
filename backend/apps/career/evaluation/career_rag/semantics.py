@@ -39,14 +39,6 @@ def topic_intent_label(topic: CareerTopic) -> str:
     return topic.label
 
 
-def topic_description(topic: CareerTopic) -> str:
-    """
-    Backward-compatible name for the canonical information need.
-    """
-
-    return canonical_information_need(topic)
-
-
 def canonical_information_need(topic: CareerTopic) -> str:
     """Return the deterministic information need shared by construction stages."""
 

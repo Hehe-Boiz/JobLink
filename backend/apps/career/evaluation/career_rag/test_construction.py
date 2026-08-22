@@ -4,21 +4,26 @@ import re
 import json
 import tempfile
 import unittest
+import hashlib
+import numpy as np
 from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
+from django.test import override_settings
 
 from . import audit as audit_module
+from . import clean_index as clean_index_module
+from . import evaluation_integrity as integrity_module
+from . import run_retrieval_eval as retrieval_eval_module
 from . import build_benchmark as build_benchmark_module
 from .audit import (
     V3_REQUIRED_ARTIFACTS,
     artifact_sha256_map,
+    audit_controls,
     audit_derived_label_leakage,
     audit_evidence_truncation,
+    audit_qrels,
     audit_split,
-    embedding_provenance_expected_contract,
-    embedding_provenance_contract,
-    embedding_provenance_is_freeze_safe,
     sha256_tree,
     verify_frozen_benchmark,
 )
@@ -28,8 +33,23 @@ from .build_benchmark import (
     _finalize_candidate,
     build_benchmark,
 )
-from .evidence import EVIDENCE_PACKING_POLICY_VERSION, pack_job_evidence
-from .judges import judge_candidates
+from .clean_index import (
+    CLEAN_EMBEDDING_DIMENSION,
+    CLEAN_EMBEDDING_INPUT_POLICY_VERSION,
+    CLEAN_EMBEDDING_MODEL,
+    CLEAN_INDEX_TYPE,
+    CleanBenchmarkDenseRanker,
+    build_clean_embedding_index,
+    clean_embedding_input,
+    verify_clean_embedding_index,
+)
+from .evidence import (
+    DEFAULT_EVIDENCE_CHAR_BUDGET,
+    EVIDENCE_PACKING_POLICY_VERSION,
+    evidence_sensitivity_diagnostic_input,
+    pack_job_evidence,
+)
+from .judges import JudgeClient, judge_candidates
 from .nuggets import (
     NUGGET_IMPORTANCE_POLICY_VERSION,
     NUGGET_PROMPT_VERSION,
@@ -38,12 +58,36 @@ from .nuggets import (
     NUGGET_SUPPORT_SEMANTICS_VERSION,
     _judge_importance_batch,
     _validate_importance,
-    _verify_support,
-    _verify_support_matrix,
+    _verify_support_matrix_batch,
     build_nuggets_for_topic,
 )
-from .pooling import audit_pool_coverage, audit_pool_coverage_offline
-from .schema import CareerQuery, CareerTopic, CorpusJob, PooledCandidate, RelevanceJudgment
+from .metrics import (
+    aggregate_topic_values_by_family,
+    condense_uncertain_ranking,
+    family_cluster_bootstrap_ci,
+    family_cluster_paired_bootstrap,
+    ndcg_at_k,
+    observed_support_coverage_at_k,
+    paired_family_sign_flip_test,
+    strong_precision_at_k,
+    weighted_nugget_coverage,
+)
+from .pooling import (
+    PoolingService,
+    audit_pool_coverage,
+    audit_pool_coverage_offline,
+    load_corpus_jobs,
+)
+from .run_rag_eval import (
+    _as_retrieved,
+    _certain_gold_context_rows,
+    _evaluate_answer,
+    _model_identity,
+    validate_rag_judge_payload,
+)
+from .run_retrieval_eval import _load_qrels
+from .evaluation_integrity import consume_test_lock
+from .schema import CareerQuery, CareerTopic, CorpusJob, Nugget, PooledCandidate, RelevanceJudgment
 from .semantics import (
     CANONICAL_INFORMATION_FACETS,
     CANONICAL_INFORMATION_NEED_VERSION,
@@ -200,34 +244,6 @@ class NuggetConstructionTests(unittest.TestCase):
 
     def test_unsupported_nugget_is_removed_after_authoritative_verification(self) -> None:
         self.assertEqual(self._build({"J1": True, "J2": False, "J3": False, "J4": False}), [])
-
-    def test_string_boolean_is_rejected(self) -> None:
-        with self.assertRaises(ValueError):
-            _verify_support(FakeJudgeClient({"J1": "false"}), "REST API", _jobs()[:1])
-
-    def test_missing_verifier_key_is_rejected(self) -> None:
-        class MissingKeyClient(FakeJudgeClient):
-            def json_call(self, *, system: str, user: str) -> dict:
-                return {"support": {"J1": True}}
-
-        with self.assertRaises(ValueError):
-            _verify_support(MissingKeyClient({}), "REST API", _jobs()[:2])
-
-    def test_extra_verifier_key_is_rejected(self) -> None:
-        class ExtraKeyClient(FakeJudgeClient):
-            def json_call(self, *, system: str, user: str) -> dict:
-                return {"support": {"J1": False, "J2": False}}
-
-        with self.assertRaises(ValueError):
-            _verify_support(ExtraKeyClient({}), "REST API", _jobs()[:1])
-
-    def test_invalid_support_shape_is_rejected(self) -> None:
-        class InvalidShapeClient(FakeJudgeClient):
-            def json_call(self, *, system: str, user: str) -> dict:
-                return {"support": []}
-
-        with self.assertRaises(ValueError):
-            _verify_support(InvalidShapeClient({}), "REST API", _jobs()[:1])
 
     def test_high_prevalence_nugget_can_be_okay(self) -> None:
         nugget = self._build(
@@ -394,12 +410,11 @@ class StaticMatrixClient:
 
 class NuggetMatrixValidationTests(unittest.TestCase):
     def _verify(self, payload: dict) -> list[list[str]]:
-        return _verify_support_matrix(
+        return _verify_support_matrix_batch(
             StaticMatrixClient(payload),
             [{"text": "REST API"}, {"text": "Python"}],
             _jobs(2),
-            max_in_flight=1,
-            refill_size=1,
+            evidence_chars=5000,
         )
 
     def test_missing_nugget_matrix_row_is_rejected(self) -> None:
@@ -503,32 +518,6 @@ class NuggetMatrixValidationTests(unittest.TestCase):
         self.assertEqual(support_by_text["REST API"], {"vietjobs::J1", "vietjobs::J3"})
         self.assertEqual(support_by_text["Python"], {"vietjobs::J2", "vietjobs::J4"})
 
-    def test_matrix_reconstructs_distinct_rows_across_parallel_job_batches(self) -> None:
-        client = FakeJudgeClient(
-            {},
-            support_by_candidate={
-                "REST API": {"J1": True, "J2": False, "J3": True, "J4": False},
-                "Python": {"J1": False, "J2": True, "J3": False, "J4": True},
-            },
-        )
-        result = _verify_support_matrix(
-            client,
-            [{"text": "REST API"}, {"text": "Python"}],
-            _jobs(4),
-            nugget_batch_size=2,
-            job_batch_size=2,
-            max_in_flight=2,
-            refill_size=2,
-        )
-        self.assertEqual(
-            result,
-            [
-                ["vietjobs::J1", "vietjobs::J3"],
-                ["vietjobs::J2", "vietjobs::J4"],
-            ],
-        )
-
-
 class SequencedMatrixClient:
     def __init__(self, payloads: list[object]) -> None:
         self.payloads = list(payloads)
@@ -572,12 +561,11 @@ class SequencedImportanceClient:
 
 class NuggetMatrixRetryTests(unittest.TestCase):
     def _verify(self, client: object) -> list[list[str]]:
-        return _verify_support_matrix(
+        return _verify_support_matrix_batch(
             client,
             [{"text": "REST API"}],
             _jobs(2),
-            max_in_flight=1,
-            refill_size=1,
+            evidence_chars=5000,
         )
 
     @staticmethod
@@ -715,8 +703,29 @@ class FreezeIntegrityTests(unittest.TestCase):
     @staticmethod
     def _write_frozen_fixture(root: Path) -> None:
         root.mkdir(parents=True, exist_ok=True)
+        clean_provenance = {
+            "status": "VERIFIED_CLEAN",
+            "index_type": CLEAN_INDEX_TYPE,
+            "embedding_model": CLEAN_EMBEDDING_MODEL,
+            "embedding_dimension": CLEAN_EMBEDDING_DIMENSION,
+            "clean_embedding_input_policy_version": CLEAN_EMBEDDING_INPUT_POLICY_VERSION,
+            "vectors_sha256": "v" * 64,
+            "chunk_map_sha256": "m" * 64,
+            "corpus_membership_sha256": "c" * 64,
+            "chunk_context_sha256": "x" * 64,
+        }
+        clean_fields = {
+            "clean_embedding_index_type": clean_provenance["index_type"],
+            "clean_embedding_model": clean_provenance["embedding_model"],
+            "clean_embedding_dimension": clean_provenance["embedding_dimension"],
+            "clean_embedding_input_policy_version": clean_provenance["clean_embedding_input_policy_version"],
+            "clean_embedding_vectors_sha256": clean_provenance["vectors_sha256"],
+            "clean_embedding_chunk_map_sha256": clean_provenance["chunk_map_sha256"],
+            "clean_embedding_corpus_membership_sha256": clean_provenance["corpus_membership_sha256"],
+            "clean_embedding_chunk_context_sha256": clean_provenance["chunk_context_sha256"],
+        }
         rows = {
-            "corpus_manifest.json": {"benchmark": "CareerRAGBench-Auto-V3", "dataset_sha256": "d" * 64},
+            "corpus_manifest.json": {"benchmark": "CareerRAGBench-Auto-V3", "dataset_sha256": "d" * 64, **clean_fields},
             "topics.jsonl": [
                 {"topic_id": "topic-1", "family_id": "family-1", "scope": "broad", "label": "Tech", "category_key": "tech", "known_skills": [], "split": "dev"}
             ],
@@ -738,6 +747,7 @@ class FreezeIntegrityTests(unittest.TestCase):
             "reports/preflight_topics.json": {"topic_count": 1},
             "reports/preflight_report.json": {"readiness": {"status": "READY_FOR_PAID_BUILD"}},
             "reports/preflight_embedding_provenance.json": {"status": "VERIFIED_CLEAN"},
+            "reports/clean_embedding_provenance.json": clean_provenance,
             "reports/preflight_evidence_truncation.json": {"cutoff_chars": 5000},
             "reports/preflight_pooling.json": {"mode": "real_offline"},
         }
@@ -751,6 +761,12 @@ class FreezeIntegrityTests(unittest.TestCase):
                 )
             else:
                 path.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+        hashes = artifact_sha256_map(root)
+        clean_fields["clean_embedding_provenance_sha256"] = hashes["reports/clean_embedding_provenance.json"]
+        corpus_path = root / "corpus_manifest.json"
+        corpus_payload = json.loads(corpus_path.read_text(encoding="utf-8"))
+        corpus_payload["clean_embedding_provenance_sha256"] = clean_fields["clean_embedding_provenance_sha256"]
+        corpus_path.write_text(json.dumps(corpus_payload, sort_keys=True) + "\n", encoding="utf-8")
         hashes = artifact_sha256_map(root)
         manifest = {
             "benchmark_name": "CareerRAGBench-Auto-V3",
@@ -766,12 +782,24 @@ class FreezeIntegrityTests(unittest.TestCase):
             "judge_model": "offline-test",
             "judge_prompt_sha256": "p" * 64,
             "builder_source_sha256": "b" * 64,
-            "judge_model_same_as_generator": False,
+            "exact_model_id_equal": False,
             "dev_family_ids": ["family-1"],
             "test_family_ids": ["family-2"],
             "configuration": {
                 "git_head": "deadbeef",
+                "generator_model_requested": "offline-generator",
+                "generator_model_reported": None,
+                "judge_model_requested": "offline-test",
+                "judge_model_reported": None,
+                "exact_model_id_equal": False,
+                "family_relation": "UNVERIFIED",
+                "family_metadata_source": None,
+                "relevance_judgment_design": "multi-view consistency judgments from one judge model",
+                "qrel_ground_truth_status": "SILVER_LLM_GENERATED_NOT_HUMAN_GOLD",
+                "human_calibration_status": "NOT_PERFORMED",
                 "embedding_provenance": {"status": "VERIFIED_CLEAN"},
+                "embedding_provenance_status": "VERIFIED_CLEAN",
+                **clean_fields,
             },
             "artifact_sha256": hashes,
         }
@@ -798,6 +826,23 @@ class FreezeIntegrityTests(unittest.TestCase):
                     handle.write(b"tamper")
                 after = verify_frozen_benchmark(root)
                 self.assertFalse(after["passed"], after)
+
+    def test_manifest_artifact_path_cannot_escape_benchmark_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_frozen_fixture(root)
+            manifest_path = root / "benchmark_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["artifact_sha256"]["../outside.json"] = "0" * 64
+            manifest_path.write_text(json.dumps(manifest, sort_keys=True) + "\n", encoding="utf-8")
+            lock_path = root / "test_lock.json"
+            lock = json.loads(lock_path.read_text(encoding="utf-8"))
+            lock["benchmark_manifest_sha256"] = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+            lock_path.write_text(json.dumps(lock, sort_keys=True) + "\n", encoding="utf-8")
+
+            result = verify_frozen_benchmark(root)
+            self.assertFalse(result["passed"])
+            self.assertTrue(any("escapes benchmark directory" in blocker for blocker in result["blockers"]))
 
     def test_existing_frozen_and_partial_directories_are_never_overwritten(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -833,7 +878,7 @@ class FreezeIntegrityTests(unittest.TestCase):
             candidate = Path(directory) / "candidate"
             candidate.mkdir()
             with patch.object(build_benchmark_module, "run_construction_preflight", return_value=blocked), \
-                    patch.object(build_benchmark_module, "JudgeClient") as judge_client:
+                    patch.object(build_benchmark_module, "JudgeClient", create=True) as judge_client:
                 with self.assertRaisesRegex(RuntimeError, "free preflight blocked"):
                     build_benchmark_module._build_benchmark_into(
                         candidate,
@@ -913,6 +958,36 @@ class CandidateJudgeSchemaRetryTests(unittest.TestCase):
             )
         self.assertEqual(len(client.calls), 3)
         self.assertEqual(len(client.cache), 3)
+
+    def test_candidate_judge_rejects_coerced_grade_types(self) -> None:
+        for value in ("3", 3.0, True):
+            with self.subTest(value=value):
+                client = CandidateJudgeSchemaRetryClient(
+                    [{"grades": {"C1": value}}] * 3
+                )
+                with self.assertRaisesRegex(RuntimeError, "strict schema"):
+                    judge_candidates(
+                        client,
+                        _topic(),
+                        [self._candidate()],
+                        {_jobs(1)[0].job_key: _jobs(1)[0]},
+                        max_in_flight=1,
+                        refill_size=1,
+                    )
+                self.assertEqual(len(client.calls), 3)
+
+    def test_judge_cache_identity_binds_model_base_url_and_full_prompts(self) -> None:
+        client = object.__new__(JudgeClient)
+        client.model_name = "judge-a"
+        with override_settings(CKEY_BASE_URL="https://provider-a.invalid/v1"):
+            baseline = client._cache_key(system="system-v1", user="user-v1")
+            self.assertNotEqual(baseline, client._cache_key(system="system-v2", user="user-v1"))
+            self.assertNotEqual(baseline, client._cache_key(system="system-v1", user="user-v2"))
+            client.model_name = "judge-b"
+            self.assertNotEqual(baseline, client._cache_key(system="system-v1", user="user-v1"))
+            client.model_name = "judge-a"
+        with override_settings(CKEY_BASE_URL="https://provider-b.invalid/v1"):
+            self.assertNotEqual(baseline, client._cache_key(system="system-v1", user="user-v1"))
 
 
 class TopicSemanticsTests(unittest.TestCase):
@@ -997,6 +1072,53 @@ class TopicSemanticsTests(unittest.TestCase):
 
 
 class OfflineDiagnosticTests(unittest.TestCase):
+    def test_control_audit_rejects_string_booleans(self) -> None:
+        rows = [
+            {"control_type": "positive", "passed": "false"},
+            {"control_type": "negative", "passed": True},
+            {"control_type": "order_invariance", "passed": True},
+            {"control_type": "paraphrase_consistency", "passed": True},
+        ]
+        report = audit_controls(rows)
+        self.assertFalse(report["shape_ok"])
+        self.assertFalse(report["passed"])
+
+    def test_benchmark_corpus_load_uses_deterministic_chunk_tie_breaker(self) -> None:
+        calls: list[tuple[str, object]] = []
+        row = {
+            "source": "vietjobs",
+            "source_job_id": "J1",
+            "job_title": "Engineer",
+            "category_key": "tech",
+            "location_key": None,
+            "experience_level": None,
+            "employment_type": None,
+            "section": "description",
+            "content": "evidence",
+        }
+
+        class Rows:
+            def order_by(self, *fields):
+                calls.append(("order_by", fields))
+                return self
+
+            def values(self, *fields):
+                calls.append(("values", fields))
+                return self
+
+            def iterator(self, *, chunk_size: int):
+                return iter((row,))
+
+        class Manager:
+            def filter(self, **filters):
+                calls.append(("filter", filters))
+                return Rows()
+
+        with patch("apps.career.evaluation.career_rag.pooling.CareerJobChunk.objects", Manager()):
+            jobs = load_corpus_jobs(source="vietjobs")
+        self.assertEqual(len(jobs), 1)
+        self.assertIn(("order_by", ("source_job_id", "chunk_index", "chunk_id")), calls)
+
     @staticmethod
     def _rankings() -> dict[str, dict[str, dict[str, list[str]]]]:
         return {
@@ -1030,10 +1152,9 @@ class OfflineDiagnosticTests(unittest.TestCase):
             detail = report["reports"][str(depth)]["topics"]["topic-1"]
             self.assertIn("direct_union_size", detail)
             self.assertIn("unique_contribution_counts", detail)
-            self.assertIn("resulting_candidate_count", detail)
-            self.assertIn("max_pool_dropped_count", detail)
-            self.assertEqual(detail["rrf_new_candidates"], [])
-        self.assertTrue(report["reports"]["20"]["topics"]["topic-1"]["max_pool_truncates_system_unique"])
+            self.assertIn("judged_candidate_count", detail)
+            self.assertIn("legacy_max_pool_dropped_count", detail)
+        self.assertGreater(report["reports"]["20"]["aggregate"]["total_candidates_that_old_max_pool_would_drop"], 0)
 
     def test_pool_unique_contribution_is_unique_against_all_other_systems(self) -> None:
         rankings = {
@@ -1075,10 +1196,11 @@ class OfflineDiagnosticTests(unittest.TestCase):
         report = audit_pool_coverage(rankings, depths=(5,), max_pool=2)
         aggregate = report["reports"]["5"]["aggregate"]
         self.assertEqual(aggregate["topic_count"], 2)
-        self.assertEqual(aggregate["truncating_topic_count"], 1)
-        self.assertEqual(aggregate["topics_dropping_system_unique"], {"bm25": 1, "dense": 1, "title": 1})
-        self.assertEqual(report["reports"]["5"]["topics"]["topic-a"]["max_pool_truncates_system_unique"], False)
-        self.assertTrue(report["reports"]["5"]["topics"]["topic-b"]["max_pool_truncates_system_unique"])
+        self.assertEqual(aggregate["total_candidates_that_old_max_pool_would_drop"], 7)
+        self.assertEqual(
+            aggregate["total_system_unique_candidates"],
+            {"bm25": 3, "dense": 3, "title": 3},
+        )
 
     def test_offline_pool_audit_runs_local_rankings_without_llm(self) -> None:
         class StubPooler:
@@ -1190,113 +1312,27 @@ class OfflineDiagnosticTests(unittest.TestCase):
         self.assertIn("Python Docker Kubernetes", first)
         self.assertEqual(EVIDENCE_PACKING_POLICY_VERSION, "career-rag-evidence-packing-v1")
 
-    def test_embedding_provenance_is_explicitly_unverified_without_history(self) -> None:
-        backend_root = Path(__file__).resolve().parents[4]
-        contract = embedding_provenance_contract(
-            backend_root=backend_root,
-            corpus_membership_sha256="m" * 64,
-            corpus_chunks_sha256="c" * 64,
-            forbidden_derived_metadata_present=False,
+        duplicate_job = CorpusJob(
+            source="vietjobs",
+            source_job_id="J-duplicate",
+            job_title="Engineer",
+            category_key="tech",
+            location_key=None,
+            experience_level=None,
+            employment_type=None,
+            chunks=(
+                {"section": "description", "content": "Same evidence"},
+                {"section": "required qualifications", "content": "Same evidence"},
+            ),
         )
-        self.assertEqual(contract["status"], "UNVERIFIED")
-        self.assertIsNone(contract["forbidden_derived_fields_excluded"])
-        self.assertEqual(len(contract["chunking_source_sha256"]), 64)
-        self.assertEqual(len(contract["embedding_source_sha256"]), 64)
-        self.assertTrue(contract["requires_verified_clean_for_freeze"])
+        deduplicated = pack_job_evidence(duplicate_job, char_budget=5000)
+        self.assertEqual(deduplicated.count("Same evidence"), 1)
+        self.assertIn("[required qualifications]", deduplicated)
 
-    def test_matching_clean_embedding_provenance_artifact_is_verified(self) -> None:
-        backend_root = Path(__file__).resolve().parents[4]
-        membership = "m" * 64
-        chunks = "c" * 64
-        artifact = embedding_provenance_expected_contract(
-            backend_root=backend_root,
-            corpus_membership_sha256=membership,
-            corpus_chunks_sha256=chunks,
-        )
-        artifact.update({"status": "VERIFIED_CLEAN", "indexing_timestamp": "2026-08-21T00:00:00Z"})
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "embedding-provenance.json"
-            path.write_text(json.dumps(artifact), encoding="utf-8")
-            contract = embedding_provenance_contract(
-                backend_root=backend_root,
-                corpus_membership_sha256=membership,
-                corpus_chunks_sha256=chunks,
-                forbidden_derived_metadata_present=False,
-                provenance_path=path,
-            )
-        self.assertEqual(contract["status"], "VERIFIED_CLEAN")
-        self.assertTrue(embedding_provenance_is_freeze_safe(contract))
-
-    def test_explicitly_leaked_embedding_provenance_is_not_freeze_safe(self) -> None:
-        backend_root = Path(__file__).resolve().parents[4]
-        artifact = embedding_provenance_expected_contract(
-            backend_root=backend_root,
-            corpus_membership_sha256="m" * 64,
-            corpus_chunks_sha256="c" * 64,
-        )
-        artifact.update({
-            "status": "VERIFIED_LEAKED",
-            "indexing_timestamp": "2026-08-21T00:00:00Z",
-            "derived_fields_included": ["technical_skills"],
-        })
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "embedding-provenance.json"
-            path.write_text(json.dumps(artifact), encoding="utf-8")
-            contract = embedding_provenance_contract(
-                backend_root=backend_root,
-                corpus_membership_sha256="m" * 64,
-                corpus_chunks_sha256="c" * 64,
-                forbidden_derived_metadata_present=False,
-                provenance_path=path,
-            )
-        self.assertEqual(contract["status"], "VERIFIED_LEAKED")
-        self.assertFalse(embedding_provenance_is_freeze_safe(contract))
-
-    def test_mismatched_embedding_provenance_is_unverified_and_blocks_freeze(self) -> None:
-        backend_root = Path(__file__).resolve().parents[4]
-        artifact = embedding_provenance_expected_contract(
-            backend_root=backend_root,
-            corpus_membership_sha256="m" * 64,
-            corpus_chunks_sha256="c" * 64,
-        )
-        artifact.update({
-            "status": "VERIFIED_CLEAN",
-            "indexing_timestamp": "2026-08-21T00:00:00Z",
-            "embedding_model": "wrong-model",
-        })
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "embedding-provenance.json"
-            path.write_text(json.dumps(artifact), encoding="utf-8")
-            contract = embedding_provenance_contract(
-                backend_root=backend_root,
-                corpus_membership_sha256="m" * 64,
-                corpus_chunks_sha256="c" * 64,
-                forbidden_derived_metadata_present=False,
-                provenance_path=path,
-            )
-        self.assertEqual(contract["status"], "UNVERIFIED")
-        self.assertFalse(embedding_provenance_is_freeze_safe(contract))
-
-    def test_mismatched_embedding_membership_is_unverified(self) -> None:
-        backend_root = Path(__file__).resolve().parents[4]
-        artifact = embedding_provenance_expected_contract(
-            backend_root=backend_root,
-            corpus_membership_sha256="m" * 64,
-            corpus_chunks_sha256="c" * 64,
-        )
-        artifact.update({"status": "VERIFIED_CLEAN", "indexing_timestamp": "2026-08-21T00:00:00Z"})
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "embedding-provenance.json"
-            path.write_text(json.dumps(artifact), encoding="utf-8")
-            contract = embedding_provenance_contract(
-                backend_root=backend_root,
-                corpus_membership_sha256="different" + "m" * 56,
-                corpus_chunks_sha256="c" * 64,
-                forbidden_derived_metadata_present=False,
-                provenance_path=path,
-            )
-        self.assertEqual(contract["status"], "UNVERIFIED")
-        self.assertIn("corpus_membership_sha256", contract["mismatched_fields"])
+        sensitivity = evidence_sensitivity_diagnostic_input(job, char_budget=5000)
+        self.assertEqual(sensitivity["packed_evidence"], first)
+        self.assertEqual(sensitivity["expanded_evidence"], job.raw_evidence)
+        self.assertEqual(sensitivity["judgment_status"], "UNPROVEN_NOT_RUN")
 
     def test_vietjobs_leakage_audit_ignores_unrelated_sources(self) -> None:
         class FakeQuery:
@@ -1335,3 +1371,663 @@ class OfflineDiagnosticTests(unittest.TestCase):
             report = audit_derived_label_leakage(source="vietjobs")
         self.assertTrue(report["passed"])
         self.assertEqual(manager.filters, {"active": True, "source": "vietjobs"})
+
+
+class CleanInputAndPoolRegressionTests(unittest.TestCase):
+    @staticmethod
+    def _write_clean_sidecar(root: Path) -> dict:
+        vectors = np.asarray([[1.0] + [0.0] * 383, [0.0, 1.0] + [0.0] * 382], dtype=np.float32)
+        np.save(root / "vectors.npy", vectors)
+        rows = [
+            {"row_index": 0, "chunk_id": "c1", "source": "vietjobs", "source_job_id": "J1", "job_key": "vietjobs::J1"},
+            {"row_index": 1, "chunk_id": "c2", "source": "vietjobs", "source_job_id": "J2", "job_key": "vietjobs::J2"},
+        ]
+        map_path = root / "chunk_map.jsonl"
+        map_path.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for row in rows), encoding="utf-8")
+        identity = {
+            "indexed_job_count": 2, "indexed_chunk_count": 2,
+            "corpus_membership_sha256": "a" * 64, "corpus_chunks_sha256": "b" * 64,
+            "chunk_context_sha256": "b" * 64,
+        }
+        provenance = {
+            "status": "VERIFIED_CLEAN", "provenance_schema_version": "career-rag-clean-index-provenance-v1",
+            "indexing_timestamp": "2026-08-22T00:00:00+00:00", "index_type": CLEAN_INDEX_TYPE,
+            "embedding_model": CLEAN_EMBEDDING_MODEL, "embedding_dimension": CLEAN_EMBEDDING_DIMENSION,
+            "input_field_policy": "raw-job-fields-only-no-forbidden-derived-fields-v1",
+            "clean_embedding_input_policy_version": CLEAN_EMBEDDING_INPUT_POLICY_VERSION,
+            "forbidden_derived_fields": ["derived_role_labels", "gold_nuggets", "judge_labels", "soft_skills", "technical_skills"],
+            "forbidden_derived_fields_excluded": True, "derived_fields_included": [],
+            "indexing_policy_version": "career-rag-clean-sidecar-build-v1", **identity,
+            "vectors_filename": "vectors.npy", "vectors_sha256": hashlib.sha256((root / "vectors.npy").read_bytes()).hexdigest(),
+            "vectors_dtype": "float32", "vectors_shape": [2, 384], "chunk_map_filename": "chunk_map.jsonl",
+            "chunk_map_sha256": hashlib.sha256(map_path.read_bytes()).hexdigest(),
+            "embedding_source_sha256": "e" * 64, "clean_index_source_sha256": "s" * 64,
+        }
+        (root / "embedding_provenance.json").write_text(json.dumps(provenance), encoding="utf-8")
+        return identity
+
+    def _verify_fixture(self, root: Path, identity: dict) -> dict:
+        class FakeRows:
+            def iterator(self, *, chunk_size: int):
+                return iter([
+                    {"chunk_id": "c1", "source": "vietjobs", "source_job_id": "J1"},
+                    {"chunk_id": "c2", "source": "vietjobs", "source_job_id": "J2"},
+                ])
+
+        with patch.object(clean_index_module, "V3_SNAPSHOT_INDEXED_JOB_COUNT", 2), \
+                patch.object(clean_index_module, "V3_SNAPSHOT_ACTIVE_CHUNK_COUNT", 2), \
+                patch.object(clean_index_module, "current_clean_corpus_identity", return_value=identity), \
+                patch.object(clean_index_module, "_chunk_rows", return_value=FakeRows()), \
+                patch.object(clean_index_module, "_source_hashes", return_value={"embedding_source_sha256": "e" * 64, "clean_index_source_sha256": "s" * 64}):
+            return verify_clean_embedding_index(root)
+
+    @staticmethod
+    def _rehash_provenance(root: Path) -> None:
+        path = root / "embedding_provenance.json"
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["vectors_sha256"] = hashlib.sha256((root / "vectors.npy").read_bytes()).hexdigest()
+        payload["chunk_map_sha256"] = hashlib.sha256((root / "chunk_map.jsonl").read_bytes()).hexdigest()
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+    def test_clean_embedding_input_is_deterministic_and_has_no_metadata_channel(self) -> None:
+        row = {
+            "job_title": "Backend Engineer", "location_key": "hanoi", "category_key": "software",
+            "experience_level": "mid", "employment_type": "full-time", "section": "requirements",
+            "content": "Python and PostgreSQL", "metadata": {"technical_skills": ["LEAK"]},
+        }
+        expected = (
+            "passage: Job title: Backend Engineer\nLocation: hanoi\nCategory: software\n"
+            "Experience level: mid\nEmployment type: full-time\nSection: requirements\n\nPython and PostgreSQL"
+        )
+        self.assertEqual(clean_embedding_input(row), expected)
+        self.assertNotIn("LEAK", clean_embedding_input(row))
+        self.assertNotIn("metadata", clean_embedding_input(row))
+
+    def test_clean_builder_writes_aligned_vectors_map_and_real_provenance(self) -> None:
+        rows = [
+            {
+                "chunk_id": f"c{index}",
+                "source": "vietjobs",
+                "source_job_id": f"J{index}",
+                "chunk_index": 0,
+                "job_title": f"Engineer {index}",
+                "location_key": None,
+                "category_key": "tech",
+                "experience_level": None,
+                "employment_type": None,
+                "section": "description",
+                "content": f"content {index}",
+            }
+            for index in (1, 2)
+        ]
+
+        class FakeRows:
+            def iterator(self, *, chunk_size: int):
+                return iter(rows)
+
+        class FakeModel:
+            def encode(self, texts, **kwargs):
+                vectors = np.zeros((len(texts), CLEAN_EMBEDDING_DIMENSION), dtype=np.float32)
+                vectors[:, 0] = 1.0
+                return vectors
+
+        embedder = SimpleNamespace(
+            model_name=CLEAN_EMBEDDING_MODEL,
+            dimension=CLEAN_EMBEDDING_DIMENSION,
+            model=FakeModel(),
+        )
+        identity = {
+            "indexed_job_count": 2,
+            "indexed_chunk_count": 2,
+            "corpus_membership_sha256": "a" * 64,
+            "corpus_chunks_sha256": "b" * 64,
+            "chunk_context_sha256": "c" * 64,
+        }
+        source_hashes = {
+            "embedding_source_sha256": "e" * 64,
+            "clean_index_source_sha256": "s" * 64,
+        }
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(clean_index_module, "V3_SNAPSHOT_INDEXED_JOB_COUNT", 2), \
+                patch.object(clean_index_module, "V3_SNAPSHOT_ACTIVE_CHUNK_COUNT", 2), \
+                patch.object(clean_index_module, "current_clean_corpus_identity", return_value=identity), \
+                patch.object(clean_index_module, "_chunk_rows", return_value=FakeRows()), \
+                patch.object(clean_index_module, "_source_hashes", return_value=source_hashes), \
+                patch.object(clean_index_module, "CareerEmbeddingService", return_value=embedder):
+            output = Path(directory) / "index"
+            result = build_clean_embedding_index(
+                output_dir=output,
+                batch_size=1,
+            )
+            self.assertEqual(result["verification"]["status"], "PASS")
+            vectors = np.load(output / "vectors.npy")
+            mapping = [json.loads(line) for line in (output / "chunk_map.jsonl").read_text(encoding="utf-8").splitlines()]
+            provenance = json.loads((output / "embedding_provenance.json").read_text(encoding="utf-8"))
+            self.assertEqual(vectors.shape, (2, CLEAN_EMBEDDING_DIMENSION))
+            self.assertEqual([row["row_index"] for row in mapping], [0, 1])
+            self.assertEqual([row["chunk_id"] for row in mapping], ["c1", "c2"])
+            self.assertEqual(provenance["status"], "VERIFIED_CLEAN")
+            self.assertEqual(provenance["vectors_sha256"], hashlib.sha256((output / "vectors.npy").read_bytes()).hexdigest())
+            with self.assertRaisesRegex(RuntimeError, "Refusing to overwrite"):
+                build_clean_embedding_index(output_dir=output)
+
+    def test_clean_sidecar_detects_vector_map_nan_dimension_and_corpus_tampering(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            identity = self._write_clean_sidecar(root)
+            self.assertTrue(self._verify_fixture(root, identity)["passed"])
+            with (root / "vectors.npy").open("ab") as handle:
+                handle.write(b"tamper")
+            self.assertFalse(self._verify_fixture(root, identity)["passed"])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            identity = self._write_clean_sidecar(root)
+            map_path = root / "chunk_map.jsonl"
+            map_path.write_text(map_path.read_text(encoding="utf-8").replace('"row_index": 1', '"row_index": 2'), encoding="utf-8")
+            self.assertFalse(self._verify_fixture(root, identity)["passed"])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            identity = self._write_clean_sidecar(root)
+            map_path = root / "chunk_map.jsonl"
+            rows = [json.loads(line) for line in map_path.read_text(encoding="utf-8").splitlines()]
+            rows[0]["technical_skills"] = ["forbidden"]
+            map_path.write_text(
+                "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+                encoding="utf-8",
+            )
+            self._rehash_provenance(root)
+            self.assertFalse(self._verify_fixture(root, identity)["passed"])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            identity = self._write_clean_sidecar(root)
+            mismatched = {**identity, "corpus_chunks_sha256": "z" * 64, "chunk_context_sha256": "z" * 64}
+            self.assertFalse(self._verify_fixture(root, mismatched)["passed"])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            identity = self._write_clean_sidecar(root)
+            vectors = np.load(root / "vectors.npy")
+            vectors[0, 0] = np.nan
+            np.save(root / "vectors.npy", vectors)
+            self._rehash_provenance(root)
+            self.assertFalse(self._verify_fixture(root, identity)["passed"])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            identity = self._write_clean_sidecar(root)
+            vectors = np.load(root / "vectors.npy")
+            vectors[0, 0] = np.inf
+            np.save(root / "vectors.npy", vectors)
+            self._rehash_provenance(root)
+            self.assertFalse(self._verify_fixture(root, identity)["passed"])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            identity = self._write_clean_sidecar(root)
+            np.save(root / "vectors.npy", np.zeros((2, 383), dtype=np.float32))
+            self._rehash_provenance(root)
+            self.assertFalse(self._verify_fixture(root, identity)["passed"])
+
+    def test_missing_clean_sidecar_fails_and_corpus_identity_query_is_read_only(self) -> None:
+        identity = {
+            "indexed_job_count": 0,
+            "indexed_chunk_count": 0,
+            "corpus_membership_sha256": hashlib.sha256().hexdigest(),
+            "corpus_chunks_sha256": hashlib.sha256().hexdigest(),
+            "chunk_context_sha256": hashlib.sha256().hexdigest(),
+        }
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(clean_index_module, "current_clean_corpus_identity", return_value=identity), \
+                patch.object(clean_index_module, "_source_hashes", return_value={}):
+            result = verify_clean_embedding_index(Path(directory) / "missing")
+        self.assertFalse(result["passed"])
+        self.assertTrue(any("provenance unreadable" in blocker for blocker in result["blockers"]))
+
+        calls: list[tuple[str, object]] = []
+
+        class ReadOnlyRows:
+            def order_by(self, *fields):
+                calls.append(("order_by", fields))
+                return self
+
+            def values(self, *fields):
+                calls.append(("values", fields))
+                return self
+
+            def iterator(self, *, chunk_size: int):
+                calls.append(("iterator", chunk_size))
+                return iter(())
+
+        class ReadOnlyManager:
+            def filter(self, **filters):
+                calls.append(("filter", filters))
+                return ReadOnlyRows()
+
+        with patch.object(clean_index_module.CareerJobChunk, "objects", ReadOnlyManager()):
+            observed = clean_index_module.current_clean_corpus_identity()
+        self.assertEqual(observed["indexed_job_count"], 0)
+        self.assertEqual([name for name, _ in calls], ["filter", "order_by", "values", "iterator"])
+
+    def test_full_direct_union_pool_ignores_max_pool_and_retains_ranks(self) -> None:
+        jobs = _jobs(9)
+        pooler = object.__new__(PoolingService)
+        pooler.by_key = {job.job_key: job for job in jobs}
+        pooler.dense_ranker = object()
+        pooler.bm25 = lambda query, depth: ["vietjobs::J1", "vietjobs::J2", "vietjobs::J3"]
+        pooler.dense = lambda query, depth: ["vietjobs::J4", "vietjobs::J5", "vietjobs::J6"]
+        pooler.title_lexical = lambda query, depth: ["vietjobs::J7", "vietjobs::J8", "vietjobs::J9"]
+        queries = [
+            CareerQuery("q-direct", "topic-1", "direct", "x"),
+            CareerQuery("q-conv", "topic-1", "conversational", "x"),
+            CareerQuery("q-noisy", "topic-1", "noisy", "x"),
+        ]
+        candidates = pooler.pool_topic("topic-1", queries, depth=3, max_pool=1)
+        self.assertEqual({candidate.job_key for candidate in candidates}, {job.job_key for job in jobs})
+        for candidate in candidates:
+            self.assertTrue(candidate.ranks)
+            self.assertTrue(any(name.startswith(("bm25:", "dense:", "title:")) for name in candidate.ranks))
+        again = pooler.pool_topic("topic-1", queries, depth=3, max_pool=999)
+        self.assertEqual([item.job_key for item in candidates], [item.job_key for item in again])
+
+    def test_rrf_cannot_remove_direct_union_candidate(self) -> None:
+        detail = audit_pool_coverage({
+            "topic": {"direct": {
+                "bm25": ["A", "B"], "dense": ["C", "D"], "title": ["E", "F"],
+            }}
+        }, depths=(2,), max_pool=1)["reports"]["2"]["topics"]["topic"]
+        self.assertEqual(detail["judged_candidate_count"], 6)
+        self.assertEqual(detail["legacy_max_pool_dropped_count"], 5)
+        self.assertEqual(
+            detail["leave_one_contributor_out"]["title"]["metric_sensitivity_status"],
+            "UNPROVEN_WITHOUT_QRELS",
+        )
+
+    def test_title_rank_twenty_survives_below_legacy_max_pool_cut(self) -> None:
+        job_ids = [f"J{index:03d}" for index in range(1, 141)]
+        jobs = [
+            CorpusJob("vietjobs", job_id, job_id, "tech", None, None, None, ())
+            for job_id in job_ids
+        ]
+        pooler = object.__new__(PoolingService)
+        pooler.by_key = {job.job_key: job for job in jobs}
+
+        variant_offset = {"direct": 0, "conversational": 20, "noisy": 40}
+
+        def ranking(query: str, start: int) -> list[str]:
+            offset = variant_offset[query]
+            return [f"vietjobs::J{start + offset + index:03d}" for index in range(20)]
+
+        pooler.bm25 = lambda query, depth: ranking(query, 1)[:depth]
+        pooler.dense = lambda query, depth: ranking(query, 1)[:depth]
+        pooler.title_lexical = lambda query, depth: ranking(query, 81)[:depth]
+        queries = [
+            CareerQuery(f"q-{variant}", "topic", variant, variant)
+            for variant in BASE_QUERY_VARIANTS
+        ]
+        candidates = pooler.pool_topic("topic", queries, depth=20, max_pool=80)
+        by_key = {candidate.job_key: candidate for candidate in candidates}
+        self.assertGreater(len(candidates), 80)
+        self.assertIn("vietjobs::J140", by_key)
+        self.assertEqual(by_key["vietjobs::J140"].ranks["title:noisy"], 20)
+
+    def test_clean_dense_ranker_collapses_unique_jobs_with_deterministic_ties(self) -> None:
+        class Embedder:
+            def embed_query(self, query: str) -> np.ndarray:
+                return np.asarray([1.0] + [0.0] * 383, dtype=np.float32)
+
+        ranker = object.__new__(CleanBenchmarkDenseRanker)
+        ranker.vectors = np.asarray([
+            [1.0] + [0.0] * 383,
+            [1.0] + [0.0] * 383,
+            [0.8] + [0.0] * 383,
+        ], dtype=np.float32)
+        ranker._job_keys = np.asarray(["vietjobs::A", "vietjobs::A", "vietjobs::B"], dtype=str)
+        ranker._chunk_ids = np.asarray(["a-2", "a-1", "b-1"], dtype=str)
+        ranker._row_indices = np.arange(3)
+        ranker.embedder = Embedder()
+        self.assertEqual(ranker.rank_job_keys("query", 2), ["vietjobs::A", "vietjobs::B"])
+
+    def test_v3_pooling_refuses_production_dense_fallback(self) -> None:
+        with self.assertRaises(TypeError):
+            PoolingService(_jobs(2))
+
+        pooler = object.__new__(PoolingService)
+        pooler.by_key = {job.job_key: job for job in _jobs(3)}
+        pooler.bm25 = lambda query, depth: ["vietjobs::J1"]
+        pooler.dense = lambda query, depth: ["vietjobs::J2"]
+        pooler.title_lexical = lambda query, depth: ["vietjobs::J3"]
+        query = CareerQuery("q", "topic", "direct", "query")
+        with patch("apps.career.retrieval.CareerRetriever", side_effect=AssertionError("production fallback")):
+            candidates = pooler.pool_topic("topic", [query], depth=1, max_pool=1)
+        self.assertEqual({candidate.job_key for candidate in candidates}, {job.job_key for job in _jobs(3)})
+
+
+class QrelAndBootstrapRegressionTests(unittest.TestCase):
+    def test_known_grade_zero_is_not_unjudged(self) -> None:
+        self.assertEqual(ndcg_at_k(["zero"], {"zero": 0}, 1), 0.0)
+
+    def test_uncertain_condenses_without_consuming_metric_rank(self) -> None:
+        result = condense_uncertain_ranking(
+            ["uncertain", "good", "zero"],
+            certain_qrels={"good": 3, "zero": 0}, uncertain_job_keys={"uncertain"}, k=2,
+        )
+        self.assertEqual(result["ranking"], ["good", "zero"])
+        self.assertEqual(result["uncertain_skipped"], 1)
+        self.assertEqual(result["judged_fraction"], 1.0)
+        self.assertEqual(result["certain_fraction"], 2 / 3)
+
+    def test_unjudged_document_is_not_grade_zero(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Unjudged document encountered"):
+            condense_uncertain_ranking(["unknown"], certain_qrels={"zero": 0}, uncertain_job_keys=set(), k=1)
+        with self.assertRaisesRegex(ValueError, "Unjudged document encountered"):
+            ndcg_at_k(["unknown"], {"zero": 0}, 1)
+
+    def test_qrels_partition_pool_exactly_once(self) -> None:
+        topic = CareerTopic("topic", "family", "broad", "Tech", "tech")
+        candidate = PooledCandidate("topic", "vietjobs", "J1", "Engineer", "tech", None)
+        certain = RelevanceJudgment("topic", "vietjobs", "J1", 0, (0, 0, 0), False)
+        valid = audit_qrels([topic], [candidate], [certain], min_strong_per_topic=0)
+        self.assertTrue(valid["passed"], valid)
+
+        missing = audit_qrels([topic], [candidate], [], min_strong_per_topic=0)
+        self.assertFalse(missing["passed"])
+        self.assertEqual(missing["missing_qrels"], [("topic", "vietjobs::J1")])
+
+        duplicate = audit_qrels(
+            [topic], [candidate], [certain, certain], min_strong_per_topic=0,
+        )
+        self.assertFalse(duplicate["passed"])
+        self.assertEqual(duplicate["duplicate_qrel_keys"], [("topic", "vietjobs::J1")])
+
+    def test_missing_certain_or_uncertain_qrels_file_refuses_evaluation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with self.assertRaises(FileNotFoundError):
+                _load_qrels(root)
+            (root / "qrels.silver.jsonl").write_text("", encoding="utf-8")
+            with self.assertRaises(FileNotFoundError):
+                _load_qrels(root)
+
+    def test_strong_precision_uses_requested_k_denominator(self) -> None:
+        self.assertEqual(strong_precision_at_k([], {}, 5), 0.0)
+        self.assertEqual(
+            strong_precision_at_k(["s1", "s2", "zero"], {"s1": 3, "s2": 2, "zero": 0}, 5),
+            0.4,
+        )
+        self.assertEqual(
+            strong_precision_at_k(
+                ["s1", "s2", "weak", "zero1", "zero2"],
+                {"s1": 3, "s2": 2, "weak": 1, "zero1": 0, "zero2": 0},
+                5,
+            ),
+            0.4,
+        )
+
+    def test_observed_support_coverage_is_not_exhaustive_recall(self) -> None:
+        # True support may be J1..J4, but adaptive storage observed only J1,J2.
+        nuggets = [
+            Nugget(
+                "topic", "N1", "Skill", "skill",
+                ("vietjobs::J1", "vietjobs::J2"), 2, -1.0, 1.0, "VITAL",
+            )
+        ]
+        self.assertEqual(observed_support_coverage_at_k(["vietjobs::J1"], nuggets, 5), 1.0)
+        self.assertEqual(observed_support_coverage_at_k(["vietjobs::J3"], nuggets, 5), 0.0)
+        self.assertIn("neither exhaustive nugget recall", observed_support_coverage_at_k.__doc__)
+        self.assertIn("nor a headline metric", observed_support_coverage_at_k.__doc__)
+
+    def test_weighted_nugget_metric_is_coverage_only(self) -> None:
+        nuggets = [
+            Nugget("topic", "N1", "Vital", "vital", (), 0, -1.0, 1.0, "VITAL"),
+            Nugget("topic", "N2", "Okay", "okay", (), 0, -1.0, 0.5, "OKAY"),
+        ]
+        self.assertEqual(weighted_nugget_coverage({"N2"}, nuggets), 1 / 3)
+
+        class SameObservableJudge:
+            def json_call(self, **kwargs):
+                return {
+                    "matched_nugget_ids": ["N1"],
+                    "claim_count": 2,
+                    "supported_claim_count": 2,
+                    "unsupported_claim_count": 0,
+                    "citation_required_claim_count": 0,
+                    "cited_claim_count": 0,
+                    "citation_supported_count": 0,
+                    "context_used_job_keys": [],
+                }
+
+        # The schema cannot distinguish "two paraphrases of N1" from "N1 plus
+        # another supported claim outside the canonical nugget set". Both
+        # therefore identify gold-nugget coverage, not nugget precision/F1.
+        context = [_as_retrieved(_jobs(1)[0])]
+        first = _evaluate_answer(
+            SameObservableJudge(), query="q", answer="A + paraphrase(A)",
+            nuggets=nuggets, context_jobs=context,
+        )
+        second = _evaluate_answer(
+            SameObservableJudge(), query="q", answer="A + supported non-canonical claim",
+            nuggets=nuggets, context_jobs=context,
+        )
+        self.assertEqual(first["weighted_nugget_coverage"], second["weighted_nugget_coverage"])
+        self.assertNotIn("weighted_nugget_precision", first)
+        self.assertNotIn("weighted_nugget_f1", first)
+
+    def test_family_cluster_bootstrap_is_deterministic_and_keeps_siblings(self) -> None:
+        values = {"broad": 0.0, "specific": 1.0, "other": 0.5}
+        families = {"broad": "F1", "specific": "F1", "other": "F2"}
+        first = family_cluster_bootstrap_ci(values, families, samples=100, seed=7)
+        second = family_cluster_bootstrap_ci(values, families, samples=100, seed=7)
+        self.assertEqual(first, second)
+        paired = family_cluster_paired_bootstrap(values, families, samples=100, seed=7)
+        self.assertEqual(paired["bootstrap_unit"], "family")
+        # The two F1 topics are represented together: changing their internal
+        # variant count is impossible because this helper accepts topic means.
+        self.assertEqual(paired["mean_family_delta"], 0.5)
+        self.assertEqual(
+            aggregate_topic_values_by_family(values, families),
+            {"F1": 0.5, "F2": 0.5},
+        )
+
+    def test_paired_family_sign_flip_is_exact_and_deterministic(self) -> None:
+        deltas = {"F1-broad": 1.0, "F1-specific": 1.0, "F2-broad": 1.0, "F2-specific": 1.0}
+        families = {topic_id: topic_id.split("-")[0] for topic_id in deltas}
+        first = paired_family_sign_flip_test(deltas, families, seed=11)
+        second = paired_family_sign_flip_test(deltas, families, seed=999)
+        self.assertEqual(first, second)
+        self.assertEqual(first["test_mode"], "exact")
+        self.assertEqual(first["assignments"], 4)
+        self.assertEqual(first["paired_sign_flip_p_value"], 0.5)
+        self.assertEqual(first["mean_family_delta"], 1.0)
+
+
+class EvaluatorTestLockRegressionTests(unittest.TestCase):
+    def test_evaluator_rejects_sidecar_identity_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "benchmark"
+            sidecar = Path(directory) / "sidecar"
+            root.mkdir()
+            sidecar.mkdir()
+            (root / "benchmark_manifest.json").write_text(
+                json.dumps({
+                    "configuration": {
+                        "clean_embedding_vectors_sha256": "frozen-vectors",
+                        "clean_embedding_chunk_map_sha256": "frozen-map",
+                        "clean_embedding_provenance_sha256": "frozen-provenance",
+                        "clean_embedding_corpus_membership_sha256": "frozen-membership",
+                        "clean_embedding_chunk_context_sha256": "frozen-context",
+                    }
+                }),
+                encoding="utf-8",
+            )
+            (sidecar / "embedding_provenance.json").write_text("{}", encoding="utf-8")
+            clean = {
+                "passed": True,
+                "blockers": [],
+                "provenance": {
+                    "vectors_sha256": "other-vectors",
+                    "chunk_map_sha256": "frozen-map",
+                    "corpus_membership_sha256": "frozen-membership",
+                    "chunk_context_sha256": "frozen-context",
+                },
+            }
+            with patch.object(
+                integrity_module,
+                "verify_frozen_benchmark",
+                return_value={"passed": True, "blockers": []},
+            ), patch.object(
+                integrity_module,
+                "verify_clean_embedding_index",
+                return_value=clean,
+            ):
+                result = integrity_module.verify_evaluation_integrity(
+                    root,
+                    clean_index_dir=sidecar,
+                )
+            self.assertFalse(result["passed"])
+            self.assertTrue(any("does not match" in blocker for blocker in result["blockers"]))
+
+    def test_retrieval_and_rag_test_locks_are_evaluator_specific_and_one_shot(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "reports").mkdir()
+            retrieval_lock = consume_test_lock(root, evaluator="RETRIEVAL", allow_test=True)
+            self.assertEqual(retrieval_lock.name, "TEST_RETRIEVAL_ALREADY_RUN.lock")
+            with self.assertRaisesRegex(RuntimeError, "already been run"):
+                consume_test_lock(root, evaluator="RETRIEVAL", allow_test=True)
+            rag_lock = consume_test_lock(root, evaluator="RAG", allow_test=True)
+            self.assertEqual(rag_lock.name, "TEST_RAG_ALREADY_RUN.lock")
+            with self.assertRaisesRegex(RuntimeError, "already been run"):
+                consume_test_lock(root, evaluator="RAG", allow_test=True)
+            with self.assertRaisesRegex(RuntimeError, "locked"):
+                consume_test_lock(root, evaluator="RAG", allow_test=False)
+
+    def test_dev_path_never_consumes_a_test_lock_before_integrity_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch.object(retrieval_eval_module, "assert_evaluation_integrity", side_effect=RuntimeError("bad freeze")):
+                with self.assertRaisesRegex(RuntimeError, "bad freeze"):
+                    retrieval_eval_module.run_retrieval_eval(split="dev", output_dir=root)
+            self.assertFalse((root / "reports" / "TEST_RETRIEVAL_ALREADY_RUN.lock").exists())
+
+
+class RagJudgeSchemaRegressionTests(unittest.TestCase):
+    @staticmethod
+    def _valid_payload() -> dict:
+        return {
+            "matched_nugget_ids": ["N1"], "claim_count": 3, "supported_claim_count": 2,
+            "unsupported_claim_count": 1, "citation_required_claim_count": 2, "cited_claim_count": 2,
+            "citation_supported_count": 1, "context_used_job_keys": ["vietjobs::J1"],
+        }
+
+    def test_rag_judge_exact_schema_and_all_strict_type_failures(self) -> None:
+        valid = self._valid_payload()
+        parsed = validate_rag_judge_payload(valid, gold_nugget_ids={"N1"}, context_job_keys={"vietjobs::J1"})
+        self.assertEqual(parsed["claim_count"], 3)
+        for field, invalid in (("claim_count", "3"), ("claim_count", 3.0), ("claim_count", True), ("claim_count", -1)):
+            with self.subTest(field=field, invalid=invalid):
+                payload = self._valid_payload()
+                payload[field] = invalid
+                with self.assertRaises(ValueError):
+                    validate_rag_judge_payload(payload, gold_nugget_ids={"N1"}, context_job_keys={"vietjobs::J1"})
+        missing = self._valid_payload()
+        del missing["claim_count"]
+        with self.assertRaises(ValueError):
+            validate_rag_judge_payload(missing, gold_nugget_ids={"N1"}, context_job_keys={"vietjobs::J1"})
+        extra = self._valid_payload()
+        extra["extra"] = 1
+        with self.assertRaises(ValueError):
+            validate_rag_judge_payload(extra, gold_nugget_ids={"N1"}, context_job_keys={"vietjobs::J1"})
+        fake_nugget = self._valid_payload()
+        fake_nugget["matched_nugget_ids"] = ["FAKE"]
+        with self.assertRaises(ValueError):
+            validate_rag_judge_payload(fake_nugget, gold_nugget_ids={"N1"}, context_job_keys={"vietjobs::J1"})
+        fake_context = self._valid_payload()
+        fake_context["context_used_job_keys"] = ["vietjobs::FAKE"]
+        with self.assertRaises(ValueError):
+            validate_rag_judge_payload(fake_context, gold_nugget_ids={"N1"}, context_job_keys={"vietjobs::J1"})
+        duplicate_nugget = self._valid_payload()
+        duplicate_nugget["matched_nugget_ids"] = ["N1", "N1"]
+        with self.assertRaises(ValueError):
+            validate_rag_judge_payload(
+                duplicate_nugget,
+                gold_nugget_ids={"N1"},
+                context_job_keys={"vietjobs::J1"},
+            )
+
+    def test_rag_judge_count_arithmetic_and_no_context_invariants(self) -> None:
+        for updates in (
+            {"supported_claim_count": 4},
+            {"unsupported_claim_count": 2},
+            {"citation_supported_count": 3},
+            {"cited_claim_count": 3},
+        ):
+            with self.subTest(updates=updates):
+                payload = self._valid_payload()
+                payload.update(updates)
+                with self.assertRaises(ValueError):
+                    validate_rag_judge_payload(payload, gold_nugget_ids={"N1"}, context_job_keys={"vietjobs::J1"})
+        no_context = self._valid_payload()
+        no_context.update({
+            "matched_nugget_ids": [], "claim_count": 1, "supported_claim_count": 1, "unsupported_claim_count": 0,
+            "citation_required_claim_count": 0, "cited_claim_count": 0, "citation_supported_count": 0,
+            "context_used_job_keys": [],
+        })
+        with self.assertRaises(ValueError):
+            validate_rag_judge_payload(no_context, gold_nugget_ids={"N1"}, context_job_keys=set())
+
+    def test_rag_schema_retry_uses_distinct_cache_prompts_and_exact_budget(self) -> None:
+        class FakeJudge:
+            def __init__(self, payloads: list[object]) -> None:
+                self.payloads, self.calls = list(payloads), []
+
+            def json_call(self, *, system: str, user: str, retries: int = 2) -> object:
+                self.calls.append((system, user, retries))
+                return self.payloads.pop(0)
+
+        nugget = Nugget("topic", "N1", "Python", "python", ("vietjobs::J1",), 1, -1.0, 1.0, "VITAL")
+        job = _as_retrieved(_jobs(1)[0])
+        malformed = {"claim_count": 1}
+        judge = FakeJudge([malformed, self._valid_payload()])
+        _evaluate_answer(judge, query="q", answer="a", nuggets=[nugget], context_jobs=[job])
+        self.assertEqual(len(judge.calls), 2)
+        self.assertIn("SCHEMA_RETRY_ATTEMPT=1", judge.calls[1][1])
+        exhausted = FakeJudge([malformed, malformed, malformed])
+        with self.assertRaisesRegex(RuntimeError, "after 2 retries"):
+            _evaluate_answer(exhausted, query="q", answer="a", nuggets=[nugget], context_jobs=[job])
+        self.assertEqual(len(exhausted.calls), 3)
+
+    def test_rag_context_uses_section_aware_evidence_packing(self) -> None:
+        job = CorpusJob(
+            source="vietjobs",
+            source_job_id="J-late",
+            job_title="Engineer",
+            category_key="tech",
+            location_key=None,
+            experience_level=None,
+            employment_type=None,
+            chunks=(
+                {"section": "description", "content": "d" * 4800},
+                {"section": "required qualifications", "content": "Python Docker Kubernetes"},
+            ),
+        )
+        retrieved = _as_retrieved(job)
+        self.assertEqual(len(retrieved.evidence), 1)
+        self.assertIn("Python Docker Kubernetes", retrieved.evidence[0].content)
+        self.assertLessEqual(len(retrieved.evidence[0].content), DEFAULT_EVIDENCE_CHAR_BUDGET)
+
+    def test_gold_context_is_strong_and_explicitly_certain_only(self) -> None:
+        rows = [
+            {"topic_id": "topic", "source": "vietjobs", "source_job_id": "strong", "grade": 3, "uncertain": False},
+            {"topic_id": "topic", "source": "vietjobs", "source_job_id": "weak", "grade": 1, "uncertain": False},
+            {"topic_id": "topic", "source": "vietjobs", "source_job_id": "uncertain", "grade": 3, "uncertain": True},
+            {"topic_id": "topic", "source": "vietjobs", "source_job_id": "unknown-state", "grade": 3},
+            {"topic_id": "other", "source": "vietjobs", "source_job_id": "other", "grade": 3, "uncertain": False},
+        ]
+        selected = _certain_gold_context_rows(rows, topic_id="topic", top_k=5)
+        self.assertEqual([row["source_job_id"] for row in selected], ["strong"])
+
+    def test_model_identity_never_guesses_family_from_names(self) -> None:
+        identity = _model_identity("deepseek-generator", "deepseek-judge")
+        self.assertFalse(identity["exact_model_id_equal"])
+        self.assertEqual(identity["family_relation"], "UNVERIFIED")
+        self.assertIsNone(identity["family_metadata_source"])
+        same = _model_identity("exact-id", "exact-id")
+        self.assertTrue(same["exact_model_id_equal"])
+        self.assertEqual(same["family_relation"], "UNVERIFIED")

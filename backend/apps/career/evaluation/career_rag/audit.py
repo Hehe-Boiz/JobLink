@@ -11,7 +11,7 @@ from typing import Iterable
 
 from apps.career.models import CareerJobChunk
 
-from .schema import CareerTopic, CorpusJob, Nugget, RelevanceJudgment
+from .schema import CareerTopic, CorpusJob, Nugget, PooledCandidate, RelevanceJudgment
 
 V3_REQUIRED_ARTIFACTS = (
     "corpus_manifest.json",
@@ -30,6 +30,7 @@ V3_REQUIRED_ARTIFACTS = (
     "reports/preflight_topics.json",
     "reports/preflight_report.json",
     "reports/preflight_embedding_provenance.json",
+    "reports/clean_embedding_provenance.json",
     "reports/preflight_evidence_truncation.json",
     "reports/preflight_pooling.json",
 )
@@ -37,9 +38,6 @@ V3_BENCHMARK_NAME = "CareerRAGBench-Auto-V3"
 V3_BENCHMARK_VERSION = "3.0"
 
 FORBIDDEN_DERIVED_KEYS = {"technical_skills", "soft_skills", "gold_nuggets", "judge_labels", "derived_role_labels"}
-EMBEDDING_PROVENANCE_SCHEMA_VERSION = "career-rag-embedding-provenance-v1"
-EMBEDDING_INPUT_FIELD_POLICY = "raw-job-fields-only-no-forbidden-derived-fields-v1"
-EMBEDDING_INDEXING_POLICY_VERSION = "career-rag-indexing-input-contract-v1"
 QUALIFICATION_SECTION_TERMS = (
     "required",
     "requirement",
@@ -59,10 +57,6 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-def sha256_text(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def sha256_tree(paths: Iterable[Path]) -> str:
@@ -240,6 +234,24 @@ def verify_frozen_benchmark(output_dir: Path) -> dict:
             and corpus_manifest.get("benchmark") == V3_BENCHMARK_NAME
             and corpus_manifest.get("dataset_sha256") == manifest.get("dataset_sha256")
         )
+        clean_manifest_fields = (
+            "clean_embedding_index_type",
+            "clean_embedding_model",
+            "clean_embedding_dimension",
+            "clean_embedding_input_policy_version",
+            "clean_embedding_vectors_sha256",
+            "clean_embedding_chunk_map_sha256",
+            "clean_embedding_provenance_sha256",
+            "clean_embedding_corpus_membership_sha256",
+            "clean_embedding_chunk_context_sha256",
+        )
+        clean_corpus_binding_ok = all(
+            corpus_manifest.get(field) == manifest.get("configuration", {}).get(field)
+            for field in clean_manifest_fields
+        )
+        checks["clean_corpus_binding"] = clean_corpus_binding_ok
+        if not clean_corpus_binding_ok:
+            blockers.append("corpus manifest does not bind the same clean embedding identity as benchmark manifest")
         checks["corpus_manifest"] = corpus_ok
         if not corpus_ok:
             blockers.append("corpus_manifest identity does not match the V3 manifest")
@@ -273,6 +285,7 @@ def verify_frozen_benchmark(output_dir: Path) -> dict:
 
         qrels = _read_jsonl_file(output_dir / "qrels.silver.jsonl")
         uncertain = _read_jsonl_file(output_dir / "qrels.uncertain.jsonl")
+        pool = _read_jsonl_file(output_dir / "pool.jsonl")
         qrel_ok = all(
             row.get("topic_id") in topic_ids
             and type(row.get("grade")) is int
@@ -287,6 +300,34 @@ def verify_frozen_benchmark(output_dir: Path) -> dict:
         checks["qrel_shape"] = qrel_ok and uncertain_ok
         if not checks["qrel_shape"]:
             blockers.append("qrels contain invalid topic IDs, grades, or uncertain shape")
+
+        def artifact_job_key(row: dict) -> tuple[str, str]:
+            return row.get("topic_id"), f"{row.get('source')}::{row.get('source_job_id')}"
+
+        pool_keys = [artifact_job_key(row) for row in pool]
+        qrel_keys = [artifact_job_key(row) for row in qrels + uncertain]
+        direct_rank_prefixes = ("bm25:", "dense:", "title:")
+        pool_shape_ok = all(
+            isinstance(row.get("ranks"), dict)
+            and any(
+                name.startswith(direct_rank_prefixes)
+                and type(rank) is int
+                and 1 <= rank <= 20
+                for name, rank in row["ranks"].items()
+            )
+            for row in pool
+        )
+        qrel_coverage_ok = (
+            len(pool_keys) == len(set(pool_keys))
+            and len(qrel_keys) == len(set(qrel_keys))
+            and set(pool_keys) == set(qrel_keys)
+        )
+        checks["pool_shape"] = pool_shape_ok
+        checks["qrel_pool_coverage"] = qrel_coverage_ok
+        if not pool_shape_ok:
+            blockers.append("pool contains a candidate without a valid top-20 direct-system rank")
+        if not qrel_coverage_ok:
+            blockers.append("certain/uncertain qrels do not partition the judged pool exactly once")
 
         from .nuggets import NUGGET_WEIGHT_POLICY, PREVALENCE_UNAVAILABLE
 
@@ -319,6 +360,31 @@ def verify_frozen_benchmark(output_dir: Path) -> dict:
         blockers.append(f"construction artifact shape verification failed: {exc}")
 
     configuration = manifest.get("configuration", {}) if manifest else {}
+    model_identity_ok = (
+        isinstance(configuration.get("generator_model_requested"), str)
+        and isinstance(configuration.get("judge_model_requested"), str)
+        and type(configuration.get("exact_model_id_equal")) is bool
+        and configuration.get("exact_model_id_equal") == (
+            configuration.get("generator_model_requested")
+            == configuration.get("judge_model_requested")
+        )
+        and manifest.get("exact_model_id_equal") == configuration.get("exact_model_id_equal")
+        and configuration.get("family_relation") == "UNVERIFIED"
+        and configuration.get("family_metadata_source") is None
+    )
+    checks["model_identity"] = model_identity_ok
+    if not model_identity_ok:
+        blockers.append("model identity fields are missing, inconsistent, or infer an unverified family relation")
+    annotation_semantics_ok = (
+        configuration.get("relevance_judgment_design")
+        == "multi-view consistency judgments from one judge model"
+        and configuration.get("qrel_ground_truth_status")
+        == "SILVER_LLM_GENERATED_NOT_HUMAN_GOLD"
+        and configuration.get("human_calibration_status") == "NOT_PERFORMED"
+    )
+    checks["annotation_semantics"] = annotation_semantics_ok
+    if not annotation_semantics_ok:
+        blockers.append("silver/multi-view/human-calibration semantics are not frozen explicitly")
     provenance_report_ok = False
     try:
         provenance_report = _read_json_file(
@@ -330,14 +396,38 @@ def verify_frozen_benchmark(output_dir: Path) -> dict:
         )
     except Exception:  # noqa: BLE001
         provenance_report_ok = False
-    provenance_ok = provenance_report_ok and (
+    try:
+        clean_provenance = _read_json_file(output_dir / "reports" / "clean_embedding_provenance.json")
+    except Exception as exc:  # noqa: BLE001
+        clean_provenance = {}
+        blockers.append(f"clean embedding provenance report unreadable: {exc}")
+    clean_binding_fields = {
+        "clean_embedding_index_type": "index_type",
+        "clean_embedding_model": "embedding_model",
+        "clean_embedding_dimension": "embedding_dimension",
+        "clean_embedding_input_policy_version": "clean_embedding_input_policy_version",
+        "clean_embedding_vectors_sha256": "vectors_sha256",
+        "clean_embedding_chunk_map_sha256": "chunk_map_sha256",
+        "clean_embedding_corpus_membership_sha256": "corpus_membership_sha256",
+        "clean_embedding_chunk_context_sha256": "chunk_context_sha256",
+    }
+    clean_binding_ok = (
+        isinstance(clean_provenance, dict)
+        and clean_provenance.get("status") == "VERIFIED_CLEAN"
+        and all(configuration.get(manifest_field) == clean_provenance.get(provenance_field)
+                for manifest_field, provenance_field in clean_binding_fields.items())
+        and configuration.get("clean_embedding_provenance_sha256")
+        == sha256_file(output_dir / "reports" / "clean_embedding_provenance.json")
+    )
+    provenance_ok = provenance_report_ok and clean_binding_ok and (
         configuration.get("embedding_provenance_status") == "VERIFIED_CLEAN"
         or isinstance(configuration.get("embedding_provenance"), dict)
         and configuration["embedding_provenance"].get("status") == "VERIFIED_CLEAN"
     )
     checks["embedding_provenance"] = provenance_ok
+    checks["clean_embedding_binding"] = clean_binding_ok
     if not provenance_ok:
-        blockers.append("embedding provenance report/manifest is not VERIFIED_CLEAN")
+        blockers.append("clean embedding provenance report/manifest does not bind VERIFIED_CLEAN sidecar identity")
     checks["source_hashes"] = bool(
         configuration.get("git_head") not in (None, "", "unknown")
         and isinstance(manifest.get("builder_source_sha256"), str)
@@ -482,145 +572,6 @@ def audit_evidence_truncation(
     }
 
 
-def embedding_provenance_expected_contract(
-    *,
-    backend_root: Path,
-    corpus_membership_sha256: str,
-    corpus_chunks_sha256: str,
-) -> dict:
-    """Return the durable fields a clean V3 index manifest must contain."""
-
-    chunking_path = backend_root / "apps" / "career" / "chunking.py"
-    embedding_path = backend_root / "apps" / "career" / "embedding.py"
-    forbidden_fields = sorted(FORBIDDEN_DERIVED_KEYS)
-    return {
-        "provenance_schema_version": EMBEDDING_PROVENANCE_SCHEMA_VERSION,
-        "embedding_model": "intfloat/multilingual-e5-small",
-        "embedding_dimension": 384,
-        "chunking_source_sha256": sha256_file(chunking_path),
-        "embedding_source_sha256": sha256_file(embedding_path),
-        "input_field_policy": EMBEDDING_INPUT_FIELD_POLICY,
-        "forbidden_derived_fields": forbidden_fields,
-        "forbidden_derived_fields_excluded": True,
-        "corpus_membership_sha256": corpus_membership_sha256,
-        "corpus_chunks_sha256": corpus_chunks_sha256,
-        "chunk_context_sha256": corpus_chunks_sha256,
-        "indexing_policy_version": EMBEDDING_INDEXING_POLICY_VERSION,
-    }
-
-
-def embedding_provenance_contract(
-    *,
-    backend_root: Path,
-    corpus_membership_sha256: str,
-    corpus_chunks_sha256: str,
-    forbidden_derived_metadata_present: bool,
-    provenance_path: Path | None = None,
-) -> dict:
-    """Verify an explicit historical index manifest without inspecting vectors.
-
-    Current metadata cleanliness and current source code are observations, not
-    historical proof of what was embedded. A clean status therefore requires a
-    durable artifact with matching hashes, an explicit clean status, an
-    indexing timestamp, and an explicit exclusion declaration.
-    """
-
-    expected = embedding_provenance_expected_contract(
-        backend_root=backend_root,
-        corpus_membership_sha256=corpus_membership_sha256,
-        corpus_chunks_sha256=corpus_chunks_sha256,
-    )
-    report = {
-        "status": "UNVERIFIED",
-        **expected,
-        "expected_contract": expected,
-        "provenance_artifact_path": str(provenance_path) if provenance_path else None,
-        "indexing_timestamp": None,
-        "input_field_policy": (
-            "UNVERIFIED: the historical embedding input fields are not proven; "
-            f"expected clean policy would be {expected['input_field_policy']}."
-        ),
-        "forbidden_derived_fields_excluded": None,
-        "forbidden_derived_metadata_present": bool(forbidden_derived_metadata_present),
-        "requires_verified_clean_for_freeze": True,
-        "missing_evidence": [],
-        "mismatched_fields": [],
-    }
-
-    if provenance_path is None:
-        report["missing_evidence"] = ["provenance_artifact"]
-        report["reason"] = (
-            "No durable historical embedding provenance artifact was supplied; "
-            "current metadata and source code cannot prove the frozen vector input contract."
-        )
-        return report
-
-    try:
-        artifact = json.loads(Path(provenance_path).read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        report["missing_evidence"] = ["readable_provenance_artifact"]
-        report["reason"] = f"Could not read provenance artifact: {exc}"
-        return report
-
-    if not isinstance(artifact, dict):
-        report["missing_evidence"] = ["object_provenance_artifact"]
-        report["reason"] = "Provenance artifact must be a JSON object."
-        return report
-
-    artifact_status = artifact.get("status", artifact.get("provenance_status"))
-    report["indexing_timestamp"] = artifact.get("indexing_timestamp")
-    report["input_field_policy"] = artifact.get(
-        "input_field_policy",
-        report["input_field_policy"],
-    )
-    report["forbidden_derived_fields_excluded"] = artifact.get(
-        "forbidden_derived_fields_excluded",
-    )
-    included = artifact.get("derived_fields_included")
-    if included is None:
-        included = artifact.get("forbidden_derived_fields_included")
-    explicitly_leaked = (
-        artifact_status == "VERIFIED_LEAKED"
-        or artifact.get("forbidden_derived_fields_excluded") is False
-        or included is True
-        or (isinstance(included, (list, tuple, set)) and bool(included))
-    )
-    if explicitly_leaked:
-        report["status"] = "VERIFIED_LEAKED"
-        report["forbidden_derived_fields_excluded"] = False
-        report["reason"] = "The provenance artifact explicitly records forbidden derived fields in embedding input."
-        return report
-
-    required_fields = list(expected)
-    mismatched = [
-        field
-        for field in required_fields
-        if artifact.get(field) != expected[field]
-    ]
-    if mismatched:
-        report["mismatched_fields"] = mismatched
-
-    missing: list[str] = []
-    if artifact_status != "VERIFIED_CLEAN":
-        missing.append("explicit_verified_clean_status")
-    if artifact.get("indexing_timestamp") in (None, ""):
-        missing.append("indexing_timestamp")
-    if artifact.get("forbidden_derived_fields_excluded") is not True:
-        missing.append("forbidden_derived_fields_excluded=true")
-    report["missing_evidence"] = missing
-
-    if not mismatched and not missing:
-        report["status"] = "VERIFIED_CLEAN"
-        report["reason"] = "Durable clean provenance matched the V3 corpus, source, model, dimension, and policy contract."
-    else:
-        report["reason"] = "The supplied provenance artifact was incomplete or did not match the V3 contract."
-    return report
-
-
-def embedding_provenance_is_freeze_safe(contract: dict) -> bool:
-    return contract.get("status") == "VERIFIED_CLEAN"
-
-
 def audit_derived_label_leakage(*, source: str = "vietjobs") -> dict:
     offenders: list[dict] = []
     rows = CareerJobChunk.objects.filter(active=True, source=source).values("chunk_id", "metadata")
@@ -641,28 +592,65 @@ def audit_split(topics: list[CareerTopic]) -> dict:
     return {"passed": not overlap, "dev_families": sorted(dev), "test_families": sorted(test), "overlap": overlap}
 
 
-def audit_qrels(topics: list[CareerTopic], qrels: list[RelevanceJudgment], *, min_strong_per_topic: int = 5, max_uncertain_rate: float = 0.15) -> dict:
+def audit_qrels(
+    topics: list[CareerTopic],
+    pool: list[PooledCandidate],
+    qrels: list[RelevanceJudgment],
+    *,
+    min_strong_per_topic: int = 5,
+    max_uncertain_rate: float = 0.15,
+) -> dict:
     by_topic: dict[str, list[RelevanceJudgment]] = defaultdict(list)
     for qrel in qrels:
         by_topic[qrel.topic_id].append(qrel)
+    pool_keys = [(candidate.topic_id, candidate.job_key) for candidate in pool]
+    pool_counts = Counter(candidate.topic_id for candidate in pool)
+    qrel_keys = [(qrel.topic_id, qrel.job_key) for qrel in qrels]
+    duplicate_pool_keys = sorted(key for key, count in Counter(pool_keys).items() if count != 1)
+    duplicate_qrel_keys = sorted(key for key, count in Counter(qrel_keys).items() if count != 1)
+    missing_qrels = sorted(set(pool_keys) - set(qrel_keys))
+    qrels_outside_pool = sorted(set(qrel_keys) - set(pool_keys))
+    coverage_passed = not (
+        duplicate_pool_keys
+        or duplicate_qrel_keys
+        or missing_qrels
+        or qrels_outside_pool
+    )
     details = {}
-    passed = True
+    passed = coverage_passed
     for topic in topics:
         rows = by_topic.get(topic.topic_id, [])
         uncertain = sum(1 for row in rows if row.uncertain)
         certain = [row for row in rows if not row.uncertain]
         strong = sum(1 for row in certain if row.grade >= 2)
         rate = uncertain / len(rows) if rows else 1.0
-        topic_passed = strong >= min_strong_per_topic and rate <= max_uncertain_rate
+        shape_ok = all(
+            type(row.grade) is int
+            and row.grade in {0, 1, 2, 3}
+            and type(row.uncertain) is bool
+            for row in rows
+        )
+        topic_passed = shape_ok and strong >= min_strong_per_topic and rate <= max_uncertain_rate
         passed = passed and topic_passed
         details[topic.topic_id] = {
-            "pool_size": len(rows),
+            "pool_size": pool_counts.get(topic.topic_id, 0),
+            "qrel_count": len(rows),
             "uncertain_count": uncertain,
             "uncertain_rate": rate,
             "strong_relevant_count": strong,
+            "shape_ok": shape_ok,
             "passed": topic_passed,
         }
-    return {"passed": passed, "topics": details}
+    return {
+        "passed": passed,
+        "pool_candidate_count": len(pool_keys),
+        "qrel_count": len(qrel_keys),
+        "duplicate_pool_keys": duplicate_pool_keys,
+        "duplicate_qrel_keys": duplicate_qrel_keys,
+        "missing_qrels": missing_qrels,
+        "qrels_outside_pool": qrels_outside_pool,
+        "topics": details,
+    }
 
 
 def audit_controls(
@@ -673,8 +661,13 @@ def audit_controls(
     min_invariance_rate: float = 0.90,
 ) -> dict:
     by_type: dict[str, list[bool]] = defaultdict(list)
+    shape_ok = True
     for row in control_rows:
-        by_type[row["control_type"]].append(bool(row["passed"]))
+        value = row.get("passed")
+        if type(value) is not bool:
+            shape_ok = False
+            value = False
+        by_type[row["control_type"]].append(value)
 
     def accuracy(kind: str) -> float:
         values = by_type.get(kind, [])
@@ -684,7 +677,7 @@ def audit_controls(
     negative_accuracy = accuracy("negative")
     order_rate = accuracy("order_invariance")
     paraphrase_rate = accuracy("paraphrase_consistency")
-    passed = (
+    passed = shape_ok and (
         positive_accuracy >= min_positive_accuracy
         and negative_accuracy >= min_negative_accuracy
         and order_rate >= min_invariance_rate
@@ -692,6 +685,7 @@ def audit_controls(
     )
     return {
         "passed": passed,
+        "shape_ok": shape_ok,
         "positive_accuracy": positive_accuracy,
         "negative_accuracy": negative_accuracy,
         "order_invariance_rate": order_rate,
@@ -711,6 +705,7 @@ def audit_nuggets(topics: list[CareerTopic], nuggets: list[Nugget], *, min_nugge
 def run_audit(
     *,
     topics: list[CareerTopic],
+    pool: list[PooledCandidate],
     qrels: list[RelevanceJudgment],
     nuggets: list[Nugget],
     controls: list[dict],
@@ -718,7 +713,7 @@ def run_audit(
     report = {
         "derived_label_leakage": audit_derived_label_leakage(source="vietjobs"),
         "split": audit_split(topics),
-        "qrels": audit_qrels(topics, qrels),
+        "qrels": audit_qrels(topics, pool, qrels),
         "controls": audit_controls(controls),
         "nuggets": audit_nuggets(topics, nuggets),
     }

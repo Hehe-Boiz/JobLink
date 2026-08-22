@@ -89,6 +89,7 @@ def pack_job_evidence(
 
     packed = header
     remaining = char_budget - len(packed)
+    seen_content: set[str] = set()
     sections = sorted(
         (
             _SECTION_PRIORITY[_section_kind(chunk.get("section", ""))],
@@ -101,6 +102,10 @@ def pack_job_evidence(
     )
 
     for _, _, section, content in sections:
+        normalized_content = re.sub(r"\s+", " ", content).strip()
+        if not normalized_content or normalized_content in seen_content:
+            continue
+        seen_content.add(normalized_content)
         prefix = f"\n\n[{section}]\n"
         if remaining <= len(prefix):
             break
@@ -115,3 +120,17 @@ def pack_job_evidence(
             break
 
     return packed
+
+
+def evidence_sensitivity_diagnostic_input(
+    job: CorpusJob,
+    *,
+    char_budget: int = DEFAULT_EVIDENCE_CHAR_BUDGET,
+) -> dict[str, str]:
+    """Prepare packed/full evidence for a future paired grading diagnostic."""
+
+    return {
+        "packed_evidence": pack_job_evidence(job, char_budget=char_budget),
+        "expanded_evidence": job.raw_evidence,
+        "judgment_status": "UNPROVEN_NOT_RUN",
+    }

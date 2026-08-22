@@ -628,26 +628,11 @@ def judge_candidates(
                 current: dict[str, int] = {}
                 for cid in expected_ids:
                     value = raw[cid]
-
-                    if isinstance(value, bool):
-                        raise ValueError(f"Boolean is not a valid relevance grade for {cid}")
-
-                    try:
-                        grade = int(value)
-
-                    except (TypeError, ValueError) as exc:
-                        raise ValueError(f"Non-integer relevance grade {value!r} for {cid}") from exc
-
-                    if isinstance(value, float) and not value.is_integer():
-                        raise ValueError(f"Non-integral relevance grade {value!r} for {cid}")
-
-                    if isinstance(value, str) and value.strip() != str(grade):
-                        raise ValueError(f"Malformed relevance grade {value!r} for {cid}")
-
-                    if grade not in (0, 1, 2, 3):
-                        raise ValueError(f"Invalid relevance grade {grade} for {cid}")
-
-                    current[cid] = grade
+                    if type(value) is not int or value not in (0, 1, 2, 3):
+                        raise ValueError(
+                            f"Relevance grade for {cid} must be a literal JSON integer in 0..3; got {value!r}"
+                        )
+                    current[cid] = value
                 validated = current
                 break
 
@@ -690,11 +675,7 @@ def judge_candidates(
         if any(grade is None for grade in raw_grades):
             raise RuntimeError(f"Missing judge view grade for {key}: {raw_grades}")
 
-        grades = [
-            int(grade)
-            for grade in raw_grades
-            if grade is not None
-        ]
+        grades = [grade for grade in raw_grades if grade is not None]
 
         if len(grades)  != len(JUDGE_VIEWS):
             raise RuntimeError(f"Expected {len(JUDGE_VIEWS)} judge grades for {key}; got {grades}")
