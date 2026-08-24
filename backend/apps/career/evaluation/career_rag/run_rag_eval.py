@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
+import threading
 from collections import defaultdict
+from collections.abc import Callable
 from pathlib import Path
 from statistics import mean
 
@@ -13,6 +16,7 @@ from apps.career.retrieval import CareerEvidenceChunk, CareerRetrievedJob
 
 from .build_benchmark import DEFAULT_OUTPUT_DIR
 from .clean_index import CleanBenchmarkDenseRanker, configured_clean_index_dir
+from .concurrency import RefillWindowConfig, run_refill_window
 from .evidence import DEFAULT_EVIDENCE_CHAR_BUDGET, pack_job_evidence
 from .evaluation_integrity import assert_evaluation_integrity, consume_test_lock
 from .evaluation_protocol import (
@@ -26,6 +30,8 @@ from .pooling import PoolingService, load_corpus_jobs
 from .schema import CorpusJob, Nugget
 
 RAG_JUDGE_SCHEMA_RETRIES = 2
+DEFAULT_RAG_EVAL_MAX_IN_FLIGHT = 4
+DEFAULT_RAG_EVAL_REFILL_SIZE = 2
 RAG_JUDGE_REQUIRED_KEYS = frozenset({
     "matched_nugget_ids",
     "claim_count",
@@ -36,6 +42,7 @@ RAG_JUDGE_REQUIRED_KEYS = frozenset({
     "citation_supported_count",
     "context_used_job_keys",
 })
+RAG_SYSTEMS = ("no_rag", "clean_rag", "gold_context_rag")
 
 
 def _read_jsonl(path: Path) -> list[dict]:
@@ -310,6 +317,136 @@ def _rag_metric_summary(
     }
 
 
+def _rag_eval_concurrency_config() -> RefillWindowConfig:
+    try:
+        max_in_flight = int(os.environ.get(
+            "CAREER_RAG_RAG_EVAL_MAX_IN_FLIGHT",
+            str(DEFAULT_RAG_EVAL_MAX_IN_FLIGHT),
+        ))
+        refill_size = int(os.environ.get(
+            "CAREER_RAG_RAG_EVAL_REFILL_SIZE",
+            str(DEFAULT_RAG_EVAL_REFILL_SIZE),
+        ))
+    except ValueError as exc:
+        raise ValueError("RAG evaluation concurrency settings must be integers") from exc
+    config = RefillWindowConfig(
+        max_in_flight=max_in_flight,
+        refill_size=refill_size,
+    )
+    config.validate()
+    return config
+
+
+def _evaluate_query(
+    index: int,
+    query: dict,
+    *,
+    retriever_system: str,
+    top_k: int,
+    clean_ranker: CleanBenchmarkDenseRanker,
+    pooler: PoolingService,
+    retrieval_lock: threading.Lock,
+    corpus_by_key: dict[str, CorpusJob],
+    qrels: dict[str, list[dict]],
+    nuggets: dict[str, list[Nugget]],
+    generator_model: str,
+    generation_temperature: int,
+    answer_service: CareerAnswerService,
+    no_rag_client: OpenAI,
+    judge: JudgeClient,
+) -> dict:
+    """Evaluate all three RAG systems for one query without nested concurrency."""
+
+    topic_id = query["topic_id"]
+    # Sentence-transformer/OpenAI service instances do not declare concurrent
+    # method safety. Keep the shared ranker read-only and serialize only the
+    # comparatively short retrieval section; LLM work remains query-parallel.
+    with retrieval_lock:
+        if retriever_system == "dense":
+            keys = clean_ranker.rank_job_keys(query["text"], top_k)
+        else:
+            bm25 = pooler.bm25(query["text"], max(top_k, 10))
+            dense = pooler.dense(query["text"], max(top_k, 10))
+            keys = pooler.rrf([bm25, dense], top_k)
+    clean_jobs = [
+        _as_retrieved(corpus_by_key[key], score=1.0 - key_index * 0.001)
+        for key_index, key in enumerate(keys)
+        if key in corpus_by_key
+    ]
+    gold_rows = _certain_gold_context_rows(
+        qrels[topic_id],
+        topic_id=topic_id,
+        top_k=top_k,
+    )
+    gold_jobs = [
+        _as_retrieved(corpus_by_key[key])
+        for row in gold_rows
+        if (key := f"{row['source']}::{row['source_job_id']}") in corpus_by_key
+    ]
+    generated = {
+        "no_rag": (
+            _no_rag_answer(
+                no_rag_client,
+                generator_model,
+                query["text"],
+                temperature=generation_temperature,
+            ),
+            [],
+        ),
+        "clean_rag": (
+            answer_service.answer(query["text"], clean_jobs).answer,
+            clean_jobs,
+        ),
+        "gold_context_rag": (
+            answer_service.answer(query["text"], gold_jobs).answer,
+            gold_jobs,
+        ),
+    }
+    results: dict[str, dict] = {}
+    for system, (answer, context) in generated.items():
+        evaluation = _evaluate_answer(
+            judge,
+            query=query["text"],
+            answer=answer,
+            nuggets=nuggets[topic_id],
+            context_jobs=context,
+        )
+        results[system] = {
+            "query_id": query["query_id"],
+            "topic_id": topic_id,
+            "variant": query["variant"],
+            "answer": answer,
+            **evaluation,
+        }
+    return {"index": index, "results": results}
+
+
+def _run_rag_query_tasks(
+    tasks: list[Callable[[], dict]],
+    *,
+    split: str,
+    config: RefillWindowConfig,
+) -> dict[str, list[dict]]:
+    query_results = run_refill_window(
+        tasks,
+        config=config,
+        label=f"rag-eval:{split}",
+    )
+    ordered = sorted(query_results, key=lambda item: item["index"])
+    if [item["index"] for item in ordered] != list(range(len(tasks))):
+        raise RuntimeError("RAG query evaluation returned missing or duplicate indices")
+    rows_by_system: dict[str, list[dict]] = {
+        system: [] for system in RAG_SYSTEMS
+    }
+    for item in ordered:
+        if set(item["results"]) != set(RAG_SYSTEMS):
+            raise RuntimeError("RAG query evaluation returned an incomplete system result")
+        for system in RAG_SYSTEMS:
+            rows_by_system[system].append(item["results"][system])
+    print(f"[rag-eval] completed={len(ordered)}/{len(tasks)}")
+    return rows_by_system
+
+
 def run_rag_eval(
     *,
     split: str = "dev",
@@ -383,50 +520,58 @@ def run_rag_eval(
     sidecar_dir = Path(clean_index_dir or configured_clean_index_dir())
     clean_ranker = CleanBenchmarkDenseRanker(sidecar_dir)
     pooler = PoolingService(corpus, dense_ranker=clean_ranker)
-    answer_service = CareerAnswerService(
-        model_name=generator_model,
-        temperature=generation_temperature,
-    )
     api_key = getattr(settings, "CKEY_API_KEY", "")
     if not api_key:
         raise RuntimeError("CKEY_API_KEY is required")
-    no_rag_client = OpenAI(
-        api_key=api_key,
-        base_url=getattr(settings, "CKEY_BASE_URL", "") or None,
-    )
-    judge = JudgeClient(judge_model)
-    systems = ("no_rag", "clean_rag", "gold_context_rag")
-    rows_by_system: dict[str, list[dict]] = {system: [] for system in systems}
+    concurrency_config = _rag_eval_concurrency_config()
+    retrieval_lock = threading.Lock()
+    worker_local = threading.local()
 
-    for query in query_rows:
-        topic_id = query["topic_id"]
-        if retriever_system == "dense":
-            keys = clean_ranker.rank_job_keys(query["text"], top_k)
-        else:
-            bm25 = pooler.bm25(query["text"], max(top_k, 10))
-            dense = pooler.dense(query["text"], max(top_k, 10))
-            keys = pooler.rrf([bm25, dense], top_k)
-        clean_jobs = [_as_retrieved(corpus_by_key[key], score=1.0 - index * 0.001)
-                      for index, key in enumerate(keys) if key in corpus_by_key]
-        gold_rows = _certain_gold_context_rows(qrels[topic_id], topic_id=topic_id, top_k=top_k)
-        gold_jobs = [_as_retrieved(corpus_by_key[key]) for row in gold_rows
-                     if (key := f"{row['source']}::{row['source_job_id']}") in corpus_by_key]
-        generated = {
-            "no_rag": (
-                _no_rag_answer(
-                    no_rag_client,
-                    generator_model,
-                    query["text"],
+    def worker_services() -> tuple[CareerAnswerService, OpenAI, JudgeClient]:
+        services = getattr(worker_local, "services", None)
+        if services is None:
+            services = (
+                CareerAnswerService(
+                    model_name=generator_model,
                     temperature=generation_temperature,
                 ),
-                [],
-            ),
-            "clean_rag": (answer_service.answer(query["text"], clean_jobs).answer, clean_jobs),
-            "gold_context_rag": (answer_service.answer(query["text"], gold_jobs).answer, gold_jobs),
-        }
-        for system, (answer, context) in generated.items():
-            evaluation = _evaluate_answer(judge, query=query["text"], answer=answer, nuggets=nuggets[topic_id], context_jobs=context)
-            rows_by_system[system].append({"query_id": query["query_id"], "topic_id": topic_id, "variant": query["variant"], "answer": answer, **evaluation})
+                OpenAI(
+                    api_key=api_key,
+                    base_url=getattr(settings, "CKEY_BASE_URL", "") or None,
+                ),
+                JudgeClient(judge_model),
+            )
+            worker_local.services = services
+        return services
+
+    tasks: list[Callable[[], dict]] = []
+    for index, query in enumerate(query_rows):
+        def evaluate(index: int = index, query: dict = query) -> dict:
+            answer_service, no_rag_client, judge = worker_services()
+            return _evaluate_query(
+                index,
+                query,
+                retriever_system=retriever_system,
+                top_k=top_k,
+                clean_ranker=clean_ranker,
+                pooler=pooler,
+                retrieval_lock=retrieval_lock,
+                corpus_by_key=corpus_by_key,
+                qrels=qrels,
+                nuggets=nuggets,
+                generator_model=generator_model,
+                generation_temperature=generation_temperature,
+                answer_service=answer_service,
+                no_rag_client=no_rag_client,
+                judge=judge,
+            )
+
+        tasks.append(evaluate)
+    rows_by_system = _run_rag_query_tasks(
+        tasks,
+        split=split,
+        config=concurrency_config,
+    )
 
     report = {
         "split": split, "generator_model": generator_model, "judge_model": judge_model,
@@ -443,7 +588,7 @@ def run_rag_eval(
         "systems": {},
     }
     metric_names = ("weighted_nugget_coverage", "faithfulness", "unsupported_claim_rate", "citation_coverage", "citation_support_rate", "context_utilization")
-    for system in systems:
+    for system in RAG_SYSTEMS:
         by_topic: dict[str, list[dict]] = defaultdict(list)
         for row in rows_by_system[system]:
             by_topic[row["topic_id"]].append(row)

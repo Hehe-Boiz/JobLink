@@ -3021,3 +3021,184 @@ class RagJudgeSchemaRegressionTests(unittest.TestCase):
         same = _model_identity("exact-id", "exact-id")
         self.assertTrue(same["exact_model_id_equal"])
         self.assertEqual(same["family_relation"], "UNVERIFIED")
+
+
+class RagEvalQueryConcurrencyTests(unittest.TestCase):
+    @staticmethod
+    def _query_result(index: int) -> dict:
+        return {
+            "index": index,
+            "results": {
+                system: {
+                    "query_id": f"query-{index}",
+                    "topic_id": f"topic-{index}",
+                    "variant": "direct",
+                    "answer": f"{system}-{index}",
+                }
+                for system in rag_eval_module.RAG_SYSTEMS
+            },
+        }
+
+    def test_query_worker_preserves_retrieval_generation_and_judging_semantics(self) -> None:
+        class FakeRanker:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, int]] = []
+
+            def rank_job_keys(self, query: str, depth: int) -> list[str]:
+                self.calls.append((query, depth))
+                return ["vietjobs::J2", "vietjobs::J1"]
+
+        class FakeAnswerService:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, list[str]]] = []
+
+            def answer(self, query: str, jobs: list) -> SimpleNamespace:
+                keys = [f"{job.source}::{job.source_job_id}" for job in jobs]
+                self.calls.append((query, keys))
+                return SimpleNamespace(answer="answer:" + ",".join(keys))
+
+        jobs = _jobs(3)
+        corpus_by_key = {job.job_key: job for job in jobs}
+        qrels = {
+            "topic": [
+                {
+                    "topic_id": "topic", "source": "vietjobs",
+                    "source_job_id": "J3", "grade": 3, "uncertain": False,
+                },
+                {
+                    "topic_id": "topic", "source": "vietjobs",
+                    "source_job_id": "J2", "grade": 3, "uncertain": True,
+                },
+                {
+                    "topic_id": "topic", "source": "vietjobs",
+                    "source_job_id": "J1", "grade": 1, "uncertain": False,
+                },
+            ],
+        }
+        nuggets = {"topic": []}
+        ranker = FakeRanker()
+        answer_service = FakeAnswerService()
+        no_rag_calls: list[tuple[str, str, int]] = []
+        judge_contexts: list[tuple[str, list[str]]] = []
+
+        def no_rag_answer(client, model, query, *, temperature):
+            no_rag_calls.append((model, query, temperature))
+            return "no-rag-answer"
+
+        def evaluate_answer(judge, *, query, answer, nuggets, context_jobs):
+            keys = [f"{job.source}::{job.source_job_id}" for job in context_jobs]
+            judge_contexts.append((answer, keys))
+            return {"judged_context_job_keys": keys}
+
+        with patch.object(rag_eval_module, "_no_rag_answer", side_effect=no_rag_answer), \
+                patch.object(rag_eval_module, "_evaluate_answer", side_effect=evaluate_answer):
+            result = rag_eval_module._evaluate_query(
+                7,
+                {
+                    "query_id": "query-7", "topic_id": "topic",
+                    "variant": "noisy", "text": "query text",
+                },
+                retriever_system="dense",
+                top_k=2,
+                clean_ranker=ranker,
+                pooler=object(),
+                retrieval_lock=rag_eval_module.threading.Lock(),
+                corpus_by_key=corpus_by_key,
+                qrels=qrels,
+                nuggets=nuggets,
+                generator_model="generator",
+                generation_temperature=GENERATION_TEMPERATURE,
+                answer_service=answer_service,
+                no_rag_client=object(),
+                judge=object(),
+            )
+
+        self.assertEqual(result["index"], 7)
+        self.assertEqual(set(result["results"]), set(rag_eval_module.RAG_SYSTEMS))
+        self.assertEqual(ranker.calls, [("query text", 2)])
+        self.assertEqual(no_rag_calls, [("generator", "query text", 0)])
+        self.assertEqual(
+            answer_service.calls,
+            [
+                ("query text", ["vietjobs::J2", "vietjobs::J1"]),
+                ("query text", ["vietjobs::J3"]),
+            ],
+        )
+        self.assertEqual(
+            judge_contexts,
+            [
+                ("no-rag-answer", []),
+                ("answer:vietjobs::J2,vietjobs::J1", ["vietjobs::J2", "vietjobs::J1"]),
+                ("answer:vietjobs::J3", ["vietjobs::J3"]),
+            ],
+        )
+        for row in result["results"].values():
+            self.assertEqual(row["query_id"], "query-7")
+            self.assertEqual(row["topic_id"], "topic")
+            self.assertEqual(row["variant"], "noisy")
+
+    def test_out_of_order_completion_matches_serial_rows_and_keeps_one_row_per_system(self) -> None:
+        completion_order: list[int] = []
+        release_first = rag_eval_module.threading.Event()
+
+        def task(index: int):
+            def run() -> dict:
+                if index == 0:
+                    self.assertTrue(release_first.wait(timeout=2))
+                if index == 2:
+                    completion_order.append(index)
+                    release_first.set()
+                else:
+                    completion_order.append(index)
+                return self._query_result(index)
+
+            return run
+
+        rows = rag_eval_module._run_rag_query_tasks(
+            [task(index) for index in range(3)],
+            split="dev",
+            config=rag_eval_module.RefillWindowConfig(
+                max_in_flight=3,
+                refill_size=1,
+            ),
+        )
+        self.assertNotEqual(completion_order, [0, 1, 2])
+        serial_results = [self._query_result(index) for index in range(3)]
+        for system in rag_eval_module.RAG_SYSTEMS:
+            expected_rows = [item["results"][system] for item in serial_results]
+            self.assertEqual(rows[system], expected_rows)
+            self.assertEqual(len(rows[system]), 3)
+
+    def test_worker_failure_propagates_and_concurrency_env_is_strict(self) -> None:
+        def fail() -> dict:
+            raise RuntimeError("query worker failed")
+
+        with self.assertRaisesRegex(RuntimeError, "query worker failed"):
+            rag_eval_module._run_rag_query_tasks(
+                [fail],
+                split="dev",
+                config=rag_eval_module.RefillWindowConfig(
+                    max_in_flight=1,
+                    refill_size=1,
+                ),
+            )
+
+        env_keys = (
+            "CAREER_RAG_RAG_EVAL_MAX_IN_FLIGHT",
+            "CAREER_RAG_RAG_EVAL_REFILL_SIZE",
+        )
+        with patch.dict(os.environ, {}, clear=False):
+            for key in env_keys:
+                os.environ.pop(key, None)
+            default = rag_eval_module._rag_eval_concurrency_config()
+            self.assertEqual(default.max_in_flight, 4)
+            self.assertEqual(default.refill_size, 2)
+
+        for values in (
+            {env_keys[0]: "0", env_keys[1]: "1"},
+            {env_keys[0]: "2", env_keys[1]: "3"},
+            {env_keys[0]: "four", env_keys[1]: "2"},
+        ):
+            with self.subTest(values=values), patch.dict(os.environ, values):
+                with self.assertRaises(ValueError):
+                    rag_eval_module._rag_eval_concurrency_config()
