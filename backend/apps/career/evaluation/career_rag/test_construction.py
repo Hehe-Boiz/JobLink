@@ -2795,6 +2795,75 @@ class RagJudgeSchemaRegressionTests(unittest.TestCase):
             _evaluate_answer(exhausted, query="q", answer="a", nuggets=[nugget], context_jobs=[job])
         self.assertEqual(len(exhausted.calls), 3)
 
+    def test_context_aliases_normalize_before_strict_validation(self) -> None:
+        class FakeJudge:
+            def __init__(self, context_used_job_keys: list[str]) -> None:
+                self.context_used_job_keys = context_used_job_keys
+                self.calls: list[tuple[str, str]] = []
+
+            def json_call(self, *, system: str, user: str, retries: int = 2) -> dict:
+                self.calls.append((system, user))
+                payload = RagJudgeSchemaRegressionTests._valid_payload()
+                payload["context_used_job_keys"] = list(self.context_used_job_keys)
+                return payload
+
+        nugget = Nugget(
+            "topic", "N1", "Python", "python", ("vietjobs::J1",),
+            1, -1.0, 1.0, "VITAL",
+        )
+        jobs = [_as_retrieved(job) for job in _jobs(2)]
+
+        alias_judge = FakeJudge(["J1", "J2"])
+        alias_result = _evaluate_answer(
+            alias_judge,
+            query="q",
+            answer="a",
+            nuggets=[nugget],
+            context_jobs=jobs,
+        )
+        self.assertEqual(
+            alias_result["context_used_job_keys"],
+            ["vietjobs::J1", "vietjobs::J2"],
+        )
+        self.assertIn("never display aliases such as \"J1\"", alias_judge.calls[0][0])
+
+        canonical_judge = FakeJudge(["vietjobs::J1", "vietjobs::J2"])
+        canonical_result = _evaluate_answer(
+            canonical_judge,
+            query="q",
+            answer="a",
+            nuggets=[nugget],
+            context_jobs=jobs,
+        )
+        self.assertEqual(
+            canonical_result["context_used_job_keys"],
+            ["vietjobs::J1", "vietjobs::J2"],
+        )
+
+        unknown_judge = FakeJudge(["J999"])
+        with self.assertRaisesRegex(RuntimeError, "unsupported IDs"):
+            _evaluate_answer(
+                unknown_judge,
+                query="q",
+                answer="a",
+                nuggets=[nugget],
+                context_jobs=jobs,
+            )
+        self.assertIn(
+            "use exact JOB_KEY values for context_used_job_keys and never aliases",
+            unknown_judge.calls[1][1],
+        )
+
+        duplicate_judge = FakeJudge(["J1", "vietjobs::J1"])
+        with self.assertRaisesRegex(RuntimeError, "unique IDs"):
+            _evaluate_answer(
+                duplicate_judge,
+                query="q",
+                answer="a",
+                nuggets=[nugget],
+                context_jobs=jobs,
+            )
+
     def test_no_rag_grounding_is_not_applicable_and_never_aggregates_as_zero(self) -> None:
         class FakeJudge:
             def json_call(self, *, system: str, user: str, retries: int = 2) -> dict:
@@ -2829,6 +2898,7 @@ class RagJudgeSchemaRegressionTests(unittest.TestCase):
         )
         self.assertEqual(result["weighted_nugget_coverage"], 1.0)
         self.assertEqual(result["claim_count"], 5)
+        self.assertEqual(result["context_used_job_keys"], [])
         self.assertEqual(
             result["grounding_status"],
             "NOT_APPLICABLE_NO_RETRIEVED_CONTEXT",

@@ -179,9 +179,13 @@ def _evaluate_answer(
     if schema_retries < 0:
         raise ValueError("schema_retries must be >= 0")
     context_blocks = []
+    alias_to_job_key: dict[str, str] = {}
     for index, job in enumerate(context_jobs, start=1):
+        alias = f"J{index}"
+        job_key = f"{job.source}::{job.source_job_id}"
+        alias_to_job_key[alias] = job_key
         evidence = "\n".join(chunk.content for chunk in job.evidence)
-        context_blocks.append(f"[J{index}] JOB_KEY={job.source}::{job.source_job_id}\n{evidence[:5000]}")
+        context_blocks.append(f"[{alias}] JOB_KEY={job_key}\n{evidence[:5000]}")
     nugget_block = "\n".join(f"{n.nugget_id}: {n.text}" for n in nuggets)
     context_text = "\n\n---\n\n".join(context_blocks) if context_blocks else "[NO CONTEXT]"
     system_prompt = (
@@ -191,6 +195,8 @@ def _evaluate_answer(
         "Return JSON only with exactly these keys: matched_nugget_ids (list[str]), claim_count (int), "
         "supported_claim_count (int), unsupported_claim_count (int), citation_required_claim_count (int), "
         "cited_claim_count (int), citation_supported_count (int), context_used_job_keys (list[str]). "
+        "context_used_job_keys must contain the exact values shown after JOB_KEY= (for example "
+        "\"vietjobs::VietJobs:123\"), never display aliases such as \"J1\". "
         "All counts must be non-negative JSON integers. supported_claim_count + unsupported_claim_count must equal claim_count. "
         "For no-context answers, supported_claim_count, cited_claim_count, and citation_supported_count must be 0, "
         "and context_used_job_keys must be []."
@@ -210,9 +216,22 @@ def _evaluate_answer(
                 f"\n\nSCHEMA_RETRY_ATTEMPT={attempt}\n"
                 "IMPORTANT CORRECTION: The previous result failed strict validation. Return exactly the required keys, "
                 "literal JSON integers (not strings/floats/booleans), IDs only from the supplied nugget/context IDs, "
+                "use exact JOB_KEY values for context_used_job_keys and never aliases such as \"J1\", "
                 "and satisfy every count arithmetic invariant."
             )
         data = judge.json_call(system=system_prompt, user=user_prompt)
+        if isinstance(data, dict):
+            context_used_job_keys = data.get("context_used_job_keys")
+            if isinstance(context_used_job_keys, list) and all(
+                type(value) is str for value in context_used_job_keys
+            ):
+                data = {
+                    **data,
+                    "context_used_job_keys": [
+                        alias_to_job_key.get(value, value)
+                        for value in context_used_job_keys
+                    ],
+                }
         try:
             validated = validate_rag_judge_payload(
                 data, gold_nugget_ids=nugget_ids, context_job_keys=context_keys,
