@@ -2932,6 +2932,97 @@ class RagJudgeSchemaRegressionTests(unittest.TestCase):
                 context_jobs=jobs,
             )
 
+    def test_nugget_aliases_normalize_to_canonical_ids_without_metric_drift(self) -> None:
+        class FakeJudge:
+            def __init__(self, matched_nugget_ids: list[str]) -> None:
+                self.matched_nugget_ids = matched_nugget_ids
+                self.calls: list[tuple[str, str]] = []
+
+            def json_call(self, *, system: str, user: str, retries: int = 2) -> dict:
+                self.calls.append((system, user))
+                return {
+                    "matched_nugget_ids": list(self.matched_nugget_ids),
+                    "claim_count": 2,
+                    "supported_claim_count": 0,
+                    "unsupported_claim_count": 2,
+                    "citation_required_claim_count": 0,
+                    "cited_claim_count": 0,
+                    "citation_supported_count": 0,
+                    "context_used_job_keys": [],
+                }
+
+        canonical_ids = (
+            "nug-ee9a5fa6fb30",
+            "nug-affe2a8a4a0a",
+        )
+        nuggets = [
+            Nugget(
+                "topic", canonical_ids[0], "Python", "python",
+                ("vietjobs::J1",), 1, -1.0, 2.0, "VITAL",
+            ),
+            Nugget(
+                "topic", canonical_ids[1], "Docker", "docker",
+                ("vietjobs::J2",), 1, -1.0, 1.0, "OKAY",
+            ),
+        ]
+
+        alias_judge = FakeJudge(["N1", "N2"])
+        alias_result = _evaluate_answer(
+            alias_judge,
+            query="q",
+            answer="a",
+            nuggets=nuggets,
+            context_jobs=[],
+        )
+        canonical_judge = FakeJudge(list(canonical_ids))
+        canonical_result = _evaluate_answer(
+            canonical_judge,
+            query="q",
+            answer="a",
+            nuggets=nuggets,
+            context_jobs=[],
+        )
+
+        expected_ids = sorted(canonical_ids)
+        self.assertEqual(alias_result["matched_nugget_ids"], expected_ids)
+        self.assertEqual(canonical_result["matched_nugget_ids"], expected_ids)
+        self.assertEqual(
+            alias_result["weighted_nugget_coverage"],
+            canonical_result["weighted_nugget_coverage"],
+        )
+        self.assertIn("N1: Python\nN2: Docker", alias_judge.calls[0][1])
+        self.assertNotIn(canonical_ids[0], alias_judge.calls[0][1])
+        self.assertNotIn(canonical_ids[1], alias_judge.calls[0][1])
+        self.assertIn("only the exact N aliases", alias_judge.calls[0][0])
+
+        for invalid_id in ("N999999", "nug-made-up"):
+            judge = FakeJudge([invalid_id])
+            with self.subTest(invalid_id=invalid_id), self.assertRaisesRegex(
+                RuntimeError,
+                "unsupported IDs",
+            ):
+                _evaluate_answer(
+                    judge,
+                    query="q",
+                    answer="a",
+                    nuggets=nuggets,
+                    context_jobs=[],
+                )
+            self.assertIn(
+                "use only the supplied N aliases for matched_nugget_ids",
+                judge.calls[1][1],
+            )
+
+        duplicate_judge = FakeJudge(["N1", canonical_ids[0]])
+        with self.assertRaisesRegex(RuntimeError, "unique IDs"):
+            _evaluate_answer(
+                duplicate_judge,
+                query="q",
+                answer="a",
+                nuggets=nuggets,
+                context_jobs=[],
+            )
+
     def test_no_rag_grounding_is_not_applicable_and_never_aggregates_as_zero(self) -> None:
         class FakeJudge:
             def json_call(self, *, system: str, user: str, retries: int = 2) -> dict:

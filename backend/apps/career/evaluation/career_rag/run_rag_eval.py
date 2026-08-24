@@ -193,7 +193,14 @@ def _evaluate_answer(
         alias_to_job_key[alias] = job_key
         evidence = "\n".join(chunk.content for chunk in job.evidence)
         context_blocks.append(f"[{alias}] JOB_KEY={job_key}\n{evidence[:5000]}")
-    nugget_block = "\n".join(f"{n.nugget_id}: {n.text}" for n in nuggets)
+    alias_to_nugget_id = {
+        f"N{index}": nugget.nugget_id
+        for index, nugget in enumerate(nuggets, start=1)
+    }
+    nugget_block = "\n".join(
+        f"N{index}: {nugget.text}"
+        for index, nugget in enumerate(nuggets, start=1)
+    )
     context_text = "\n\n---\n\n".join(context_blocks) if context_blocks else "[NO CONTEXT]"
     system_prompt = (
         "Evaluate a generated career answer against silver information nuggets and, when supplied, retrieved raw evidence. "
@@ -202,6 +209,8 @@ def _evaluate_answer(
         "Return JSON only with exactly these keys: matched_nugget_ids (list[str]), claim_count (int), "
         "supported_claim_count (int), unsupported_claim_count (int), citation_required_claim_count (int), "
         "cited_claim_count (int), citation_supported_count (int), context_used_job_keys (list[str]). "
+        "matched_nugget_ids must contain only the exact N aliases supplied in Gold silver nuggets "
+        "(for example [\"N1\", \"N7\"]). "
         "context_used_job_keys must contain the exact values shown after JOB_KEY= (for example "
         "\"vietjobs::VietJobs:123\"), never display aliases such as \"J1\". "
         "All counts must be non-negative JSON integers. supported_claim_count + unsupported_claim_count must equal claim_count. "
@@ -222,12 +231,23 @@ def _evaluate_answer(
             user_prompt += (
                 f"\n\nSCHEMA_RETRY_ATTEMPT={attempt}\n"
                 "IMPORTANT CORRECTION: The previous result failed strict validation. Return exactly the required keys, "
-                "literal JSON integers (not strings/floats/booleans), IDs only from the supplied nugget/context IDs, "
-                "use exact JOB_KEY values for context_used_job_keys and never aliases such as \"J1\", "
+                "literal JSON integers (not strings/floats/booleans), use only the supplied N aliases for "
+                "matched_nugget_ids, use exact JOB_KEY values for context_used_job_keys and never aliases such as \"J1\", "
                 "and satisfy every count arithmetic invariant."
             )
         data = judge.json_call(system=system_prompt, user=user_prompt)
         if isinstance(data, dict):
+            matched_nugget_ids = data.get("matched_nugget_ids")
+            if isinstance(matched_nugget_ids, list) and all(
+                type(value) is str for value in matched_nugget_ids
+            ):
+                data = {
+                    **data,
+                    "matched_nugget_ids": [
+                        alias_to_nugget_id.get(value, value)
+                        for value in matched_nugget_ids
+                    ],
+                }
             context_used_job_keys = data.get("context_used_job_keys")
             if isinstance(context_used_job_keys, list) and all(
                 type(value) is str for value in context_used_job_keys
