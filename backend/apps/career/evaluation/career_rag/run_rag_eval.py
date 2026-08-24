@@ -212,7 +212,7 @@ def _evaluate_answer(
                 "literal JSON integers (not strings/floats/booleans), IDs only from the supplied nugget/context IDs, "
                 "and satisfy every count arithmetic invariant."
             )
-        data = judge.json_call(system=system_prompt, user=user_prompt, retries=0)
+        data = judge.json_call(system=system_prompt, user=user_prompt)
         try:
             validated = validate_rag_judge_payload(
                 data, gold_nugget_ids=nugget_ids, context_job_keys=context_keys,

@@ -240,7 +240,6 @@ def _verify_support_matrix_batch(
         data = client.json_call(
             system=system_prompt,
             user=user_prompt,
-            retries=0,
         )
 
         try:
@@ -381,7 +380,6 @@ def _judge_importance_batch(
         payload = client.json_call(
             system=system_prompt,
             user=user_prompt,
-            retries=0,
         )
 
         try:

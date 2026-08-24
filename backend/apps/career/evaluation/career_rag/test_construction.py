@@ -653,6 +653,138 @@ class SequencedImportanceClient:
         return self.payloads.pop(0)
 
 
+class JudgeJsonRetryRegressionTests(unittest.TestCase):
+    @staticmethod
+    def _judge_client(contents: list[str]) -> tuple[JudgeClient, list[dict]]:
+        requests: list[dict] = []
+        remaining = list(contents)
+
+        def create(**kwargs):
+            requests.append(kwargs)
+            if not remaining:
+                raise AssertionError("fake judge transport exhausted its responses")
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content=remaining.pop(0))
+                    )
+                ]
+            )
+
+        transport = SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+        )
+        return JudgeClient("offline-json-retry-test", client=transport), requests
+
+    def test_json_call_retries_transient_malformed_json_and_caches_only_success(self) -> None:
+        client, requests = self._judge_client([
+            '{"broken" true}',
+            '{"ok": true}',
+        ])
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.dict(os.environ, {
+                "CAREER_RAG_LLM_CACHE_DIR": directory,
+                "CAREER_RAG_DISABLE_LLM_CACHE": "0",
+            }, clear=False),
+            patch.object(client, "_save_cache", wraps=client._save_cache) as save_cache,
+            patch.object(JudgeClient, "_wait_for_request_slot"),
+            patch.object(JudgeClient, "_register_success"),
+            patch.object(judges_module.time, "sleep"),
+        ):
+            result = client.json_call(system="system", user="user")
+            cache_path = client._cache_path(system="system", user="user")
+            cached_payload = json.loads(
+                cache_path.read_text(encoding="utf-8")
+            )["payload"]
+
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(requests[0]["messages"], requests[1]["messages"])
+        self.assertEqual(save_cache.call_count, 1)
+        self.assertEqual(save_cache.call_args.kwargs["payload"], {"ok": True})
+        self.assertIsNotNone(cache_path)
+        self.assertEqual(cached_payload, {"ok": True})
+
+    def test_support_matrix_transient_malformed_json_uses_common_retry_policy(self) -> None:
+        client, requests = self._judge_client([
+            '{"support" {}}',
+            '{"support": {"N1": {"J1": true, "J2": false}}}',
+        ])
+        with (
+            patch.dict(os.environ, {"CAREER_RAG_DISABLE_LLM_CACHE": "1"}, clear=False),
+            patch.object(JudgeClient, "_wait_for_request_slot"),
+            patch.object(JudgeClient, "_register_success"),
+            patch.object(judges_module.time, "sleep"),
+        ):
+            result = _verify_support_matrix_batch(
+                client,
+                [{"text": "REST API"}],
+                _jobs(2),
+                evidence_chars=5000,
+            )
+        self.assertEqual(result, [["vietjobs::J1"]])
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(requests[0]["messages"], requests[1]["messages"])
+
+    def test_candidate_judge_transient_malformed_json_retries_without_schema_change(self) -> None:
+        client, requests = self._judge_client([
+            '{"grades" {}}',
+            '{"grades": {"C1": 2}}',
+            '{"grades": {"C1": 2}}',
+            '{"grades": {"C1": 2}}',
+        ])
+        candidate = PooledCandidate(
+            topic_id="topic-1",
+            source="vietjobs",
+            source_job_id="J1",
+            job_title="Engineer J1",
+            category_key="tech",
+            location_key=None,
+        )
+        job = _jobs(1)[0]
+        with (
+            patch.dict(os.environ, {"CAREER_RAG_DISABLE_LLM_CACHE": "1"}, clear=False),
+            patch.object(JudgeClient, "_wait_for_request_slot"),
+            patch.object(JudgeClient, "_register_success"),
+            patch.object(judges_module.time, "sleep"),
+        ):
+            judgments = judge_candidates(
+                client,
+                _topic(),
+                [candidate],
+                {job.job_key: job},
+                max_in_flight=1,
+                refill_size=1,
+            )
+        self.assertEqual(judgments[0].grade, 2)
+        self.assertEqual(judgments[0].judge_grades, (2, 2, 2))
+        self.assertEqual(len(requests), 4)
+        self.assertEqual(requests[0]["messages"], requests[1]["messages"])
+
+    def test_importance_judge_transient_malformed_json_uses_common_retry_policy(self) -> None:
+        client, requests = self._judge_client([
+            '{"importance" {}}',
+            '{"importance": {"N1": "OKAY"}}',
+        ])
+        with (
+            patch.dict(os.environ, {"CAREER_RAG_DISABLE_LLM_CACHE": "1"}, clear=False),
+            patch.object(JudgeClient, "_wait_for_request_slot"),
+            patch.object(JudgeClient, "_register_success"),
+            patch.object(judges_module.time, "sleep"),
+        ):
+            result = _judge_importance_batch(
+                client,
+                _topic(),
+                [{"text": "REST API", "support_job_keys": ("vietjobs::J1",)}],
+                {job.job_key: job for job in _jobs(1)},
+                evidence_chars=5000,
+            )
+        self.assertEqual(result, ["OKAY"])
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(requests[0]["messages"], requests[1]["messages"])
+
+
 class NuggetMatrixRetryTests(unittest.TestCase):
     def _verify(self, client: object) -> list[list[str]]:
         return _verify_support_matrix_batch(
@@ -676,7 +808,7 @@ class NuggetMatrixRetryTests(unittest.TestCase):
         )
         self.assertEqual(self._verify(client), [["vietjobs::J1"]])
         self.assertEqual(len(client.calls), 3)
-        self.assertEqual([call[2] for call in client.calls], [0, 0, 0])
+        self.assertEqual([call[2] for call in client.calls], [2, 2, 2])
         prompts = [call[1] for call in client.calls]
         self.assertEqual(len(set(prompts)), 3)
         self.assertIn("SCHEMA_RETRY_ATTEMPT=1", prompts[1])
@@ -692,7 +824,7 @@ class NuggetMatrixRetryTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "after 2 retries"):
             self._verify(client)
         self.assertEqual(len(client.calls), 3)
-        self.assertEqual([call[2] for call in client.calls], [0, 0, 0])
+        self.assertEqual([call[2] for call in client.calls], [2, 2, 2])
         self.assertEqual(len({call[1] for call in client.calls}), 3)
 
     def test_cached_malformed_response_cannot_block_corrective_prompt(self) -> None:
@@ -722,7 +854,7 @@ class NuggetMatrixRetryTests(unittest.TestCase):
         )
         self.assertEqual(result, ["OKAY"])
         self.assertEqual(len(client.calls), 3)
-        self.assertEqual([call[2] for call in client.calls], [0, 0, 0])
+        self.assertEqual([call[2] for call in client.calls], [2, 2, 2])
         self.assertEqual(len({call[1] for call in client.calls}), 3)
         self.assertIn("SCHEMA_RETRY_ATTEMPT=1", client.calls[1][1])
         self.assertIn("SCHEMA_RETRY_ATTEMPT=2", client.calls[2][1])
@@ -1037,6 +1169,92 @@ class LlmCacheAtomicBuildTests(unittest.TestCase):
             self.assertTrue(path.is_file())
             self.assertTrue(path.is_relative_to(override))
 
+    def test_current_model_cache_hit_takes_precedence_over_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ,
+            {
+                "CAREER_RAG_LLM_CACHE_DIR": directory,
+                "CAREER_RAG_CACHE_FALLBACK_MODEL": "old-model",
+            },
+            clear=False,
+        ):
+            client = self._client()
+            client.model_name = "old-model"
+            client._save_cache(system="system", user="user", payload={"source": "fallback"})
+            client.model_name = "current-model"
+            client._save_cache(system="system", user="user", payload={"source": "current"})
+
+            self.assertEqual(
+                client._load_cache(system="system", user="user"),
+                {"source": "current"},
+            )
+
+    def test_fallback_model_cache_hit_is_promoted_to_current_model(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ,
+            {
+                "CAREER_RAG_LLM_CACHE_DIR": directory,
+                "CAREER_RAG_CACHE_FALLBACK_MODEL": "old-model",
+            },
+            clear=False,
+        ):
+            client = self._client()
+            client.model_name = "old-model"
+            client._save_cache(system="system", user="user", payload={"ok": True})
+            client.model_name = "current-model"
+            current_path = client._cache_path(system="system", user="user")
+            self.assertFalse(current_path.exists())
+
+            self.assertEqual(
+                client._load_cache(system="system", user="user"),
+                {"ok": True},
+            )
+            self.assertTrue(current_path.is_file())
+            promoted = json.loads(current_path.read_text(encoding="utf-8"))
+            self.assertEqual(promoted["model"], "current-model")
+            self.assertEqual(promoted["payload"], {"ok": True})
+
+    def test_fallback_model_does_not_match_a_different_prompt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ,
+            {
+                "CAREER_RAG_LLM_CACHE_DIR": directory,
+                "CAREER_RAG_CACHE_FALLBACK_MODEL": "old-model",
+            },
+            clear=False,
+        ):
+            client = self._client()
+            client.model_name = "old-model"
+            client._save_cache(
+                system="system-old",
+                user="user-old",
+                payload={"unexpected": True},
+            )
+            client.model_name = "current-model"
+            self.assertIsNone(
+                client._load_cache(system="system-new", user="user-new")
+            )
+            self.assertFalse(
+                client._cache_path(system="system-new", user="user-new").exists()
+            )
+
+    def test_no_fallback_environment_keeps_current_model_only_behavior(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ,
+            {"CAREER_RAG_LLM_CACHE_DIR": directory},
+            clear=False,
+        ):
+            os.environ.pop("CAREER_RAG_CACHE_FALLBACK_MODEL", None)
+            client = self._client()
+            client.model_name = "old-model"
+            client._save_cache(system="system", user="user", payload={"old": True})
+            client.model_name = "current-model"
+
+            self.assertIsNone(client._load_cache(system="system", user="user"))
+            self.assertFalse(
+                client._cache_path(system="system", user="user").exists()
+            )
+
 
 class CandidateJudgeSchemaRetryClient:
     def __init__(self, payloads: list[object]) -> None:
@@ -1085,7 +1303,7 @@ class CandidateJudgeSchemaRetryTests(unittest.TestCase):
         )
         self.assertEqual(result[0].grade, 2)
         self.assertEqual(len(client.calls), 5)
-        self.assertEqual([call[2] for call in client.calls], [0] * 5)
+        self.assertEqual([call[2] for call in client.calls], [2] * 5)
         first_view_prompts = [call[1] for call in client.calls[:3]]
         self.assertEqual(len(set(first_view_prompts)), 3)
         self.assertIn("SCHEMA_RETRY_ATTEMPT=1", first_view_prompts[1])

@@ -102,11 +102,17 @@ class JudgeClient:
         timeout = float(os.environ.get("CAREER_RAG_HTTP_TIMEOUT_SECONDS", "240"))
         return OpenAI(api_key=api_key, base_url=base_url or None, max_retries=0, timeout=timeout,)
 
-    def _cache_key(self, *, system: str, user: str) -> str:
+    def _cache_key(
+        self,
+        *,
+        system: str,
+        user: str,
+        model_name: str | None = None,
+    ) -> str:
         base_url = getattr(settings, "CKEY_BASE_URL", "")
         payload = json.dumps(
             {
-                "model": self.model_name,
+                "model": self.model_name if model_name is None else model_name,
                 "base_url": base_url,
                 "temperature": 0,
                 "system": system,
@@ -119,7 +125,13 @@ class JudgeClient:
 
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
-    def _cache_path(self, *, system: str, user: str) -> Path | None:
+    def _cache_path(
+        self,
+        *,
+        system: str,
+        user: str,
+        model_name: str | None = None,
+    ) -> Path | None:
         if os.environ.get("CAREER_RAG_DISABLE_LLM_CACHE", "0") == "1":
             return None
 
@@ -128,30 +140,47 @@ class JudgeClient:
         if configured and not root.is_absolute():
             root = BACKEND_ROOT / root
 
-        key = self._cache_key(system=system, user=user)
+        key = self._cache_key(
+            system=system,
+            user=user,
+            model_name=model_name,
+        )
 
         return root / key[:2] / f"{key}.json"
 
     def _load_cache(self, *, system: str, user: str) -> dict | None:
-        path = self._cache_path(system=system, user=user,)
-        if path is None or not path.exists():
-            return None
+        fallback_model = os.environ.get("CAREER_RAG_CACHE_FALLBACK_MODEL")
+        candidates = [(self._cache_path(system=system, user=user), False)]
+        if fallback_model and fallback_model != self.model_name:
+            candidates.append((
+                self._cache_path(
+                    system=system,
+                    user=user,
+                    model_name=fallback_model,
+                ),
+                True,
+            ))
 
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            payload = data.get("payload")
-            if not isinstance(payload, dict,):
-                raise ValueError("cached payload is not dict")
+        for path, is_fallback in candidates:
+            if path is None or not path.exists():
+                continue
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                payload = data.get("payload")
+                if not isinstance(payload, dict,):
+                    raise ValueError("cached payload is not dict")
+            except Exception:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                continue
 
+            if is_fallback:
+                self._save_cache(system=system, user=user, payload=payload)
             return payload
 
-        except Exception:
-            try:
-                path.unlink(missing_ok=True)
-            except OSError:
-                pass
-
-            return None
+        return None
 
     def _save_cache(self, *, system: str, user: str, payload: dict) -> None:
         path = self._cache_path(system=system, user=user)
@@ -594,7 +623,7 @@ def judge_candidates(
                     "Do not include explanation."
                 )
 
-            payload = client.json_call(system=system_prompt, user=user_prompt, retries=0)
+            payload = client.json_call(system=system_prompt, user=user_prompt)
 
             try:
                 if set(payload) != {
