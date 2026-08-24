@@ -25,6 +25,7 @@ from .evidence import pack_job_evidence
 from .concurrency import DEFAULT_MAX_IN_FLIGHT, DEFAULT_REFILL_SIZE, RefillWindowConfig, run_refill_window
 
 JUDGE_PROMPT_VERSION = "career-rag-silver-qrels-v3"
+DEFAULT_JUDGE_MAX_TOKENS = 16_384
 BACKEND_ROOT = Path(__file__).resolve().parents[4]
 DEFAULT_LLM_CACHE_DIR = (
     BACKEND_ROOT / "data" / "career_eval" / "career_rag_llm_cache_v3"
@@ -314,7 +315,26 @@ class JudgeClient:
 
         return None
 
+    @staticmethod
+    def _max_tokens() -> int:
+        value = os.environ.get(
+            "CAREER_RAG_JUDGE_MAX_TOKENS",
+            str(DEFAULT_JUDGE_MAX_TOKENS),
+        )
+        try:
+            max_tokens = int(value)
+        except ValueError as exc:
+            raise ValueError(
+                "CAREER_RAG_JUDGE_MAX_TOKENS must be a positive integer"
+            ) from exc
+        if max_tokens <= 0:
+            raise ValueError(
+                "CAREER_RAG_JUDGE_MAX_TOKENS must be a positive integer"
+            )
+        return max_tokens
+
     def json_call(self, system: str,user: str, *, retries: int = 2) -> dict:
+        max_tokens = self._max_tokens()
         cached = self._load_cache(system=system, user=user)
 
         if cached is not None:
@@ -347,6 +367,8 @@ class JudgeClient:
 
         while True:
             self._wait_for_request_slot()
+            finish_reason: object = None
+            content_length: int | None = None
 
             try:
                 response = (
@@ -356,6 +378,7 @@ class JudgeClient:
                     .create(
                         model=self.model_name,
                         temperature=0,
+                        max_tokens=max_tokens,
                         messages=[
                             {
                                 "role": "system",
@@ -369,7 +392,10 @@ class JudgeClient:
                     )
                 )
 
-                content = response.choices[0].message.content or ""
+                choice = response.choices[0]
+                finish_reason = getattr(choice, "finish_reason", None)
+                content = choice.message.content or ""
+                content_length = len(content)
                 payload = self._parse_json(content)
                 self._register_success()
                 self._save_cache(system=system, user=user, payload=payload)
@@ -448,13 +474,19 @@ class JudgeClient:
                     ) from exc
 
                 if generic_used >= retries:
-                    raise RuntimeError(f"Judge call failed after semantic/JSON retries: {error_name}: {exc}") from exc
+                    raise RuntimeError(
+                        "Judge call failed after semantic/JSON retries: "
+                        f"{error_name}; finish_reason={finish_reason}; "
+                        f"content_length={content_length}: {exc}"
+                    ) from exc
 
                 generic_used += 1
                 delay = min(2.0, 0.25 * (2 ** (generic_used - 1)))
                 print(
                     "[json-retry] "
                     f"error={error_name}; "
+                    f"finish_reason={finish_reason}; "
+                    f"content_length={content_length}; "
                     f"attempt="
                     f"{generic_used}/{retries}; "
                     f"sleep={delay:.2f}s"
@@ -487,7 +519,7 @@ class JudgeClient:
         match = re.search(r"\{.*\}", stripped, flags=re.DOTALL)
 
         if not match:
-            raise ValueError(f"Model did not return JSON: {text[:300]!r}")
+            raise ValueError("Model did not return a complete JSON object")
 
         value = json.loads(match.group(0))
 

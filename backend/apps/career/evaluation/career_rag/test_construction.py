@@ -655,9 +655,13 @@ class SequencedImportanceClient:
 
 class JudgeJsonRetryRegressionTests(unittest.TestCase):
     @staticmethod
-    def _judge_client(contents: list[str]) -> tuple[JudgeClient, list[dict]]:
+    def _judge_client(
+        contents: list[str],
+        finish_reasons: list[str | None] | None = None,
+    ) -> tuple[JudgeClient, list[dict]]:
         requests: list[dict] = []
         remaining = list(contents)
+        remaining_finish_reasons = list(finish_reasons or [None] * len(contents))
 
         def create(**kwargs):
             requests.append(kwargs)
@@ -666,7 +670,8 @@ class JudgeJsonRetryRegressionTests(unittest.TestCase):
             return SimpleNamespace(
                 choices=[
                     SimpleNamespace(
-                        message=SimpleNamespace(content=remaining.pop(0))
+                        message=SimpleNamespace(content=remaining.pop(0)),
+                        finish_reason=remaining_finish_reasons.pop(0),
                     )
                 ]
             )
@@ -705,6 +710,69 @@ class JudgeJsonRetryRegressionTests(unittest.TestCase):
         self.assertEqual(save_cache.call_args.kwargs["payload"], {"ok": True})
         self.assertIsNotNone(cache_path)
         self.assertEqual(cached_payload, {"ok": True})
+
+    def test_fenced_json_requires_a_complete_json_object(self) -> None:
+        self.assertEqual(
+            JudgeClient._parse_json('```json\n{"ok": true}\n```'),
+            {"ok": True},
+        )
+        with self.assertRaises((ValueError, json.JSONDecodeError)):
+            JudgeClient._parse_json('```json\n{"ok": true')
+
+    def test_judge_max_tokens_and_truncation_diagnostics(self) -> None:
+        truncated = '```json\n{"ok": true'
+        client, requests = self._judge_client(
+            [truncated, '{"ok": true}'],
+            finish_reasons=["length", "stop"],
+        )
+        with (
+            patch.dict(os.environ, {
+                "CAREER_RAG_DISABLE_LLM_CACHE": "1",
+                "CAREER_RAG_JUDGE_MAX_TOKENS": "1234",
+            }, clear=False),
+            patch.object(JudgeClient, "_wait_for_request_slot"),
+            patch.object(JudgeClient, "_register_success"),
+            patch.object(judges_module.time, "sleep"),
+            patch("builtins.print") as print_mock,
+        ):
+            result = client.json_call(system="system", user="user")
+
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual([request["max_tokens"] for request in requests], [1234, 1234])
+        retry_messages = [
+            call.args[0]
+            for call in print_mock.call_args_list
+            if call.args and call.args[0].startswith("[json-retry]")
+        ]
+        self.assertEqual(len(retry_messages), 1)
+        self.assertIn("finish_reason=length", retry_messages[0])
+        self.assertIn(f"content_length={len(truncated)}", retry_messages[0])
+        self.assertNotIn(truncated, retry_messages[0])
+
+    def test_judge_max_tokens_default_and_invalid_values(self) -> None:
+        default_client, default_requests = self._judge_client(['{"ok": true}'])
+        with (
+            patch.dict(os.environ, {}, clear=False),
+            patch.object(JudgeClient, "_wait_for_request_slot"),
+            patch.object(JudgeClient, "_register_success"),
+        ):
+            os.environ.pop("CAREER_RAG_JUDGE_MAX_TOKENS", None)
+            os.environ["CAREER_RAG_DISABLE_LLM_CACHE"] = "1"
+            self.assertEqual(
+                default_client.json_call(system="system", user="user"),
+                {"ok": True},
+            )
+        self.assertEqual(default_requests[0]["max_tokens"], 16_384)
+
+        invalid_client, invalid_requests = self._judge_client(['{"ok": true}'])
+        for value in ("0", "-1", "1.5", "invalid"):
+            with self.subTest(value=value), patch.dict(os.environ, {
+                "CAREER_RAG_DISABLE_LLM_CACHE": "1",
+                "CAREER_RAG_JUDGE_MAX_TOKENS": value,
+            }, clear=False):
+                with self.assertRaisesRegex(ValueError, "positive integer"):
+                    invalid_client.json_call(system="system", user="user")
+        self.assertEqual(invalid_requests, [])
 
     def test_support_matrix_transient_malformed_json_uses_common_retry_policy(self) -> None:
         client, requests = self._judge_client([
