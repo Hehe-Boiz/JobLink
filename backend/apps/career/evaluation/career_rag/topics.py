@@ -1,23 +1,20 @@
 from __future__ import annotations
 
-import ast
-import csv
 import math
 import random
 import re
 import unicodedata
 from collections import Counter, defaultdict
-from pathlib import Path
 from typing import Iterable
+
 from apps.career.normalization import normalize_key
+
 from .semantics import topic_intent_label
 from .schema import CareerQuery, CareerTopic, CorpusJob
 
 
 DEFAULT_RANDOM_SEED = 20260819
-DEFAULT_FAMILY_COUNT = 16
-
-# Preferred only.
+# Hard eligibility floor for every selected broad career family.
 DEFAULT_MIN_FAMILY_JOBS = 100
 
 # Preferred specific-title support.
@@ -25,7 +22,8 @@ DEFAULT_MIN_SPECIFIC_TITLE_JOBS = 8
 
 HARD_MIN_SPECIFIC_TITLE_JOBS = 8
 SPECIFICITY_WILSON_Z = 1.96
-TOPIC_SELECTION_POLICY_VERSION = "all-supported-nongeneric-wilson-specificity-v2"
+TOPIC_SELECTION_POLICY_VERSION = "all-supported-nongeneric-wilson-specificity-v3"
+BASE_QUERY_VARIANTS = ("direct", "conversational", "noisy")
 
 GENERIC_CATEGORY_TOKENS = {
     "khac",
@@ -37,42 +35,25 @@ GENERIC_CATEGORY_TOKENS = {
 
 
 DIRECT_TEMPLATES = (
-    "{label} cần những kỹ năng gì?",
-    "Muốn theo {label} thì nên học và chuẩn bị những gì?",
+    "{label} cần những kỹ năng/công cụ, trách nhiệm/năng lực và yêu cầu kinh nghiệm/bằng cấp nào?",
+    "Để theo {label}, nhà tuyển dụng thường yêu cầu kỹ năng/công cụ, trách nhiệm/năng lực và kinh nghiệm/bằng cấp gì?",
 )
 
 CONVERSATIONAL_TEMPLATES = (
     (
-        "Mình muốn làm {label}, các JD thường cần "
-        "những kỹ năng và yêu cầu nào?"
+        "Mình muốn làm {label}; các JD thường cần "
+        "kỹ năng/công cụ, trách nhiệm/năng lực và kinh nghiệm/bằng cấp nào?"
     ),
     (
         "Nếu muốn đi theo {label} thì nên tập trung "
-        "vào những năng lực nào?"
+        "vào kỹ năng/công cụ, trách nhiệm/năng lực và yêu cầu kinh nghiệm/bằng cấp nào?"
     ),
 )
 
 NOISY_TEMPLATES = (
-    "lam {label_ascii} can biet skill gi",
-    "muon theo {label_ascii} thi can hoc stack gi",
+    "jd {label_ascii} can skill tool, trach nhiem nang luc, kinh nghiem bang cap gi",
+    "lam {label_ascii} can biet skill cong cu, viec phai lam va yeu cau kinh nghiem gi",
 )
-
-PERSONALIZED_TEMPLATES = (
-    (
-        "Tôi đã biết {known}; muốn theo {label} "
-        "thì còn cần bổ sung gì?"
-    ),
-    (
-        "Tôi có nền tảng {known}; để làm {label} "
-        "thì nên học thêm gì?"
-    ),
-)
-
-GENERIC_PERSONALIZED = (
-    "Tôi đã có kiến thức nền tảng cơ bản; "
-    "muốn theo {label} thì cần bổ sung gì?"
-)
-
 
 def _ascii(text: str) -> str:
     normalized = unicodedata.normalize("NFKD", text)
@@ -102,69 +83,6 @@ def _is_generic_category(value: str) -> bool:
     }
 
     return bool(tokens & GENERIC_CATEGORY_TOKENS)
-
-
-def _parse_skill_list(value: str | None) -> list[str]:
-    if not value:
-        return []
-
-    text = value.strip()
-
-    if not text:
-        return []
-
-    try:
-        parsed = ast.literal_eval(text)
-    except (ValueError, SyntaxError):
-        parsed = None
-
-    if isinstance(parsed, (list, tuple, set)):
-        values = [
-            str(item).strip()
-            for item in parsed
-        ]
-
-    elif parsed is not None:
-        values = [str(parsed).strip()]
-
-    else:
-        values = [
-            part.strip()
-            for part in re.split(r"[,;|]", text)
-        ]
-
-    return [
-        item
-        for item in values
-        if item
-    ]
-
-
-def load_skill_hints_from_csv(csv_path: Path) -> tuple[dict[str, Counter[str]], dict[tuple[str, str], Counter[str]]]:
-    by_category: dict[str, Counter[str]] = defaultdict(Counter)
-    by_category_title: dict[tuple[str, str], Counter[str]] = defaultdict(Counter)
-
-    with csv_path.open("r", encoding="utf-8-sig", newline="",) as handle:
-        reader = csv.DictReader(handle)
-
-        for row in reader:
-            category = normalize_key((row.get("category") or "").strip())
-            title = normalize_key((row.get("job_title") or "").strip())
-            if not category:
-                continue
-
-            skills = _parse_skill_list(row.get("technical_skills"))
-            for skill in skills:
-                normalized_skill = normalize_key(skill)
-
-                if not normalized_skill:
-                    continue
-
-                by_category[category][skill] += 1
-                if title:
-                    by_category_title[(category, title)][skill] += 1
-
-    return (dict(by_category), dict(by_category_title))
 
 
 def _count_topic_support(jobs: Iterable[CorpusJob]) -> tuple[
@@ -229,7 +147,6 @@ def _select_categories(
     category_jobs: Counter[str],
     title_jobs: dict[str, Counter[str]],
     *,
-    family_count: int,
     min_family_jobs: int,
     preferred_specific_support: int,
     hard_min_specific_support: int,
@@ -243,7 +160,6 @@ def _select_categories(
     TEST metrics.
     """
 
-    del family_count
     effective_specific_support = max(preferred_specific_support, hard_min_specific_support)
 
     best_specific_support = {
@@ -286,20 +202,15 @@ def _select_categories(
 def discover_topics(
     jobs: Iterable[CorpusJob],
     *,
-    family_count: int = DEFAULT_FAMILY_COUNT,
     min_family_jobs: int = DEFAULT_MIN_FAMILY_JOBS,
     min_specific_title_jobs: int = DEFAULT_MIN_SPECIFIC_TITLE_JOBS,
     random_seed: int = DEFAULT_RANDOM_SEED,
-    category_skill_hints: dict[str, Counter[str]] | None = None,
-    title_skill_hints: dict[tuple[str, str], Counter[str]] | None = None,
 ) -> tuple[
     list[CareerTopic],
     list[CareerQuery],
     list[str],
     list[str],
 ]:
-    category_skill_hints = category_skill_hints or {}
-    title_skill_hints = title_skill_hints or {}
     jobs = list(jobs)
 
     (category_jobs, title_jobs, title_display) = _count_topic_support(jobs)
@@ -307,7 +218,6 @@ def discover_topics(
     (selected_categories, effective_specific_support, generic_excluded) = _select_categories(
         category_jobs,
         title_jobs,
-        family_count=family_count,
         min_family_jobs=min_family_jobs,
         preferred_specific_support=min_specific_title_jobs,
         hard_min_specific_support=HARD_MIN_SPECIFIC_TITLE_JOBS,
@@ -335,17 +245,6 @@ def discover_topics(
         "generic_categories_excluded="
         f"{len(generic_excluded)}."
     )
-
-    if broad_support_floor < min_family_jobs:
-        print(
-            "Topic selection note: "
-            "preferred broad-family support "
-            f">={min_family_jobs} is not "
-            f"attainable for all "
-            f"{family_count} families; "
-            "observed selected-family floor="
-            f"{broad_support_floor}."
-        )
 
     shuffled = list(selected_categories)
     random.Random(random_seed).shuffle(shuffled)
@@ -383,11 +282,6 @@ def discover_topics(
 
         family_id_by_category[category] = family_id
         broad_label = _display_label(category)
-        broad_skills = tuple(
-            skill
-            for skill, _
-            in category_skill_hints.get(category, Counter()).most_common(2)
-        )
 
         topics.append(
             CareerTopic(
@@ -396,7 +290,6 @@ def discover_topics(
                 scope="broad",
                 label=broad_label,
                 category_key=category,
-                known_skills=broad_skills,
                 split=split,
             )
         )
@@ -436,15 +329,6 @@ def discover_topics(
             else _display_label(title_key)
         )
 
-        specific_skills = tuple(
-            skill
-            for skill, _
-            in title_skill_hints.get((category, title_key), Counter()).most_common(2)
-        )
-
-        if not specific_skills:
-            specific_skills = broad_skills
-
         topics.append(
             CareerTopic(
                 topic_id=f"{family_id}-specific",
@@ -453,7 +337,6 @@ def discover_topics(
                 label=specific_label,
                 category_key=category,
                 title_key=title_key,
-                known_skills=specific_skills,
                 split=split,
             )
         )
@@ -480,8 +363,24 @@ def discover_topics(
     if len(topics) != family_count * 2:
         raise RuntimeError(f"Expected {family_count * 2} topics, constructed {len(topics)}.")
 
-    if len(queries) != family_count * 2 * 4:
-        raise RuntimeError(f"Expected {family_count * 2 * 4} queries, constructed {len(queries)}.")
+    if len(queries) != family_count * 2 * len(BASE_QUERY_VARIANTS):
+        raise RuntimeError(
+            f"Expected {family_count * 2 * len(BASE_QUERY_VARIANTS)} queries, "
+            f"constructed {len(queries)}."
+        )
+
+    queries_by_topic = defaultdict(list)
+    for query in queries:
+        queries_by_topic[query.topic_id].append(query)
+    for topic in topics:
+        topic_queries = queries_by_topic[topic.topic_id]
+        variants = tuple(query.variant for query in topic_queries)
+        if len(topic_queries) != len(BASE_QUERY_VARIANTS) or set(variants) != set(BASE_QUERY_VARIANTS):
+            raise RuntimeError(
+                f"Base query variant invariant failed for {topic.topic_id}: {variants!r}"
+            )
+        if any(query.topic_id != topic.topic_id for query in topic_queries):
+            raise RuntimeError(f"Query topic mismatch for {topic.topic_id}.")
 
     if len(dev_family_ids) + len(test_family_ids) != family_count:
         raise RuntimeError("Family split count invariant failed.")
@@ -492,52 +391,6 @@ def discover_topics(
     return (topics, queries, dev_family_ids, test_family_ids)
 
 
-def summarize_topic_selection(
-    jobs: Iterable[CorpusJob],
-    topics: Iterable[CareerTopic],
-) -> dict[str, object]:
-    jobs = list(jobs)
-    topics = list(topics)
-
-    (category_jobs, title_jobs, _,) = _count_topic_support(jobs)
-    broad_topics = [
-        topic
-        for topic in topics
-        if topic.scope == "broad"
-    ]
-
-    specific_topics = [
-        topic
-        for topic in topics
-        if topic.scope == "specific"
-    ]
-
-    broad_support = {
-        topic.family_id: category_jobs[normalize_key(topic.category_key)]
-        for topic
-        in broad_topics
-    }
-
-    specific_support = {
-        topic.family_id: title_jobs[normalize_key(topic.category_key)][normalize_key(topic.title_key)]
-        for topic
-        in specific_topics
-        if topic.title_key
-    }
-
-    return {
-        "policy_version": TOPIC_SELECTION_POLICY_VERSION,
-        "family_count": len(broad_topics),
-        "topic_count": len(topics),
-        "preferred_broad_family_jobs": DEFAULT_MIN_FAMILY_JOBS,
-        "preferred_specific_title_jobs": DEFAULT_MIN_SPECIFIC_TITLE_JOBS,
-        "hard_min_specific_title_jobs": HARD_MIN_SPECIFIC_TITLE_JOBS,
-        "observed_broad_family_support_floor": min(broad_support.values(), default=0),
-        "observed_specific_title_support_floor": min(specific_support.values(), default=0),
-        "generic_category_tokens": sorted(GENERIC_CATEGORY_TOKENS),
-    }
-
-
 def generate_query_variants(
     topic: CareerTopic,
     *,
@@ -545,24 +398,13 @@ def generate_query_variants(
 ) -> list[CareerQuery]:
     rng = random.Random(f"{random_seed}:{topic.topic_id}")
     label = topic_intent_label(topic)
-    known = ", ".join(topic.known_skills)
     texts = [
         rng.choice(DIRECT_TEMPLATES).format(label=label),
         rng.choice(CONVERSATIONAL_TEMPLATES).format(label=label),
         rng.choice(NOISY_TEMPLATES).format(label_ascii=_ascii(label)),
-        (
-            rng.choice(PERSONALIZED_TEMPLATES).format(label=label, known=known,)
-            if known
-            else GENERIC_PERSONALIZED.format(label=label)
-        ),
     ]
 
-    variants = (
-        "direct",
-        "conversational",
-        "noisy",
-        "personalized",
-    )
+    variants = BASE_QUERY_VARIANTS
 
     return [
         CareerQuery(
@@ -570,7 +412,7 @@ def generate_query_variants(
             topic_id=topic.topic_id,
             variant=variant,
             text=text,
-            known_skills=topic.known_skills if variant == "personalized" else (),
+            known_skills=(),
         )
         for (index,(variant, text)) in enumerate(zip(variants, texts, strict=True), start=1)
     ]

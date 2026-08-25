@@ -12,7 +12,7 @@ from apps.career.evaluation.career_rag.run_retrieval_eval import run_retrieval_e
 
 
 class Command(BaseCommand):
-    help = "Evaluate frozen CareerRAGBench-Auto-V1 on DEV or explicitly unlocked TEST."
+    help = "Evaluate frozen CareerRAGBench-Auto-V3 on DEV or explicitly unlocked one-shot TEST."
 
     def add_arguments(self, parser) -> None:
         parser.add_argument("--kind", choices=("retrieval", "rag"), default="retrieval")
@@ -22,6 +22,10 @@ class Command(BaseCommand):
         parser.add_argument("--retriever", choices=("dense", "hybrid"), default="dense")
         parser.add_argument("--judge-model", default=None)
         parser.add_argument("--generator-model", default=None)
+        parser.add_argument("--top-k", type=int, default=None)
+        parser.add_argument("--bootstrap-seed", type=int, default=20260819)
+        parser.add_argument("--bootstrap-samples", type=int, default=2000)
+        parser.add_argument("--alpha", type=float, default=0.05)
 
     def handle(self, *args, **options) -> None:
         output_dir = Path(options["output_dir"])
@@ -30,12 +34,16 @@ class Command(BaseCommand):
                 split=options["split"],
                 output_dir=output_dir,
                 allow_test=options["allow_test"],
+                top_k=10 if options["top_k"] is None else options["top_k"],
+                bootstrap_seed=options["bootstrap_seed"],
+                bootstrap_samples=options["bootstrap_samples"],
+                bootstrap_alpha=options["alpha"],
             )
             self.stdout.write(self.style.SUCCESS(f"Retrieval {options['split']} evaluation complete."))
             for system, data in report["systems"].items():
                 ndcg5 = data["macro"]["ndcg@5"]["mean"]
-                nugget10 = data["macro"]["nugget_recall@10"]["mean"]
-                self.stdout.write(f"{system}: nDCG@5={ndcg5:.4f} nugget_recall@10={nugget10:.4f}")
+                strong5 = data["macro"]["strong_precision@5"]["mean"]
+                self.stdout.write(f"{system}: nDCG@5={ndcg5:.4f} strong_precision@5={strong5:.4f}")
             return
 
         judge_model = options["judge_model"] or os.environ.get("CAREER_RAG_JUDGE_MODEL")
@@ -49,9 +57,16 @@ class Command(BaseCommand):
             judge_model=judge_model,
             retriever_system=options["retriever"],
             allow_test=options["allow_test"],
+            top_k=5 if options["top_k"] is None else options["top_k"],
+            bootstrap_seed=options["bootstrap_seed"],
+            bootstrap_samples=options["bootstrap_samples"],
+            bootstrap_alpha=options["alpha"],
         )
         self.stdout.write(self.style.SUCCESS(f"RAG {options['split']} evaluation complete."))
         for system, data in report["systems"].items():
-            f1 = data["macro"]["weighted_nugget_f1"]["mean"]
+            coverage = data["macro"]["weighted_nugget_coverage"]["mean"]
             faith = data["macro"]["faithfulness"]["mean"]
-            self.stdout.write(f"{system}: weighted_nugget_f1={f1:.4f} faithfulness={faith:.4f}")
+            faith_text = "N/A" if faith is None else f"{faith:.4f}"
+            self.stdout.write(
+                f"{system}: weighted_nugget_coverage={coverage:.4f} faithfulness={faith_text}"
+            )

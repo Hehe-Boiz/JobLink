@@ -44,7 +44,11 @@ tzdata==2025.2
 uritemplate==4.2.0
 urllib3==2.5.0
 wheel==0.47.0
-sentence-transformers
-rank-bm25
-psycopg[binary]
-pgvector
+numpy==2.5.2
+sentence-transformers==5.7.0
+transformers==5.15.0
+torch==2.13.0
+rank-bm25==0.2.2
+openai==3.3.1
+psycopg[binary]==3.3.4
+pgvector==0.5.0

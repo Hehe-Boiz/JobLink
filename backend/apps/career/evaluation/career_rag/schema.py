@@ -105,6 +105,12 @@ class RelevanceJudgment:
 
 @dataclass(frozen=True, slots=True)
 class Nugget:
+    """A grounded answer unit with adaptive, non-exhaustive support evidence.
+
+    ``support_job_keys`` are only the verified support examples observed before
+    adaptive verification stopped.  They are not an exhaustive support
+    universe, and ``prevalence`` is the V3 unavailable sentinel.
+    """
     topic_id: str
     nugget_id: str
     text: str
@@ -136,10 +142,14 @@ class BenchmarkManifest:
     judge_model: str
     judge_prompt_sha256: str
     builder_source_sha256: str
-    judge_model_same_as_generator: bool
+    exact_model_id_equal: bool
     dev_family_ids: tuple[str, ...]
     test_family_ids: tuple[str, ...]
     configuration: dict[str, Any] = field(default_factory=dict)
+    # Generic binding for every artifact whose bytes affect interpretation or
+    # evaluation.  Keeping this generic avoids adding a dataclass field for
+    # every future construction report.
+    artifact_sha256: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)

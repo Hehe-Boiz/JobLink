@@ -19,11 +19,17 @@ from openai import OpenAI
 from apps.career.normalization import normalize_key
 
 from .schema import CareerTopic, CorpusJob, PooledCandidate, RelevanceJudgment
-from .semantics import topic_description
+from .semantics import canonical_information_need
+from .evidence import pack_job_evidence
 
 from .concurrency import DEFAULT_MAX_IN_FLIGHT, DEFAULT_REFILL_SIZE, RefillWindowConfig, run_refill_window
 
-JUDGE_PROMPT_VERSION = "career-rag-silver-qrels-v2"
+JUDGE_PROMPT_VERSION = "career-rag-silver-qrels-v3"
+DEFAULT_JUDGE_MAX_TOKENS = 16_384
+BACKEND_ROOT = Path(__file__).resolve().parents[4]
+DEFAULT_LLM_CACHE_DIR = (
+    BACKEND_ROOT / "data" / "career_eval" / "career_rag_llm_cache_v3"
+)
 JUDGE_VIEWS = (
     "query-centric: Does this JD directly help answer the user's career information need?",
     "evidence-centric: Does this JD contain requirements, skills, or responsibilities useful for this information need?",
@@ -97,11 +103,17 @@ class JudgeClient:
         timeout = float(os.environ.get("CAREER_RAG_HTTP_TIMEOUT_SECONDS", "240"))
         return OpenAI(api_key=api_key, base_url=base_url or None, max_retries=0, timeout=timeout,)
 
-    def _cache_key(self, *, system: str, user: str) -> str:
+    def _cache_key(
+        self,
+        *,
+        system: str,
+        user: str,
+        model_name: str | None = None,
+    ) -> str:
         base_url = getattr(settings, "CKEY_BASE_URL", "")
         payload = json.dumps(
             {
-                "model": self.model_name,
+                "model": self.model_name if model_name is None else model_name,
                 "base_url": base_url,
                 "temperature": 0,
                 "system": system,
@@ -114,45 +126,62 @@ class JudgeClient:
 
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
-    def _cache_path(self, *, system: str, user: str) -> Path | None:
+    def _cache_path(
+        self,
+        *,
+        system: str,
+        user: str,
+        model_name: str | None = None,
+    ) -> Path | None:
         if os.environ.get("CAREER_RAG_DISABLE_LLM_CACHE", "0") == "1":
             return None
 
-        root = Path(
-            os.environ.get(
-                "CAREER_RAG_LLM_CACHE_DIR",
-                (
-                    "data/career_eval/"
-                    "career_rag_bench_auto_v2/"
-                    "checkpoints/llm_calls"
-                ),
-            )
-        )
+        configured = os.environ.get("CAREER_RAG_LLM_CACHE_DIR")
+        root = Path(configured) if configured else DEFAULT_LLM_CACHE_DIR
+        if configured and not root.is_absolute():
+            root = BACKEND_ROOT / root
 
-        key = self._cache_key(system=system, user=user)
+        key = self._cache_key(
+            system=system,
+            user=user,
+            model_name=model_name,
+        )
 
         return root / key[:2] / f"{key}.json"
 
     def _load_cache(self, *, system: str, user: str) -> dict | None:
-        path = self._cache_path(system=system, user=user,)
-        if path is None or not path.exists():
-            return None
+        fallback_model = os.environ.get("CAREER_RAG_CACHE_FALLBACK_MODEL")
+        candidates = [(self._cache_path(system=system, user=user), False)]
+        if fallback_model and fallback_model != self.model_name:
+            candidates.append((
+                self._cache_path(
+                    system=system,
+                    user=user,
+                    model_name=fallback_model,
+                ),
+                True,
+            ))
 
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            payload = data.get("payload")
-            if not isinstance(payload, dict,):
-                raise ValueError("cached payload is not dict")
+        for path, is_fallback in candidates:
+            if path is None or not path.exists():
+                continue
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                payload = data.get("payload")
+                if not isinstance(payload, dict,):
+                    raise ValueError("cached payload is not dict")
+            except Exception:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                continue
 
+            if is_fallback:
+                self._save_cache(system=system, user=user, payload=payload)
             return payload
 
-        except Exception:
-            try:
-                path.unlink(missing_ok=True)
-            except OSError:
-                pass
-
-            return None
+        return None
 
     def _save_cache(self, *, system: str, user: str, payload: dict) -> None:
         path = self._cache_path(system=system, user=user)
@@ -286,7 +315,26 @@ class JudgeClient:
 
         return None
 
+    @staticmethod
+    def _max_tokens() -> int:
+        value = os.environ.get(
+            "CAREER_RAG_JUDGE_MAX_TOKENS",
+            str(DEFAULT_JUDGE_MAX_TOKENS),
+        )
+        try:
+            max_tokens = int(value)
+        except ValueError as exc:
+            raise ValueError(
+                "CAREER_RAG_JUDGE_MAX_TOKENS must be a positive integer"
+            ) from exc
+        if max_tokens <= 0:
+            raise ValueError(
+                "CAREER_RAG_JUDGE_MAX_TOKENS must be a positive integer"
+            )
+        return max_tokens
+
     def json_call(self, system: str,user: str, *, retries: int = 2) -> dict:
+        max_tokens = self._max_tokens()
         cached = self._load_cache(system=system, user=user)
 
         if cached is not None:
@@ -319,6 +367,8 @@ class JudgeClient:
 
         while True:
             self._wait_for_request_slot()
+            finish_reason: object = None
+            content_length: int | None = None
 
             try:
                 response = (
@@ -328,6 +378,7 @@ class JudgeClient:
                     .create(
                         model=self.model_name,
                         temperature=0,
+                        max_tokens=max_tokens,
                         messages=[
                             {
                                 "role": "system",
@@ -341,7 +392,10 @@ class JudgeClient:
                     )
                 )
 
-                content = response.choices[0].message.content or ""
+                choice = response.choices[0]
+                finish_reason = getattr(choice, "finish_reason", None)
+                content = choice.message.content or ""
+                content_length = len(content)
                 payload = self._parse_json(content)
                 self._register_success()
                 self._save_cache(system=system, user=user, payload=payload)
@@ -420,13 +474,19 @@ class JudgeClient:
                     ) from exc
 
                 if generic_used >= retries:
-                    raise RuntimeError(f"Judge call failed after semantic/JSON retries: {error_name}: {exc}") from exc
+                    raise RuntimeError(
+                        "Judge call failed after semantic/JSON retries: "
+                        f"{error_name}; finish_reason={finish_reason}; "
+                        f"content_length={content_length}: {exc}"
+                    ) from exc
 
                 generic_used += 1
                 delay = min(2.0, 0.25 * (2 ** (generic_used - 1)))
                 print(
                     "[json-retry] "
                     f"error={error_name}; "
+                    f"finish_reason={finish_reason}; "
+                    f"content_length={content_length}; "
                     f"attempt="
                     f"{generic_used}/{retries}; "
                     f"sleep={delay:.2f}s"
@@ -459,7 +519,7 @@ class JudgeClient:
         match = re.search(r"\{.*\}", stripped, flags=re.DOTALL)
 
         if not match:
-            raise ValueError(f"Model did not return JSON: {text[:300]!r}")
+            raise ValueError("Model did not return a complete JSON object")
 
         value = json.loads(match.group(0))
 
@@ -528,7 +588,7 @@ def judge_candidates(
 
             blocks.append(
                 f"{cid}\n"
-                f"{job.raw_evidence[:evidence_chars]}"
+                f"{pack_job_evidence(job, char_budget=evidence_chars)}"
             )
 
         expected_ids = tuple(id_to_key)
@@ -564,7 +624,7 @@ def judge_candidates(
         base_user_prompt = (
             f"Topic ID: {topic.topic_id}\n"
             f"Information need: "
-            f"{information_need or topic_description(topic)}\n"
+            f"{information_need or canonical_information_need(topic)}\n"
             f"Judge view: {view}\n"
             f"Candidate count: {len(expected_ids)}\n"
             f"Required candidate IDs: "
@@ -584,7 +644,8 @@ def judge_candidates(
             user_prompt = base_user_prompt
             if attempt:
                 user_prompt += (
-                    "\n\nIMPORTANT: "
+                    f"\n\nSCHEMA_RETRY_ATTEMPT={attempt}\n"
+                    "IMPORTANT: "
                     "The previous response failed "
                     "schema validation. "
                     "Return ALL and ONLY these "
@@ -594,9 +655,9 @@ def judge_candidates(
                     "Do not include explanation."
                 )
 
-            try:
-                payload = client.json_call(system=system_prompt, user=user_prompt, retries=0)
+            payload = client.json_call(system=system_prompt, user=user_prompt)
 
+            try:
                 if set(payload) != {
                     "grades"
                 }:
@@ -626,26 +687,11 @@ def judge_candidates(
                 current: dict[str, int] = {}
                 for cid in expected_ids:
                     value = raw[cid]
-
-                    if isinstance(value, bool):
-                        raise ValueError(f"Boolean is not a valid relevance grade for {cid}")
-
-                    try:
-                        grade = int(value)
-
-                    except (TypeError, ValueError) as exc:
-                        raise ValueError(f"Non-integer relevance grade {value!r} for {cid}") from exc
-
-                    if isinstance(value, float) and not value.is_integer():
-                        raise ValueError(f"Non-integral relevance grade {value!r} for {cid}")
-
-                    if isinstance(value, str) and value.strip() != str(grade):
-                        raise ValueError(f"Malformed relevance grade {value!r} for {cid}")
-
-                    if grade not in (0, 1, 2, 3):
-                        raise ValueError(f"Invalid relevance grade {grade} for {cid}")
-
-                    current[cid] = grade
+                    if type(value) is not int or value not in (0, 1, 2, 3):
+                        raise ValueError(
+                            f"Relevance grade for {cid} must be a literal JSON integer in 0..3; got {value!r}"
+                        )
+                    current[cid] = value
                 validated = current
                 break
 
@@ -688,11 +734,7 @@ def judge_candidates(
         if any(grade is None for grade in raw_grades):
             raise RuntimeError(f"Missing judge view grade for {key}: {raw_grades}")
 
-        grades = [
-            int(grade)
-            for grade in raw_grades
-            if grade is not None
-        ]
+        grades = [grade for grade in raw_grades if grade is not None]
 
         if len(grades)  != len(JUDGE_VIEWS):
             raise RuntimeError(f"Expected {len(JUDGE_VIEWS)} judge grades for {key}; got {grades}")
